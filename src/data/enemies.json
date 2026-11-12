@@ -2,7 +2,17 @@
   "mail": { "hp": 5, "speedX": 120, "speedY": 85 },
   "phone": { "hp": 3, "ringEvery": 2.6 },
   "bubble": { "hp": 2, "speedX": 140, "speedY": 100, "chargeV": 520 },
+  "docbomb": { "hp": 1, "speedX": 70, "speedY": 50, "fuse": 7 },
+  "queue": { "hp": 2, "speed": 70, "segments": 5 },
   "wrongNumber": { "hp": 14, "speedX": 105, "speedY": 75, "teleportEvery": 3.4 },
   "lateDoc": { "hp": 12, "speedX": 105, "speedY": 75, "comebackHp": 6 },
-  "noticeBoss": { "hp": 36, "speedX": 95, "speedY": 70, "notices": 3 }
+  "tantrum": { "hp": 14, "speedX": 95, "speedY": 70 },
+  "graduation": { "hp": 14, "speedX": 115, "speedY": 80 },
+  "presidentMail": { "hp": 14, "speedX": 100, "speedY": 72, "mailEvery": 5 },
+  "minwon": { "hp": 18, "speedX": 95, "speedY": 70, "rallyEvery": 6 },
+  "noticeBoss": { "hp": 36, "speedX": 95, "speedY": 70, "notices": 3 },
+  "deadlineBoss": { "hp": 40, "speedX": 110, "speedY": 80, "deadline": 60 },
+  "decibel": { "hp": 16, "speedX": 90, "speedY": 70 },
+  "protest": { "hp": 18, "speedX": 80, "speedY": 65 },
+  "sitin": { "hp": 20, "speedX": 85, "speedY": 65 }
 }

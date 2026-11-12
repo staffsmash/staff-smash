@@ -7,13 +7,45 @@ import { neutralPose, type Pose, type Rig } from './Rig';
 import { createSupervisorRig } from './rigs';
 import * as fx from '../fx';
 
-// 가상 상사 (방해 요소, 맞지 않는다). 화면 뒤쪽 통로로 오간다.
-// - 김보고 처장: 다가와서 "보고해!" 말풍선을 플레이어 근처에 떨어뜨리고 간다. 구역이 끝날 때까지 반복.
-// - 오검토 처장: 뒤에서 지켜보다가 처리된 민원(사물) 하나를 "재검토"로 되살리고 간다. 구역당 1번.
+// 가상 상사 (방해 요소, 맞지 않는다). 화면 뒤쪽 통로로 오간다. (PRD 11절)
+// - 김보고 처장: 다가와서 "보고해!" 말풍선을 플레이어 근처에 떨어뜨린다. 구역이 끝날 때까지 반복.
+// - 오검토 처장: 처리된 민원(사물) 하나를 "재검토"로 되살린다. 구역당 1번.
+// - 김부재중 처장: 결재가 필요한 구역에서 한참 늦게 나타나 결재해 준다 (StageScene이 부른다).
+// - 최몰라 처장: "몰라~" 하며 민원(메일)을 주인공에게 넘긴다. 반복.
+// - 회의소집 부총장: 보스전에서 회의를 소집한다. 바닥의 원 안에 있으면 1분짜리 회의에 끌려간다.
+// - 허허실실 부총장: 간식을 두 개 떨어뜨리는데 하나는 일거리다. 반복.
 
-export type SupervisorKind = 'bogo' | 'gumto';
+export type SupervisorKind = 'bogo' | 'gumto' | 'bujae' | 'molla' | 'meeting' | 'hoho';
 
-const NAMES: Record<SupervisorKind, string> = { bogo: '김보고 처장', gumto: '오검토 처장' };
+const NAMES: Record<SupervisorKind, string> = {
+  bogo: '김보고 처장',
+  gumto: '오검토 처장',
+  bujae: '김부재중 처장',
+  molla: '최몰라 처장',
+  meeting: '회의소집 부총장',
+  hoho: '허허실실 부총장',
+};
+
+/** 들어올 때 하는 말 */
+const ENTER_LINES: Record<SupervisorKind, string> = {
+  bogo: '보고해!',
+  gumto: '어디 한번 볼까…',
+  bujae: '어, 결재? 여기 있어. 미안 미안.',
+  molla: '몰라~ 그건 주무관이 처리해.',
+  meeting: '긴급 회의 소집합니다!',
+  hoho: '허허, 수고가 많아요~ 이거 먹고 해요.',
+};
+
+/** 다시 나타나기까지 걸리는 시간(초). 0 = 한 번만 */
+const REPEAT: Record<SupervisorKind, [number, number]> = {
+  bogo: [9, 13],
+  gumto: [0, 0],
+  bujae: [0, 0],
+  molla: [12, 16],
+  meeting: [15, 19],
+  hoho: [14, 18],
+};
+
 const LANE_Y = FLOOR_TOP - 6;
 
 type SupState = 'wait' | 'enter' | 'idle' | 'act' | 'leave';
@@ -38,11 +70,13 @@ export class Supervisor {
   private active = true;
   private quota = 1;
   private target: Enemy | null = null;
+  private readonly onDone: (() => void) | null;
 
-  constructor(scene: StageScene, kind: SupervisorKind, delay: number) {
+  constructor(scene: StageScene, kind: SupervisorKind, delay: number, onDone: (() => void) | null = null) {
     this.scene = scene;
     this.kind = kind;
     this.waitT = delay;
+    this.onDone = onDone;
     this.rig = createSupervisorRig(scene, kind);
     this.rig.root.setVisible(false);
     this.shadow = scene.add.ellipse(0, LANE_Y, 48, 13, 0x000000, 0.22).setDepth(-6).setVisible(false);
@@ -72,7 +106,7 @@ export class Supervisor {
 
   private pickSpot(player: Player, left: number): number {
     const onLeft = player.x - left < GAME_W / 2;
-    if (this.kind === 'gumto') return left + (onLeft ? 790 : 170);
+    if (this.kind === 'gumto' || this.kind === 'bujae') return left + (onLeft ? 790 : 170);
     return Phaser.Math.Clamp(player.x + (onLeft ? 150 : -150), left + 100, left + GAME_W - 100);
   }
 
@@ -99,13 +133,8 @@ export class Supervisor {
         this.facing = d >= 0 ? 1 : -1;
         if (Math.abs(d) < 6) {
           this.acted = false;
-          if (this.kind === 'bogo') {
-            this.set('act');
-            this.say('보고해!', 1.2);
-          } else {
-            this.set('idle');
-            this.say('어디 한번 볼까…', 1.4);
-          }
+          this.say(ENTER_LINES[this.kind], this.kind === 'hoho' ? 1.8 : 1.3);
+          this.set(this.kind === 'gumto' ? 'idle' : 'act');
         } else {
           this.x += Math.sign(d) * Math.min(Math.abs(d), 160 * dt);
           moving = true;
@@ -120,21 +149,12 @@ export class Supervisor {
         }
         break;
       case 'act':
-        if (this.kind === 'bogo') {
-          this.facing = player.x >= this.x ? 1 : -1;
-          if (!this.acted && this.stateT >= 0.45) {
-            this.acted = true;
-            this.scene.addReportTrap(this.x + this.facing * 20, LANE_Y, player.x + Phaser.Math.Between(-30, 30), player.y);
-          }
-          if (this.stateT >= 1.0) this.set('leave');
-        } else {
-          if (!this.acted && this.stateT >= 0.45) {
-            this.acted = true;
-            this.target?.recheck();
-            this.target = null;
-          }
-          if (this.stateT >= 1.4) this.set('leave');
+        this.facing = player.x >= this.x ? 1 : -1;
+        if (!this.acted && this.stateT >= 0.45) {
+          this.acted = true;
+          this.act(player);
         }
+        if (this.stateT >= (this.kind === 'gumto' ? 1.4 : 1.0)) this.set('leave');
         break;
       case 'leave': {
         const dir = this.x - left < GAME_W / 2 ? -1 : 1;
@@ -142,9 +162,10 @@ export class Supervisor {
         this.x += dir * 170 * dt;
         moving = true;
         if (this.x < left - 60 || this.x > left + GAME_W + 60) {
-          if (this.kind === 'bogo' && this.active) {
+          const [a, b] = REPEAT[this.kind];
+          if (a > 0 && this.active) {
             this.set('wait');
-            this.waitT = 9 + Math.random() * 4;
+            this.waitT = a + Math.random() * (b - a);
           } else {
             this.destroy();
             return;
@@ -165,6 +186,33 @@ export class Supervisor {
     if (this.speech) {
       this.speechT -= dt;
       this.speech.setPosition(this.x, LANE_Y - 132).setVisible(shown && this.speechT > 0);
+    }
+  }
+
+  /** 상사마다 하는 일 */
+  private act(player: Player): void {
+    const s = this.scene;
+    switch (this.kind) {
+      case 'bogo':
+        s.addReportTrap(this.x + this.facing * 20, LANE_Y, player.x + Phaser.Math.Between(-30, 30), player.y);
+        break;
+      case 'gumto':
+        this.target?.recheck();
+        this.target = null;
+        break;
+      case 'bujae':
+        fx.stampMark(s, this.x, LANE_Y - 70, '결재');
+        this.onDone?.();
+        break;
+      case 'molla':
+        s.passMail(this.x + this.facing * 30);
+        break;
+      case 'meeting':
+        s.callMeeting(player.x, player.y);
+        break;
+      case 'hoho':
+        s.dropSnacks(this.x, player.x, player.y);
+        break;
     }
   }
 

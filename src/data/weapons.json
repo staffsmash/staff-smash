@@ -20,5 +20,53 @@
     "kb": 0,
     "knockdown": true,
     "throwDmg": 2
+  },
+  "clipboard": {
+    "name": "결재판",
+    "durability": 8,
+    "total": 0.5,
+    "active": [0.22, 0.3],
+    "reach": 88,
+    "dmg": 3,
+    "kb": 0,
+    "knockdown": true,
+    "throwDmg": 3,
+    "guard": true
+  },
+  "idcard": {
+    "name": "사원증",
+    "durability": 0,
+    "total": 0.3,
+    "active": [0, 0],
+    "reach": 0,
+    "dmg": 0,
+    "kb": 0,
+    "knockdown": false,
+    "throwDmg": 1,
+    "boomerang": true
+  },
+  "rulebook": {
+    "name": "규정집",
+    "durability": 1,
+    "total": 0.3,
+    "active": [0, 0],
+    "reach": 0,
+    "dmg": 0,
+    "kb": 0,
+    "knockdown": true,
+    "throwDmg": 2,
+    "throwOnly": true
+  },
+  "bomb": {
+    "name": "마감 서류 뭉치",
+    "durability": 1,
+    "total": 0.3,
+    "active": [0, 0],
+    "reach": 0,
+    "dmg": 0,
+    "kb": 0,
+    "knockdown": true,
+    "throwDmg": 3,
+    "throwOnly": true
   }
 }

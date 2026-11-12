@@ -1,10 +1,20 @@
 import Phaser from 'phaser';
 import { GAME_W } from '../config';
+import type { HeroDef } from '../data/heroes';
 import type { Controls } from '../input/Controls';
 import type { StageScene } from '../scenes/StageScene';
 import { Fighter, type AttackDef, type HitInfo } from './Fighter';
 import { neutralPose, type Pose } from './Rig';
-import { createClipboard, createHeldNotice, createHeldStapler, createStaffRig, createStamp } from './rigs';
+import {
+  createClipboard,
+  createHeldBomb,
+  createHeldBook,
+  createHeldCard,
+  createHeldNotice,
+  createHeldStapler,
+  createStaffRig,
+  createStamp,
+} from './rigs';
 import { WEAPONS, type WeaponDef, type WeaponId } from './weapons';
 import * as fx from '../fx';
 
@@ -32,6 +42,11 @@ const DEPTH_SPEED = 165;
 const JUMP_V = 640;
 /** 메일에 맞으면 잠깐 느려진다 */
 const SLOW_MUL = 0.55;
+/** 졸업시켜 달라는 학생이 매달리면 느려진다 */
+const CLING_MUL = 0.4;
+/** 아메리카노: 공격 속도 */
+const COFFEE_MUL = 1.35;
+const SHAKE_OFF = 4;
 
 export type PlayerState =
   | 'idle'
@@ -45,25 +60,40 @@ export type PlayerState =
   | 'getup'
   | 'special'
   | 'report'
+  | 'meeting'
   | 'ko';
 
 export interface HeldWeapon {
   id: WeaponId;
   def: WeaponDef;
   dur: number;
+  /** 사원증이 날아가 있는 중 */
+  inFlight: boolean;
+  /** 마감 서류 뭉치가 터지기까지 남은 시간 */
+  fuse: number;
 }
 
-type PropId = 'stamp' | 'board' | 'stapler' | 'notice';
+/** 플레이어에게 매달릴 수 있는 적 */
+export interface Clinger {
+  releaseCling(): void;
+}
+
+type PropId = 'stamp' | 'board' | 'stapler' | 'notice' | 'card' | 'book' | 'bomb';
 
 export class Player extends Fighter {
   readonly halfW = 20;
   readonly height = 106;
+  readonly hero: HeroDef;
   state: PlayerState = 'idle';
   sp = 0;
   lives = 3;
   weapon: HeldWeapon | null = null;
   slowT = 0;
+  coffeeT = 0;
+  clingBy: Clinger | null = null;
+  private clingPresses = 0;
   private reportT = 0;
+  private meetingT = 0;
   private combo = 0;
   private buffered = false;
   private running = false;
@@ -74,15 +104,19 @@ export class Player extends Fighter {
   private readonly props: Record<PropId, Phaser.GameObjects.Container>;
   private readonly scene: StageScene;
 
-  constructor(scene: StageScene, x: number, y: number) {
-    const rig = createStaffRig(scene);
+  constructor(scene: StageScene, x: number, y: number, hero: HeroDef) {
+    const rig = createStaffRig(scene, hero.look);
     super(scene, x, y, rig, 12, 46);
     this.scene = scene;
+    this.hero = hero;
     this.props = {
       stamp: createStamp(scene, rig),
       board: createClipboard(scene, rig),
       stapler: createHeldStapler(scene, rig),
       notice: createHeldNotice(scene, rig),
+      card: createHeldCard(scene, rig),
+      book: createHeldBook(scene, rig),
+      bomb: createHeldBomb(scene, rig),
     };
     for (const c of Object.values(this.props)) {
       rig.itemF.add(c);
@@ -98,22 +132,37 @@ export class Player extends Fighter {
 
   get hittable(): boolean {
     if (this.invuln > 0) return false;
-    return this.state !== 'down' && this.state !== 'getup' && this.state !== 'special' && this.state !== 'ko';
+    return !['down', 'getup', 'special', 'ko', 'meeting'].includes(this.state);
   }
 
   /** 적 AI가 노릴 수 있는 상태인지 */
   get targetable(): boolean {
-    return this.state !== 'down' && this.state !== 'ko' && this.state !== 'getup';
+    return !['down', 'ko', 'getup', 'meeting'].includes(this.state);
   }
 
   private get speedMul(): number {
-    return this.slowT > 0 ? SLOW_MUL : 1;
+    let m = 1;
+    if (this.slowT > 0) m *= SLOW_MUL;
+    if (this.clingBy) m *= CLING_MUL;
+    return m;
   }
 
   update(dt: number, c: Controls): void {
     this.stateT += dt;
+    // 아메리카노: 공격 동작이 빨라진다
+    if (this.coffeeT > 0 && (this.state === 'attack' || this.state === 'wattack')) this.stateT += dt * (COFFEE_MUL - 1);
     if (this.invuln > 0) this.invuln -= dt;
     if (this.slowT > 0) this.slowT -= dt;
+    if (this.coffeeT > 0) this.coffeeT -= dt;
+
+    // 손에 든 마감 서류 뭉치
+    if (this.weapon?.id === 'bomb') {
+      this.weapon.fuse -= dt;
+      if (this.weapon.fuse <= 0) {
+        this.weapon = null;
+        this.scene.explodeInHand(this);
+      }
+    }
 
     switch (this.state) {
       case 'idle':
@@ -167,6 +216,15 @@ export class Player extends Fighter {
         this.vy = 0;
         if (this.stateT >= this.reportT) this.set('idle');
         break;
+      case 'meeting':
+        this.vx = 0;
+        this.vy = 0;
+        if (this.stateT >= this.meetingT) {
+          this.set('idle');
+          this.invuln = 1.2;
+          fx.floatText(this.scene, this.x, this.y - 128, '회의 끝! 복귀', '#ffe066', 20);
+        }
+        break;
       case 'special':
       case 'ko':
         this.vx = 0;
@@ -190,6 +248,8 @@ export class Player extends Fighter {
     this.clampToView();
     this.pose(dt);
     this.sync();
+    this.rig.root.setVisible(this.state !== 'meeting');
+    this.shadow.setVisible(this.state !== 'meeting');
   }
 
   private updateFree(c: Controls): void {
@@ -201,13 +261,13 @@ export class Player extends Fighter {
       return;
     }
     if (c.consume('pickup')) {
-      if (this.weapon) {
+      if (this.weapon && !this.weapon.inFlight) {
         this.startThrow();
         return;
       }
-      if (this.scene.tryPickup(this)) return;
+      if (!this.weapon && this.scene.tryPickup(this)) return;
     }
-    if (c.consume('jump')) {
+    if (c.consume('jump') && !this.clingBy) {
       this.set('jump');
       this.jumpAttacking = false;
       this.vz = JUMP_V;
@@ -216,9 +276,12 @@ export class Player extends Fighter {
       return;
     }
     if (c.consume('attack')) {
+      this.countShake();
       // 맨손일 때 무기 위에서 공격 버튼을 누르면 줍는다 (모바일 A 버튼 자동 전환)
       if (!this.weapon && this.scene.tryPickup(this)) return;
-      if (this.weapon) this.startWeaponAttack();
+      const w = this.weapon;
+      if (w && (w.def.throwOnly || (w.def.boomerang && !w.inFlight))) this.startThrow();
+      else if (w && !w.def.boomerang) this.startWeaponAttack();
       else this.startAttack(0);
       return;
     }
@@ -227,6 +290,26 @@ export class Player extends Fighter {
     this.vy = my * DEPTH_SPEED * mul;
     if (mx !== 0) this.facing = mx > 0 ? 1 : -1;
     this.set(mx !== 0 || my !== 0 ? 'walk' : 'idle');
+  }
+
+  /** 매달린 학생 떨쳐내기: 공격 버튼을 연타한다 */
+  private countShake(): void {
+    if (!this.clingBy) return;
+    this.clingPresses++;
+    this.rig.flash(0.04);
+    if (this.clingPresses >= SHAKE_OFF) this.releaseCling();
+  }
+
+  setCling(by: Clinger): void {
+    this.clingBy = by;
+    this.clingPresses = 0;
+  }
+
+  releaseCling(): void {
+    const by = this.clingBy;
+    this.clingBy = null;
+    this.clingPresses = 0;
+    by?.releaseCling();
   }
 
   private startAttack(i: number): void {
@@ -243,7 +326,10 @@ export class Player extends Fighter {
     const a = COMBO[this.combo];
     this.vx *= Math.pow(0.01, dt);
     this.vy = 0;
-    if (this.stateT > 0.03 && c.consume('attack')) this.buffered = true;
+    if (this.stateT > 0.03 && c.consume('attack')) {
+      this.buffered = true;
+      this.countShake();
+    }
     if (this.stateT >= a.active[0] && this.stateT <= a.active[1]) {
       this.scene.resolvePlayerAttack(this, a, this.hitSet);
     }
@@ -256,9 +342,9 @@ export class Player extends Fighter {
 
   // ---------- 무기 ----------
 
-  equip(id: WeaponId): void {
+  equip(id: WeaponId, fuse = 0): void {
     const def = WEAPONS[id];
-    this.weapon = { id, def, dur: def.durability };
+    this.weapon = { id, def, dur: def.durability, inFlight: false, fuse };
   }
 
   private startWeaponAttack(): void {
@@ -281,13 +367,16 @@ export class Player extends Fighter {
     const a = w.def.attack;
     this.vx *= Math.pow(0.01, dt);
     this.vy = 0;
-    if (this.stateT > 0.03 && c.consume('attack')) this.buffered = true;
+    if (this.stateT > 0.03 && c.consume('attack')) {
+      this.buffered = true;
+      this.countShake();
+    }
     if (this.stateT >= a.active[0] && this.stateT <= a.active[1]) {
       this.scene.resolvePlayerAttack(this, a, this.hitSet);
     }
     const chain = this.buffered && this.stateT >= a.chainAt;
     if (chain || this.stateT >= a.total) {
-      if (w.dur <= 0) {
+      if (w.def.durability > 0 && w.dur <= 0) {
         this.weapon = null;
         fx.floatText(this.scene, this.x, this.y - 124, `${w.def.name} 다 씀`, '#cfd6e3', 16);
         this.set('idle');
@@ -306,40 +395,79 @@ export class Player extends Fighter {
     this.vy = 0;
   }
 
-  /** 던질 무기를 손에서 뗀다 */
+  /** 던질 무기를 손에서 뗀다. 사원증은 손에 남은 채 날아간 상태가 된다. */
   takeWeaponForThrow(): HeldWeapon | null {
     const w = this.weapon;
+    if (!w) return null;
+    if (w.def.boomerang) {
+      if (w.inFlight) return null;
+      w.inFlight = true;
+      return w;
+    }
     this.weapon = null;
     return w;
   }
 
-  // ---------- 방해 효과 ----------
+  catchCard(): void {
+    if (this.weapon?.id === 'idcard') this.weapon.inFlight = false;
+  }
+
+  // ---------- 회복·방해 효과 ----------
+
+  heal(n: number): void {
+    this.hp = Math.min(this.maxHp, this.hp + n);
+  }
 
   applySlow(sec: number): void {
     if (this.slowT <= 0) fx.floatText(this.scene, this.x, this.y - 128, '메일 확인 중… (느려짐)', '#9fd3ff', 16);
     this.slowT = Math.max(this.slowT, sec);
   }
 
-  /** 김보고 처장의 "보고해!"를 밟으면 잠깐 보고서를 쓴다 */
-  startReport(sec: number): boolean {
-    if (this.state !== 'idle' && this.state !== 'walk' && this.state !== 'attack' && this.state !== 'wattack') {
-      return false;
-    }
+  /** "보고해!"를 밟거나 일거리를 주우면 잠깐 보고서를 쓴다 */
+  startReport(sec: number, text = '보고서 작성 중…'): boolean {
+    if (!['idle', 'walk', 'attack', 'wattack'].includes(this.state)) return false;
     this.set('report');
     this.reportT = sec;
     this.vx = 0;
     this.vy = 0;
-    fx.floatText(this.scene, this.x, this.y - 128, '보고서 작성 중…', '#ffd27f', 18);
+    fx.floatText(this.scene, this.x, this.y - 128, text, '#ffd27f', 18);
+    return true;
+  }
+
+  /** 회의소집 부총장에게 끌려간다 */
+  startMeeting(sec: number): boolean {
+    if (!this.targetable || this.state === 'special') return false;
+    this.releaseCling();
+    this.set('meeting');
+    this.meetingT = sec;
+    this.vx = 0;
+    this.vy = 0;
+    this.z = 0;
+    this.vz = 0;
     return true;
   }
 
   takeHit(h: HitInfo): boolean {
     if (!h.force && !this.hittable) return false;
+    // 결재판을 들고 정면을 보고 있으면 막는다
+    const w = this.weapon;
+    const front = this.facing === -Math.sign(h.dir);
+    if (w?.def.guard && front && !h.force && ['idle', 'walk', 'wattack'].includes(this.state)) {
+      w.dur--;
+      fx.floatText(this.scene, this.x + this.facing * 20, this.y - 110, '결재판으로 막음!', '#9fd3ff', 16);
+      this.vx = h.dir * 60;
+      if (w.dur <= 0) {
+        this.weapon = null;
+        fx.floatText(this.scene, this.x, this.y - 130, '결재판 다 씀', '#cfd6e3', 16);
+      }
+      return false;
+    }
     this.hp = Math.max(0, this.hp - h.dmg);
     this.rig.flash();
     this.jumpAttacking = false;
     this.facing = h.dir > 0 ? -1 : 1;
     if (this.hp <= 0 || h.knockdown || this.z > 0) {
+      this.releaseCling();
       this.set('down');
       this.vz = 300;
       this.vx = h.dir * 220;
@@ -361,6 +489,7 @@ export class Player extends Fighter {
   }
 
   enterSpecial(): void {
+    this.releaseCling();
     this.set('special');
     this.vx = 0;
     this.vy = 0;
@@ -396,6 +525,7 @@ export class Player extends Fighter {
         p.armB = s * 0.5;
         p.bob = -Math.abs(Math.cos(this.walkPhase)) * 2.5;
         if (this.running) p.body = 0.12;
+        if (this.clingBy) p.body = 0.2;
         break;
       }
       case 'attack': {
@@ -429,7 +559,8 @@ export class Player extends Fighter {
         p.legF = -0.28;
         p.legB = 0.28;
         const a = this.weapon?.def.attack;
-        if (this.weapon?.id === 'notice' && a) {
+        const heavy = this.weapon?.id === 'notice' || this.weapon?.id === 'clipboard';
+        if (heavy && a) {
           if (this.stateT < a.active[0]) {
             p.armF = -2.85;
             p.body = -0.12;
@@ -500,13 +631,17 @@ export class Player extends Fighter {
         break;
     }
 
-    const w = this.weapon?.id;
-    const holding = this.state !== 'down' && this.state !== 'ko';
+    const w = this.weapon;
+    const id = w && !w.inFlight ? w.id : null;
+    const holding = this.state !== 'down' && this.state !== 'ko' && this.state !== 'report';
     const show: Record<PropId, boolean> = {
-      stamp: (this.state === 'attack' && this.combo < 2) || (this.state === 'jump' && this.jumpAttacking && !w),
-      board: (this.state === 'attack' && this.combo === 2) || this.state === 'report',
-      stapler: w === 'stapler' && holding && this.state !== 'report',
-      notice: w === 'notice' && holding && this.state !== 'report',
+      stamp: (this.state === 'attack' && this.combo < 2) || (this.state === 'jump' && this.jumpAttacking && !id),
+      board: (this.state === 'attack' && this.combo === 2) || this.state === 'report' || (id === 'clipboard' && holding),
+      stapler: id === 'stapler' && holding,
+      notice: id === 'notice' && holding,
+      card: id === 'idcard' && holding && this.state !== 'attack',
+      book: id === 'rulebook' && holding,
+      bomb: id === 'bomb' && holding,
     };
     for (const k of Object.keys(show) as PropId[]) this.props[k].setVisible(show[k]);
     this.rig.update(dt, p, sharp);

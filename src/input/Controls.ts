@@ -11,6 +11,7 @@ export type Action =
   | 'restart'
   | 'title'
   | 'help'
+  | 'board'
   | 'debug';
 
 const KEYMAP: Record<string, Action[]> = {
@@ -19,6 +20,7 @@ const KEYMAP: Record<string, Action[]> = {
   KeyL: ['pickup'],
   KeyH: ['help'],
   KeyT: ['title'],
+  KeyB: ['board'],
   Space: ['jump', 'confirm'],
   KeyI: ['special'],
   Escape: ['pause'],
@@ -64,6 +66,8 @@ export class Controls {
   }
 
   private onDown = (e: KeyboardEvent): void => {
+    // 닉네임 입력창에 글자를 칠 때는 게임 조작으로 받지 않는다
+    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
     if (e.code in KEYMAP || DIRS.has(e.code)) e.preventDefault();
     if (e.repeat) return;
     this.held.add(e.code);

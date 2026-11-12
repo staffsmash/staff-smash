@@ -1,6 +1,7 @@
 {
   "id": "staff-1",
   "title": "1스테이지 · 본관 사무실",
+  "background": "office",
   "zones": [
     {
       "left": 0,
@@ -35,5 +36,6 @@
   "weapons": [
     { "id": "stapler", "x": 660, "y": 470 },
     { "id": "notice", "x": 1560, "y": 400 }
-  ]
+  ],
+  "foods": []
 }

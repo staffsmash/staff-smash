@@ -1,0 +1,44 @@
+{
+  "id": "staff-3",
+  "title": "3스테이지 · 정문",
+  "background": "gate",
+  "zones": [
+    {
+      "left": 0,
+      "label": "캠퍼스 길",
+      "maxAlive": 3,
+      "waves": ["queue", "mail", "phone", "bubble", "mail"],
+      "supervisors": ["hoho"]
+    },
+    {
+      "left": 960,
+      "label": "학생회관 앞",
+      "maxAlive": 3,
+      "waves": ["presidentMail", "mail", "docbomb", "bubble", "phone"],
+      "supervisors": ["molla", "bogo"]
+    },
+    {
+      "left": 1920,
+      "label": "정문 광장",
+      "maxAlive": 3,
+      "waves": ["queue", "minwon", "mail", "docbomb", "phone"],
+      "supervisors": ["gumto"],
+      "approval": true
+    },
+    {
+      "left": 2880,
+      "label": "정문",
+      "maxAlive": 4,
+      "waves": ["chonghak"],
+      "adds": { "type": "mail", "every": 12, "max": 1 },
+      "supervisors": ["meeting", "hoho"]
+    }
+  ],
+  "weapons": [
+    { "id": "stapler", "x": 600, "y": 470 },
+    { "id": "notice", "x": 1400, "y": 400 },
+    { "id": "clipboard", "x": 2200, "y": 460 },
+    { "id": "idcard", "x": 3100, "y": 420 }
+  ],
+  "foods": [{ "id": "donkatsu", "x": 2700, "y": 440 }]
+}

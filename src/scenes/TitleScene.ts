@@ -4,6 +4,7 @@ import { Controls } from '../input/Controls';
 import { neutralPose } from '../entities/Rig';
 import type { Rig } from '../entities/Rig';
 import { createMailRig, createStaffRig } from '../entities/rigs';
+import { fadeTo, makeButton } from '../ui/button';
 
 export class TitleScene extends Phaser.Scene {
   private controls!: Controls;
@@ -18,6 +19,7 @@ export class TitleScene extends Phaser.Scene {
     this.started = false;
     this.controls = new Controls();
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.controls.destroy());
+    this.cameras.main.fadeIn(200, 0, 0, 0);
     const cx = GAME_W / 2;
     const touch = this.sys.game.device.input.touch;
 
@@ -25,7 +27,7 @@ export class TitleScene extends Phaser.Scene {
     this.add.rectangle(cx, 470, GAME_W, 140, 0x2a3346);
 
     this.add
-      .text(cx, 92, 'STAFF SMASH', {
+      .text(cx, 86, 'STAFF SMASH', {
         fontFamily: FONT,
         fontSize: '72px',
         fontStyle: 'bold',
@@ -34,55 +36,45 @@ export class TitleScene extends Phaser.Scene {
         strokeThickness: 10,
       })
       .setOrigin(0.5);
+    this.add.text(cx, 152, ': HUFS', { fontFamily: FONT, fontSize: '34px', fontStyle: 'bold', color: '#f5c542' }).setOrigin(0.5);
+    this.add.rectangle(cx + 150, 152, 70, 28, 0xd0202f).setAngle(-6);
     this.add
-      .text(cx, 158, ': HUFS', { fontFamily: FONT, fontSize: '34px', fontStyle: 'bold', color: '#f5c542' })
-      .setOrigin(0.5);
-    this.add.rectangle(cx + 150, 158, 70, 28, 0xd0202f).setAngle(-6);
-    this.add
-      .text(cx + 150, 158, '비공식', { fontFamily: FONT, fontSize: '16px', fontStyle: 'bold', color: '#ffffff' })
+      .text(cx + 150, 152, '비공식', { fontFamily: FONT, fontSize: '16px', fontStyle: 'bold', color: '#ffffff' })
       .setOrigin(0.5)
       .setAngle(-6);
     this.add
-      .text(cx, 206, '교직원 모드 · M1 시험판 (1스테이지 본관 사무실)', {
-        fontFamily: FONT,
-        fontSize: '17px',
-        color: '#c9d3e6',
-      })
+      .text(cx, 198, '교직원 모드 · 오후 4시 52분, 퇴근 8분 전', { fontFamily: FONT, fontSize: '17px', color: '#c9d3e6' })
       .setOrigin(0.5);
 
     const staff = createStaffRig(this);
-    staff.root.setPosition(220, 450).setScale(1.7);
+    staff.root.setPosition(170, 450).setScale(1.7);
     const mail = createMailRig(this);
-    mail.root.setPosition(740, 450).setScale(1.7);
+    mail.root.setPosition(790, 450).setScale(1.7);
     mail.root.scaleX = -1.7;
     this.rigs = [staff, mail];
 
     const help = touch
-      ? '왼쪽 화면 드래그: 이동 (끝까지 밀면 달리기)\nA: 처리(공격)   B: 점프   줍기: 무기 줍기·던지기   SP: 필살기'
-      : '이동: 방향키 / WASD   대시: 같은 방향 두 번\n처리(공격): J   점프: K   줍기·던지기: L   필살기: I   일시정지: Esc';
-    this.add
-      .text(cx, 298, help, { fontFamily: FONT, fontSize: '17px', color: '#ffffff', align: 'center', lineSpacing: 8 })
-      .setOrigin(0.5);
+      ? '왼쪽 화면 드래그: 이동   A: 처리   B: 점프   줍기: 무기 줍기·던지기   SP: 필살기'
+      : '이동 방향키·WASD   대시 같은 방향 두 번   처리 J   점프 K   줍기·던지기 L   필살기 I';
+    this.add.text(cx, 256, help, { fontFamily: FONT, fontSize: '14px', color: '#e6ebf3' }).setOrigin(0.5);
 
-    const prompt = this.add
-      .text(cx, 380, touch ? '화면을 탭해서 출근하기' : 'Enter를 눌러 출근하기', {
-        fontFamily: FONT,
-        fontSize: '24px',
-        fontStyle: 'bold',
-        color: '#f5c542',
-      })
-      .setOrigin(0.5);
-    this.tweens.add({ targets: prompt, alpha: 0.25, yoyo: true, repeat: -1, duration: 600 });
+    makeButton(this, cx, 330, 260, 54, touch ? '출근하기' : '출근하기 (Enter)', () => this.go('select'), 0x2f8f4e);
+    makeButton(this, cx, 396, 260, 46, touch ? '기록판' : '기록판 (B)', () => this.go('board'), 0x2f6fd1);
 
     this.add
-      .text(cx, GAME_H - 22, '비공식 게임입니다. 등장 인물과 부서는 가상이며 실제와 관계없습니다.', {
+      .text(cx, GAME_H - 34, '비공식 게임입니다. 프레지던트 캉을 제외한 인물과 부서는 모두 가상입니다.', {
         fontFamily: FONT,
         fontSize: '13px',
         color: '#8b95a8',
       })
       .setOrigin(0.5);
-
-    this.input.once('pointerup', () => this.start(touch));
+    this.add
+      .text(cx, GAME_H - 14, '게임이 끝나면 결과(스테이지·시각)가 익명으로 기록됩니다. 닉네임은 원할 때만 남깁니다.', {
+        fontFamily: FONT,
+        fontSize: '12px',
+        color: '#6b7488',
+      })
+      .setOrigin(0.5);
   }
 
   update(_t: number, deltaMs: number): void {
@@ -95,13 +87,14 @@ export class TitleScene extends Phaser.Scene {
       p.bob = s * 1.5;
       r.update(dt, p);
     }
-    if (this.controls.consume('confirm')) this.start(false);
+    if (this.controls.consume('confirm')) this.go('select');
+    else if (this.controls.consume('board')) this.go('board');
   }
 
-  private start(fromTouch: boolean): void {
+  private go(key: 'select' | 'board'): void {
     if (this.started) return;
     this.started = true;
-    if (fromTouch) {
+    if (key === 'select' && this.sys.game.device.input.touch) {
       try {
         if (!this.scale.isFullscreen) this.scale.startFullscreen();
         const o = screen.orientation as unknown as { lock?: (o: string) => Promise<void> };
@@ -110,7 +103,6 @@ export class TitleScene extends Phaser.Scene {
         // 전체 화면을 지원하지 않는 브라우저(iPhone 등)는 그대로 진행한다
       }
     }
-    this.cameras.main.fadeOut(200, 0, 0, 0);
-    this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => this.scene.start('stage'));
+    fadeTo(this, key);
   }
 }

@@ -1,24 +1,53 @@
 import data from '../data/weapons.json';
 import type { AttackDef } from './Fighter';
 
-export type WeaponId = 'stapler' | 'notice';
+// 교직원 무기 4종(스테이플러·안내문 롤·결재판·사원증)과 던지기 전용 물건 2종(규정집·마감 서류 뭉치)
+
+export type WeaponId = 'stapler' | 'notice' | 'clipboard' | 'idcard' | 'rulebook' | 'bomb';
+export const WEAPON_IDS: WeaponId[] = ['stapler', 'notice', 'clipboard', 'idcard', 'rulebook', 'bomb'];
+
+interface RawWeapon {
+  name: string;
+  durability: number;
+  total: number;
+  active: number[];
+  reach: number;
+  dmg: number;
+  kb: number;
+  knockdown: boolean;
+  throwDmg: number;
+  guard?: boolean;
+  boomerang?: boolean;
+  throwOnly?: boolean;
+}
 
 export interface WeaponDef {
   id: WeaponId;
   name: string;
-  /** 휘두를 수 있는 횟수 */
+  /** 휘두를 수 있는 횟수 (0 = 무한) */
   durability: number;
   throwDmg: number;
   attack: AttackDef;
+  /** 들고 있으면 정면에서 날아오는 것을 막는다 (결재판) */
+  guard: boolean;
+  /** 던지면 돌아온다 (사원증) */
+  boomerang: boolean;
+  /** 휘두르지 못하고 던지기만 한다 (규정집, 서류 뭉치) */
+  throwOnly: boolean;
 }
 
+const RAW = data as unknown as Record<WeaponId, RawWeapon>;
+
 function build(id: WeaponId): WeaponDef {
-  const d = data[id];
+  const d = RAW[id];
   return {
     id,
     name: d.name,
     durability: d.durability,
     throwDmg: d.throwDmg,
+    guard: !!d.guard,
+    boomerang: !!d.boomerang,
+    throwOnly: !!d.throwOnly,
     attack: {
       total: d.total,
       active: [d.active[0], d.active[1]],
@@ -34,11 +63,8 @@ function build(id: WeaponId): WeaponDef {
   };
 }
 
-export const WEAPONS: Record<WeaponId, WeaponDef> = {
-  stapler: build('stapler'),
-  notice: build('notice'),
-};
+export const WEAPONS = Object.fromEntries(WEAPON_IDS.map((id) => [id, build(id)])) as Record<WeaponId, WeaponDef>;
 
 export function isWeaponId(s: string): s is WeaponId {
-  return s === 'stapler' || s === 'notice';
+  return (WEAPON_IDS as string[]).includes(s);
 }

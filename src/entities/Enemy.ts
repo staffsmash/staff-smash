@@ -9,9 +9,34 @@ import * as fx from '../fx';
 // 모든 적의 공통 부분: 등장·피격·다운·기상·퇴장 상태와 판정, 이름표·말풍선.
 // 사물(메일·전화기 등)은 넘어지고, 학생은 넘어지지 않고 비틀거리다가 인사하고 돌아간다 (PRD 4절).
 
-export type EnemyKind = 'mail' | 'phone' | 'bubble' | 'wrongNumber' | 'lateDoc' | 'noticeBoss';
+export type EnemyKind =
+  | 'mail'
+  | 'phone'
+  | 'bubble'
+  | 'docbomb'
+  | 'queue'
+  | 'wrongNumber'
+  | 'lateDoc'
+  | 'tantrum'
+  | 'graduation'
+  | 'presidentMail'
+  | 'minwon'
+  | 'noticeBoss'
+  | 'deadlineBoss'
+  | 'chonghak';
 
-const NON_HITTABLE = new Set(['down', 'getup', 'dying', 'hidden', 'vanish', 'away', 'bow', 'leaving', 'drop']);
+/** 보스 체력바에 보여 줄 정보 */
+export interface BossLike {
+  readonly bossName: string;
+  readonly bossType: string;
+  readonly bossHp: number;
+  readonly bossMaxHp: number;
+  bossExtra(): string;
+  /** 처리가 끝나 화면에서 사라졌는지 */
+  readonly bossGone: boolean;
+}
+
+const NON_HITTABLE = new Set(['down', 'getup', 'dying', 'hidden', 'vanish', 'away', 'bow', 'leaving', 'drop', 'sitin']);
 const NO_CLAMP = new Set(['enter', 'leaving', 'away']);
 let nextUid = 1;
 

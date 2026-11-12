@@ -15,6 +15,8 @@ export interface HitInfo {
   force?: boolean;
   /** 특수 효과 표시 (예: 'notice' = 안내문 부착) */
   tag?: string;
+  /** 던진 물건에 맞았다 (가드를 푼다) */
+  thrown?: boolean;
 }
 
 export interface AttackDef {

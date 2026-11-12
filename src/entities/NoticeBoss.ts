@@ -1,7 +1,8 @@
 import Phaser from 'phaser';
 import stats from '../data/enemies.json';
+import { TYPE_LABEL } from '../data/names';
 import type { StageScene } from '../scenes/StageScene';
-import { Enemy } from './Enemy';
+import { Enemy, type BossLike } from './Enemy';
 import type { HitInfo } from './Fighter';
 import type { Player } from './Player';
 import { neutralPose, type Pose } from './Rig';
@@ -24,7 +25,7 @@ const QUESTIONS = [
   '단톡방엔 없던데요?',
 ];
 
-export class NoticeBoss extends Enemy {
+export class NoticeBoss extends Enemy implements BossLike {
   readonly kind = 'noticeBoss' as const;
   readonly student = true;
   readonly canRecheck = false;
@@ -32,7 +33,8 @@ export class NoticeBoss extends Enemy {
   readonly halfW = 28;
   readonly height = 136;
   readonly needNotices = S.notices;
-  readonly name: string;
+  readonly bossName: string;
+  readonly bossType = TYPE_LABEL.noticeBoss;
   notices = 0;
   thanksText = '아… 공지에 다 있었네요. 감사합니다!';
   private walkPhase = 0;
@@ -51,7 +53,7 @@ export class NoticeBoss extends Enemy {
       64,
       enterTargetX,
     );
-    this.name = name;
+    this.bossName = name;
     this.baseScale = 1.25;
     this.cooldown = 1.4;
 
@@ -72,6 +74,27 @@ export class NoticeBoss extends Enemy {
     }
     this.setLabel(name, '#ff9f9f');
     this.sync();
+  }
+
+  get bossHp(): number {
+    return this.hp;
+  }
+
+  get bossMaxHp(): number {
+    return this.maxHp;
+  }
+
+  get bossGone(): boolean {
+    return this.removed;
+  }
+
+  bossExtra(): string {
+    return `안내문 ${'■'.repeat(this.notices)}${'□'.repeat(Math.max(0, this.needNotices - this.notices))}`;
+  }
+
+  /** 안내문이 더 필요한지 (스테이지가 안내문 롤을 계속 공급한다) */
+  get wantsNotice(): boolean {
+    return !this.dead && this.notices < this.needNotices;
   }
 
   protected think(_dt: number, player: Player): void {
@@ -122,7 +145,7 @@ export class NoticeBoss extends Enemy {
           const k = Math.floor((this.stateT - 0.25) / 0.3);
           if (k >= this.shots && this.shots < 3) {
             this.shots++;
-            this.scene.fireQuestion(this);
+            this.scene.fireProjectile(this, 'question', 0);
           }
         }
         if (this.stateT >= 1.3) this.set('recover');

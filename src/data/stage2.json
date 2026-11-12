@@ -1,0 +1,43 @@
+{
+  "id": "staff-2",
+  "title": "2스테이지 · 도서관 → 교양관",
+  "background": "library",
+  "zones": [
+    {
+      "left": 0,
+      "label": "도서관 열람실",
+      "maxAlive": 3,
+      "waves": ["mail", "docbomb", "bubble", "mail", "phone"],
+      "supervisors": ["molla"]
+    },
+    {
+      "left": 960,
+      "label": "도서관 로비",
+      "maxAlive": 3,
+      "waves": ["queue", "mail", "tantrum", "docbomb", "mail"],
+      "supervisors": ["hoho"],
+      "approval": true
+    },
+    {
+      "left": 1920,
+      "label": "교양관 복도",
+      "maxAlive": 3,
+      "waves": ["bubble", "docbomb", "graduation", "mail", "phone", "mail"],
+      "supervisors": ["gumto", "bogo"]
+    },
+    {
+      "left": 2880,
+      "label": "강의실 앞",
+      "maxAlive": 3,
+      "waves": ["deadlineBoss"],
+      "adds": { "type": "mail", "every": 10, "max": 1 },
+      "supervisors": ["meeting"]
+    }
+  ],
+  "weapons": [
+    { "id": "clipboard", "x": 620, "y": 460 },
+    { "id": "idcard", "x": 1500, "y": 380 },
+    { "id": "stapler", "x": 2300, "y": 470 }
+  ],
+  "foods": [{ "id": "gimbap", "x": 1800, "y": 450 }]
+}

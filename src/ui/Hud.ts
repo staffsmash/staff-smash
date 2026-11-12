@@ -7,8 +7,8 @@ export interface BossInfo {
   type: string;
   hp: number;
   maxHp: number;
-  notices: number;
-  need: number;
+  /** 체력바 오른쪽 위에 보일 글 (안내문 ■■□, 마감까지 0:42 등) */
+  extra: string;
 }
 
 export interface HudInfo {
@@ -19,6 +19,8 @@ export interface HudInfo {
   debug: boolean;
   fps: number;
   clockMin: number;
+  /** 화면 위 가운데 노란 안내 (결재 대기 등) */
+  notice: string;
   boss: BossInfo | null;
 }
 
@@ -37,6 +39,7 @@ export class Hud {
   private readonly fpsT: Phaser.GameObjects.Text;
   private readonly bossT: Phaser.GameObjects.Text;
   private readonly noticeT: Phaser.GameObjects.Text;
+  private readonly alertT: Phaser.GameObjects.Text;
   private readonly touch: boolean;
   private readonly helpObjs: Phaser.GameObjects.Text[] = [];
   private helpBg: Phaser.GameObjects.Rectangle | null = null;
@@ -44,7 +47,7 @@ export class Hud {
   private helpVisible = true;
   private lastCombo = 0;
 
-  constructor(scene: Phaser.Scene, touch: boolean) {
+  constructor(scene: Phaser.Scene, touch: boolean, heroName = '주무관') {
     this.touch = touch;
     const fix = <T extends Phaser.GameObjects.Text>(t: T): T => {
       t.setScrollFactor(0).setDepth(2001);
@@ -52,7 +55,19 @@ export class Hud {
     };
     const small = { fontFamily: FONT, fontSize: '13px', color: '#ffffff' };
     this.g = scene.add.graphics().setScrollFactor(0).setDepth(2000);
-    fix(scene.add.text(22, 15, '주무관 · 교직원 모드', small));
+    fix(scene.add.text(22, 15, `${heroName} · 교직원 모드`, small));
+    this.alertT = fix(
+      scene.add
+        .text(GAME_W / 2, 98, '', {
+          ...small,
+          fontSize: '14px',
+          fontStyle: 'bold',
+          color: '#ffe066',
+          stroke: '#111318',
+          strokeThickness: 4,
+        })
+        .setOrigin(0.5, 0),
+    );
     this.livesT = fix(scene.add.text(244, 15, '', small).setOrigin(1, 0));
     this.spT = fix(scene.add.text(206, 47, '', { ...small, fontSize: '12px', color: '#f5c542' }));
     this.weaponT = fix(scene.add.text(22, 62, '', { ...small, fontSize: '12px', color: '#9fd3ff' }));
@@ -183,16 +198,22 @@ export class Hud {
     this.spT.setText(spReady ? (this.touch ? 'SP 준비!' : 'SP 준비! (I)') : 'SP');
 
     // 무기
-    if (p.weapon) {
-      this.weaponT.setText(`무기  ${p.weapon.def.name}`);
-      const r = Math.max(0, p.weapon.dur) / p.weapon.def.durability;
+    const w = p.weapon;
+    if (w && w.id === 'bomb') {
+      this.weaponT.setText(`던지세요!  ${w.def.name} ${Math.max(0, w.fuse).toFixed(1)}초`).setColor('#ff8a8a');
+    } else if (w && w.def.durability === 0) {
+      this.weaponT.setText(`무기  ${w.def.name}${w.inFlight ? ' (날아가는 중)' : ' (무한)'}`).setColor('#9fd3ff');
+    } else if (w) {
+      this.weaponT.setText(`무기  ${w.def.name}`).setColor('#9fd3ff');
+      const r = Math.max(0, w.dur) / w.def.durability;
       g.fillStyle(0x2b2b3a, 1);
       g.fillRect(150, 66, 94, 6);
       g.fillStyle(0x9fd3ff, 1);
       g.fillRect(150, 66, 94 * r, 6);
     } else {
-      this.weaponT.setText('무기  맨손 (도장·결재판)');
+      this.weaponT.setText(p.coffeeT > 0 ? '무기  맨손 · 아메리카노 효과 중' : '무기  맨손 (도장·결재판)').setColor('#9fd3ff');
     }
+    this.alertT.setText(info.notice).setVisible(info.notice !== '');
 
     this.livesT.setText(`목숨 ×${p.lives}`);
 
@@ -228,8 +249,7 @@ export class Hud {
       g.fillStyle(0xe5484d, 1);
       g.fillRect(BOSS_X, y, (BOSS_W * Math.max(0, b.hp)) / b.maxHp, 10);
       this.bossT.setText(`${b.name} · ${b.type}`);
-      const marks = '■'.repeat(b.notices) + '□'.repeat(Math.max(0, b.need - b.notices));
-      this.noticeT.setText(`안내문 ${marks}`);
+      this.noticeT.setText(b.extra);
     }
 
     this.fpsT.setVisible(info.debug).setText(`FPS ${info.fps.toFixed(0)} · 판정 표시 (\` 키로 끄기)`);
