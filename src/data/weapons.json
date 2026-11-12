@@ -1,0 +1,24 @@
+{
+  "stapler": {
+    "name": "스테이플러",
+    "durability": 15,
+    "total": 0.2,
+    "active": [0.05, 0.11],
+    "reach": 72,
+    "dmg": 1,
+    "kb": 60,
+    "knockdown": false,
+    "throwDmg": 2
+  },
+  "notice": {
+    "name": "안내문 롤",
+    "durability": 12,
+    "total": 0.4,
+    "active": [0.15, 0.24],
+    "reach": 112,
+    "dmg": 2,
+    "kb": 0,
+    "knockdown": true,
+    "throwDmg": 2
+  }
+}

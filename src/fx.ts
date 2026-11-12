@@ -52,6 +52,37 @@ export function floatText(scene: Phaser.Scene, x: number, y: number, text: strin
   scene.tweens.add({ targets: t, y: y - 34, alpha: 0, duration: 800, ease: 'Cubic.Out', onComplete: () => t.destroy() });
 }
 
+/** 머리 위 말풍선 (위치는 쓰는 쪽이 매 프레임 맞춘다) */
+export function speechText(scene: Phaser.Scene, text: string): Phaser.GameObjects.Text {
+  return scene.add
+    .text(0, 0, text, {
+      fontFamily: FONT,
+      fontSize: '14px',
+      fontStyle: 'bold',
+      color: '#111318',
+      backgroundColor: '#ffffff',
+      padding: { x: 7, y: 4 },
+    })
+    .setOrigin(0.5, 1)
+    .setDepth(1700);
+}
+
+/** 전화벨 울림 파동 */
+export function ringWave(scene: Phaser.Scene, x: number, y: number): void {
+  for (let i = 0; i < 2; i++) {
+    const e = scene.add.ellipse(x, y - 4, 44, 16).setStrokeStyle(3, 0xffd34d, 1).setDepth(y + 1);
+    scene.tweens.add({
+      targets: e,
+      scaleX: 3.6,
+      scaleY: 3.6,
+      alpha: 0,
+      delay: i * 90,
+      duration: 320,
+      onComplete: () => e.destroy(),
+    });
+  }
+}
+
 /** 착지·다운 먼지 */
 export function dust(scene: Phaser.Scene, x: number, y: number): void {
   for (const dir of [-1, 1]) {

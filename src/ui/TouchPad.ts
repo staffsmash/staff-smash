@@ -12,6 +12,7 @@ interface Btn {
   r: number;
   label: string;
   down: boolean;
+  text: Phaser.GameObjects.Text;
 }
 
 const R = 62;
@@ -23,30 +24,34 @@ export class TouchPad {
   private stickId = -1;
   private base = { ...HOME };
   private knob = { ...HOME };
-  private readonly btns: Btn[] = [
-    { action: 'attack', x: 866, y: 442, r: 56, label: 'A', down: false },
-    { action: 'jump', x: 748, y: 488, r: 42, label: 'B', down: false },
-    { action: 'special', x: 886, y: 316, r: 38, label: 'SP', down: false },
-    { action: 'pause', x: 926, y: 34, r: 22, label: 'II', down: false },
-  ];
+  private readonly btns: Btn[];
   private readonly owners = new Map<number, Btn>();
 
   constructor(scene: Phaser.Scene, c: Controls) {
     this.c = c;
     this.g = scene.add.graphics().setScrollFactor(0).setDepth(3000);
-    for (const b of this.btns) {
-      scene.add
-        .text(b.x, b.y, b.label, {
+    const defs: Omit<Btn, 'down' | 'text'>[] = [
+      { action: 'attack', x: 866, y: 442, r: 56, label: 'A' },
+      { action: 'jump', x: 748, y: 488, r: 42, label: 'B' },
+      { action: 'pickup', x: 762, y: 378, r: 34, label: '줍기' },
+      { action: 'special', x: 886, y: 316, r: 38, label: 'SP' },
+      { action: 'pause', x: 926, y: 34, r: 22, label: 'II' },
+    ];
+    this.btns = defs.map((d) => ({
+      ...d,
+      down: false,
+      text: scene.add
+        .text(d.x, d.y, d.label, {
           fontFamily: FONT,
-          fontSize: b.r > 40 ? '26px' : '17px',
+          fontSize: d.r > 40 ? '26px' : '15px',
           fontStyle: 'bold',
           color: '#ffffff',
         })
         .setOrigin(0.5)
         .setAlpha(0.85)
         .setScrollFactor(0)
-        .setDepth(3001);
-    }
+        .setDepth(3001),
+    }));
     scene.input.on('pointerdown', this.onDown, this);
     scene.input.on('pointermove', this.onMove, this);
     scene.input.on('pointerup', this.onUp, this);
@@ -61,7 +66,7 @@ export class TouchPad {
 
   private onDown(p: Phaser.Input.Pointer): void {
     for (const b of this.btns) {
-      if ((p.x - b.x) ** 2 + (p.y - b.y) ** 2 <= (b.r * 1.3) ** 2) {
+      if ((p.x - b.x) ** 2 + (p.y - b.y) ** 2 <= (b.r * 1.25) ** 2) {
         b.down = true;
         this.owners.set(p.id, b);
         this.c.pressTouch(b.action);
@@ -108,7 +113,7 @@ export class TouchPad {
     this.c.setTouchMove(qx, qy, run);
   }
 
-  draw(spReady: boolean): void {
+  draw(spReady: boolean, holding: boolean): void {
     const g = this.g;
     g.clear();
     g.lineStyle(3, 0xffffff, 0.35);
@@ -121,6 +126,10 @@ export class TouchPad {
       if (b.action === 'special') {
         color = spReady ? 0xf5c542 : 0x888888;
         alpha = spReady ? 0.7 : 0.18;
+      }
+      if (b.action === 'pickup') {
+        b.text.setText(holding ? '던지기' : '줍기');
+        if (holding) color = 0x9fd3ff;
       }
       g.fillStyle(color, alpha);
       g.fillCircle(b.x, b.y, b.r);

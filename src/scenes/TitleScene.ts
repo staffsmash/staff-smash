@@ -43,7 +43,7 @@ export class TitleScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setAngle(-6);
     this.add
-      .text(cx, 206, '교직원 모드 · M0 프로토타입 (이동·공격·피격 시험판)', {
+      .text(cx, 206, '교직원 모드 · M1 시험판 (1스테이지 본관 사무실)', {
         fontFamily: FONT,
         fontSize: '17px',
         color: '#c9d3e6',
@@ -58,8 +58,8 @@ export class TitleScene extends Phaser.Scene {
     this.rigs = [staff, mail];
 
     const help = touch
-      ? '왼쪽 화면 드래그: 이동 (끝까지 밀면 달리기)\nA: 처리(공격)   B: 점프   SP: 필살기'
-      : '이동: 방향키 / WASD   대시: 같은 방향 두 번\n처리(공격): J   점프: K   필살기: I   일시정지: Esc';
+      ? '왼쪽 화면 드래그: 이동 (끝까지 밀면 달리기)\nA: 처리(공격)   B: 점프   줍기: 무기 줍기·던지기   SP: 필살기'
+      : '이동: 방향키 / WASD   대시: 같은 방향 두 번\n처리(공격): J   점프: K   줍기·던지기: L   필살기: I   일시정지: Esc';
     this.add
       .text(cx, 298, help, { fontFamily: FONT, fontSize: '17px', color: '#ffffff', align: 'center', lineSpacing: 8 })
       .setOrigin(0.5);

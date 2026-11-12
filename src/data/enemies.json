@@ -1,0 +1,8 @@
+{
+  "mail": { "hp": 5, "speedX": 120, "speedY": 85 },
+  "phone": { "hp": 3, "ringEvery": 2.6 },
+  "bubble": { "hp": 2, "speedX": 140, "speedY": 100, "chargeV": 520 },
+  "wrongNumber": { "hp": 14, "speedX": 105, "speedY": 75, "teleportEvery": 3.4 },
+  "lateDoc": { "hp": 12, "speedX": 105, "speedY": 75, "comebackHp": 6 },
+  "noticeBoss": { "hp": 36, "speedX": 95, "speedY": 70, "notices": 3 }
+}

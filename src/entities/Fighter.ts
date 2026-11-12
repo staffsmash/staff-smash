@@ -13,6 +13,24 @@ export interface HitInfo {
   knockdown: boolean;
   /** 무적 시간을 무시한다 (필살기) */
   force?: boolean;
+  /** 특수 효과 표시 (예: 'notice' = 안내문 부착) */
+  tag?: string;
+}
+
+export interface AttackDef {
+  /** 공격 전체 시간 (초) */
+  total: number;
+  /** 판정이 살아 있는 구간 [시작, 끝] (초) */
+  active: [number, number];
+  /** 다음 타로 이어질 수 있는 시점 (초) */
+  chainAt: number;
+  reach: number;
+  /** 높이(z) 차이 허용 범위 */
+  zReach: number;
+  dmg: number;
+  kb: number;
+  knockdown: boolean;
+  tag?: string;
 }
 
 export abstract class Fighter {
@@ -28,6 +46,8 @@ export abstract class Fighter {
   stateT = 0;
   invuln = 0;
   removed = false;
+  /** 덩치 (보스는 1보다 크다) */
+  baseScale = 1;
   readonly rig: Rig;
   readonly shadow: Phaser.GameObjects.Ellipse;
   abstract readonly halfW: number;
@@ -70,11 +90,11 @@ export abstract class Fighter {
   sync(): void {
     const root = this.rig.root;
     root.setPosition(Math.round(this.x), Math.round(this.y - this.z));
-    root.scaleX = this.facing;
+    root.setScale(this.facing * this.baseScale, this.baseScale);
     root.setDepth(this.y);
     root.alpha = this.invuln > 0 && Math.floor(this.invuln * 18) % 2 === 0 ? 0.45 : 1;
     this.shadow.setPosition(this.x, this.y);
-    this.shadow.setScale(1 - Math.min(this.z, 160) / 320);
+    this.shadow.setScale((1 - Math.min(this.z, 160) / 320) * this.baseScale);
   }
 
   destroy(): void {

@@ -76,9 +76,14 @@ export class Rig {
     this.body = new Phaser.GameObjects.Container(scene, 0, 0);
     this.root.add(this.body);
 
-    this.armB = this.limb(-armX, shoulderY, s.armW, s.armH, shade(s.armColor, 0.82), shade(s.handColor, 0.85), handH);
-    this.legB = this.leg(-s.legGap / 2, hipY, shade(s.legColor, 0.8));
-    this.legF = this.leg(s.legGap / 2, hipY, s.legColor);
+    // 팔·다리가 없는 몸(말풍선, 전화기 등)은 빈 컨테이너로 자리만 둔다
+    const empty = (x: number, y: number) => new Phaser.GameObjects.Container(scene, x, y);
+    this.armB =
+      s.armW > 0
+        ? this.limb(-armX, shoulderY, s.armW, s.armH, shade(s.armColor, 0.82), shade(s.handColor, 0.85), handH)
+        : empty(-armX, shoulderY);
+    this.legB = s.legH > 0 ? this.leg(-s.legGap / 2, hipY, shade(s.legColor, 0.8)) : empty(0, 0);
+    this.legF = s.legH > 0 ? this.leg(s.legGap / 2, hipY, s.legColor) : empty(0, 0);
 
     this.torso = new Phaser.GameObjects.Container(scene, 0, hipY);
     this.torso.add(this.part(0, 0, s.torsoW, s.torsoH, s.torsoColor, 0.5, 1));
@@ -86,7 +91,8 @@ export class Rig {
     this.head = new Phaser.GameObjects.Container(scene, 0, neckY + 1);
     if (s.headW > 0) this.head.add(this.part(0, 0, s.headW, s.headH, s.headColor, 0.5, 1));
 
-    this.armF = this.limb(armX, shoulderY, s.armW, s.armH, s.armColor, s.handColor, handH);
+    this.armF =
+      s.armW > 0 ? this.limb(armX, shoulderY, s.armW, s.armH, s.armColor, s.handColor, handH) : empty(armX, shoulderY);
     this.itemF = new Phaser.GameObjects.Container(scene, 0, s.armH + handH - 2);
     this.armF.add(this.itemF);
 

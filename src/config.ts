@@ -1,4 +1,4 @@
-// 게임 전역 상수. 밸런스 값은 M1부터 JSON으로 분리한다.
+// 게임 전역 상수. 적·무기·웨이브 밸런스는 src/data/*.json에 있다.
 
 export const GAME_W = 960;
 export const GAME_H = 540;
@@ -14,6 +14,18 @@ export const DEPTH_RANGE = 22;
 export const GRAVITY = 1900;
 
 export const FONT = '"Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif';
+
+/** 퇴근 시각 17:00 (자정부터 센 분) */
+export const OFF_HOURS = 17 * 60;
+/** 교직원 모드는 16:52에 시작한다. 게임 속 시계는 실제 시간과 같은 속도로 흐른다. */
+export const START_CLOCK = 16 * 60 + 52;
+
+export function clockText(min: number): string {
+  const total = Math.floor(min);
+  const h = Math.floor(total / 60);
+  const m = total % 60;
+  return `${h}:${m.toString().padStart(2, '0')}`;
+}
 
 const params = new URLSearchParams(location.search);
 /** ?debug 를 붙이면 판정 상자를 그린다. 게임 중 ` 키 또는 F2로도 켠다. */

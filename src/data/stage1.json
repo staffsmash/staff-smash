@@ -1,0 +1,39 @@
+{
+  "id": "staff-1",
+  "title": "1스테이지 · 본관 사무실",
+  "zones": [
+    {
+      "left": 0,
+      "label": "민원 창구",
+      "maxAlive": 3,
+      "waves": ["mail", "mail", "phone", "mail"],
+      "supervisors": ["bogo"]
+    },
+    {
+      "left": 960,
+      "label": "본관 복도",
+      "maxAlive": 3,
+      "waves": ["bubble", "mail", "wrongNumber", "mail", "bubble"],
+      "supervisors": ["gumto"]
+    },
+    {
+      "left": 1920,
+      "label": "행정실",
+      "maxAlive": 3,
+      "waves": ["phone", "mail", "bubble", "lateDoc", "mail", "phone"],
+      "supervisors": ["bogo", "gumto"]
+    },
+    {
+      "left": 2880,
+      "label": "학생 상담실",
+      "maxAlive": 2,
+      "waves": ["noticeBoss"],
+      "adds": { "type": "mail", "every": 9, "max": 1 },
+      "supervisors": []
+    }
+  ],
+  "weapons": [
+    { "id": "stapler", "x": 660, "y": 470 },
+    { "id": "notice", "x": 1560, "y": 400 }
+  ]
+}

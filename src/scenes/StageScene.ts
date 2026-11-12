@@ -1,23 +1,59 @@
 import Phaser from 'phaser';
-import { DEBUG_DEFAULT, DEPTH_RANGE, FLOOR_BOTTOM, FLOOR_TOP, FONT, FORCE_TOUCH, GAME_H, GAME_W } from '../config';
+import {
+  DEBUG_DEFAULT,
+  DEPTH_RANGE,
+  FLOOR_BOTTOM,
+  FLOOR_TOP,
+  FONT,
+  FORCE_TOUCH,
+  GAME_H,
+  GAME_W,
+  START_CLOCK,
+} from '../config';
 import { Controls } from '../input/Controls';
 import { TouchPad } from '../ui/TouchPad';
-import { Hud } from '../ui/Hud';
-import { Player, type AttackDef } from '../entities/Player';
+import { Hud, type BossInfo } from '../ui/Hud';
+import { Player } from '../entities/Player';
+import type { AttackDef, Fighter } from '../entities/Fighter';
+import type { Enemy } from '../entities/Enemy';
 import { MailEnemy } from '../entities/MailEnemy';
-import type { Fighter } from '../entities/Fighter';
+import { PhoneEnemy } from '../entities/PhoneEnemy';
+import { BubbleEnemy } from '../entities/BubbleEnemy';
+import { StudentEnemy } from '../entities/StudentEnemy';
+import { NoticeBoss } from '../entities/NoticeBoss';
+import { Projectile } from '../entities/Projectile';
+import { WeaponItem } from '../entities/WeaponItem';
+import { ReportTrap } from '../entities/ReportTrap';
+import { Supervisor, type SupervisorKind } from '../entities/Supervisor';
+import { WEAPONS, isWeaponId } from '../entities/weapons';
+import { createQuestionBubble, createWeaponIcon } from '../entities/rigs';
+import { assignStudentNames, TYPE_LABEL, type StudentType } from '../data/names';
+import stageData from '../data/stage1.json';
+import type { StageStats } from '../grade';
 import { drawBackground } from './background';
 import * as fx from '../fx';
 
-// M0 스테이지: 구역 3개를 차례로 잠그고 웨이브를 정리한다.
+// 교직원 모드 1스테이지. 구역을 차례로 잠그고 웨이브(stage1.json)를 정리한다.
 
-const ZONES = [
-  { left: 0, count: 2, label: '구역 1 · 민원 창구' },
-  { left: 960, count: 3, label: '구역 2 · 본관 복도' },
-  { left: 1920, count: 4, label: '구역 3 · 본관 현관' },
-];
+interface ZoneDef {
+  left: number;
+  label: string;
+  maxAlive: number;
+  waves: string[];
+  supervisors: string[];
+  adds?: { type: string; every: number; max: number };
+}
+
+interface StageDef {
+  id: string;
+  title: string;
+  zones: ZoneDef[];
+  weapons: { id: string; x: number; y: number }[];
+}
+
+const STAGE = stageData as StageDef;
+const ZONES = STAGE.zones;
 const STAGE_W = ZONES[ZONES.length - 1].left + GAME_W;
-const MAX_ALIVE = 3;
 const MAX_ATTACKERS = 2;
 const TRIGGER_X = 330;
 
@@ -32,14 +68,22 @@ interface DebugBox {
 export class StageScene extends Phaser.Scene {
   controls!: Controls;
   player!: Player;
-  enemies: MailEnemy[] = [];
+  enemies: Enemy[] = [];
   private pad: TouchPad | null = null;
   private hud!: Hud;
-  private attackers = new Set<MailEnemy>();
+  private attackers = new Set<Enemy>();
+  private projectiles: Projectile[] = [];
+  private items: WeaponItem[] = [];
+  private traps: ReportTrap[] = [];
+  private sups: Supervisor[] = [];
+  private boss: NoticeBoss | null = null;
+  private names = {} as Record<StudentType, string>;
   private zoneIndex = 0;
   private zoneState: 'walk' | 'fight' | 'done' = 'walk';
-  private toSpawn = 0;
+  private queue: string[] = [];
   private spawnT = 0;
+  private addsT = 0;
+  private noticeT = 3;
   private camMin = 0;
   private hitstop = 0;
   private specialT = -1;
@@ -47,6 +91,7 @@ export class StageScene extends Phaser.Scene {
   private specialObjs: Phaser.GameObjects.GameObject[] = [];
   private paused = false;
   private over = false;
+  private finishing = false;
   private debug = false;
   private debugG!: Phaser.GameObjects.Graphics;
   private debugBoxes: DebugBox[] = [];
@@ -54,6 +99,7 @@ export class StageScene extends Phaser.Scene {
   private comboT = 0;
   private maxCombo = 0;
   private elapsed = 0;
+  private damageTaken = 0;
   private goText!: Phaser.GameObjects.Text;
   private pauseObjs: Phaser.GameObjects.GameObject[] = [];
 
@@ -64,11 +110,18 @@ export class StageScene extends Phaser.Scene {
   init(): void {
     this.enemies = [];
     this.attackers = new Set();
+    this.projectiles = [];
+    this.items = [];
+    this.traps = [];
+    this.sups = [];
+    this.boss = null;
     this.pad = null;
     this.zoneIndex = 0;
     this.zoneState = 'walk';
-    this.toSpawn = 0;
+    this.queue = [];
     this.spawnT = 0;
+    this.addsT = 0;
+    this.noticeT = 3;
     this.camMin = 0;
     this.hitstop = 0;
     this.specialT = -1;
@@ -76,16 +129,19 @@ export class StageScene extends Phaser.Scene {
     this.specialObjs = [];
     this.paused = false;
     this.over = false;
+    this.finishing = false;
     this.debug = DEBUG_DEFAULT;
     this.debugBoxes = [];
     this.combo = 0;
     this.comboT = 0;
     this.maxCombo = 0;
     this.elapsed = 0;
+    this.damageTaken = 0;
     this.pauseObjs = [];
   }
 
   create(): void {
+    this.names = assignStudentNames();
     this.cameras.main.setBounds(0, 0, STAGE_W, GAME_H);
     this.cameras.main.fadeIn(250, 0, 0, 0);
     drawBackground(this, STAGE_W);
@@ -94,8 +150,11 @@ export class StageScene extends Phaser.Scene {
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.controls.destroy());
     if (FORCE_TOUCH || this.sys.game.device.input.touch) this.pad = new TouchPad(this, this.controls);
 
+    for (const w of STAGE.weapons) {
+      if (isWeaponId(w.id)) this.items.push(new WeaponItem(this, w.id, w.x, w.y));
+    }
     this.player = new Player(this, 250, 430);
-    this.hud = new Hud(this);
+    this.hud = new Hud(this, this.pad !== null);
     this.debugG = this.add.graphics().setDepth(1900);
 
     this.goText = this.add
@@ -130,35 +189,59 @@ export class StageScene extends Phaser.Scene {
       if (this.over) this.scene.restart();
     });
 
-    fx.banner(this, '오후 5시 52분. 퇴근 8분 전', '오른쪽 민원 창구로 이동하세요', 2200);
+    fx.banner(this, '오후 4시 52분 · 퇴근 8분 전', `${STAGE.title} — 오른쪽으로 이동하세요`, 2400);
   }
 
   update(_t: number, deltaMs: number): void {
     const dt = Math.min(deltaMs, 50) / 1000;
     const c = this.controls;
     if (c.consume('debug')) this.debug = !this.debug;
+    if (c.consume('help')) this.hud.toggleHelp();
 
     if (this.over) {
       if (c.consume('restart')) {
         this.scene.restart();
         return;
       }
-    } else {
+      if (c.consume('title')) {
+        this.scene.start('title');
+        return;
+      }
+    } else if (!this.finishing) {
       if (c.consume('pause')) this.setPaused(!this.paused);
       if (!this.paused) this.step(dt);
     }
 
     this.updateCamera(dt);
     this.hud.update(this.player, {
+      stageTitle: STAGE.title,
       zone: this.zoneIndex,
       zones: ZONES.length,
       combo: this.combo,
       debug: this.debug,
       fps: this.game.loop.actualFps,
-      touch: this.pad !== null,
+      clockMin: this.clockMin,
+      boss: this.bossInfo(),
     });
-    this.pad?.draw(this.player.sp >= 100);
+    this.pad?.draw(this.player.sp >= 100, this.player.weapon !== null);
     this.drawDebug(dt);
+  }
+
+  private get clockMin(): number {
+    return START_CLOCK + this.elapsed / 60;
+  }
+
+  private bossInfo(): BossInfo | null {
+    const b = this.boss;
+    if (!b || b.removed) return null;
+    return {
+      name: b.name,
+      type: TYPE_LABEL.noticeBoss,
+      hp: b.hp,
+      maxHp: b.maxHp,
+      notices: b.notices,
+      need: b.needNotices,
+    };
   }
 
   private step(dt: number): void {
@@ -174,6 +257,13 @@ export class StageScene extends Phaser.Scene {
     this.player.update(dt, this.controls);
     for (const e of this.enemies) e.update(dt, this.player);
     this.enemies = this.enemies.filter((e) => !e.removed);
+    this.updateProjectiles(dt);
+    for (const it of this.items) it.update(dt);
+    this.items = this.items.filter((i) => !i.removed);
+    for (const t of this.traps) t.update(dt, this.player);
+    this.traps = this.traps.filter((t) => !t.removed);
+    for (const s of this.sups) s.update(dt, this.player);
+    this.sups = this.sups.filter((s) => !s.removed);
     this.updateZones(dt);
     if (this.comboT > 0) {
       this.comboT -= dt;
@@ -195,40 +285,112 @@ export class StageScene extends Phaser.Scene {
     if (this.zoneState === 'walk') {
       this.goText.setVisible(this.zoneIndex > 0 && this.cameras.main.scrollX < z.left - 20);
       if (this.player.x >= z.left + TRIGGER_X) this.startFight();
-    } else if (this.zoneState === 'fight') {
-      this.spawnT -= dt;
-      const alive = this.enemies.filter((e) => !e.dead).length;
-      if (this.toSpawn > 0 && this.spawnT <= 0 && alive < MAX_ALIVE) {
-        this.spawnEnemy();
-        this.toSpawn--;
-        this.spawnT = 0.8;
+      return;
+    }
+    if (this.zoneState !== 'fight') return;
+
+    this.spawnT -= dt;
+    const alive = this.enemies.filter((e) => !e.dead).length;
+    if (this.queue.length > 0 && this.spawnT <= 0 && alive < z.maxAlive) {
+      this.spawnType(this.queue.shift() as string);
+      this.spawnT = 0.8;
+    }
+    // 보스전 지원 잡몹
+    if (z.adds && this.boss && !this.boss.dead) {
+      this.addsT -= dt;
+      const adds = this.enemies.filter((e) => e.kind === z.adds?.type && !e.dead).length;
+      if (this.addsT <= 0 && adds < z.adds.max) {
+        this.spawnType(z.adds.type);
+        this.addsT = z.adds.every;
       }
-      if (this.toSpawn === 0 && this.enemies.length === 0) this.clearZone();
+    }
+    if (this.boss && !this.boss.dead) this.supplyNotices(dt);
+    if (this.queue.length === 0 && this.enemies.length === 0) this.clearZone();
+  }
+
+  /** 보스전: 안내문 롤이 어디에도 없으면 잠시 뒤 새로 놓는다 */
+  private supplyNotices(dt: number): void {
+    const b = this.boss;
+    if (!b || b.notices >= b.needNotices) return;
+    // 지나온 구역에 두고 온 안내문은 다시 갈 수 없으므로 세지 않는다
+    const left = ZONES[this.zoneIndex].left;
+    const exists =
+      this.items.some((i) => i.id === 'notice' && i.x >= left) ||
+      this.player.weapon?.id === 'notice' ||
+      this.projectiles.some((p) => p.tag === 'notice');
+    if (exists) {
+      this.noticeT = 3;
+      return;
+    }
+    this.noticeT -= dt;
+    if (this.noticeT <= 0) {
+      this.noticeT = 3;
+      const x = left + Phaser.Math.Between(180, 780);
+      const y = Phaser.Math.Between(FLOOR_TOP + 20, FLOOR_BOTTOM - 20);
+      this.items.push(new WeaponItem(this, 'notice', x, y));
+      fx.floatText(this, x, y - 60, '안내문 도착!', '#9fd3ff', 18);
     }
   }
 
   private startFight(): void {
     const z = ZONES[this.zoneIndex];
     this.zoneState = 'fight';
-    this.toSpawn = z.count;
+    this.queue = [...z.waves];
     this.spawnT = 0.4;
+    this.addsT = z.adds?.every ?? 0;
     this.goText.setVisible(false);
-    fx.banner(this, z.label, '민원 접수 중', 1200);
+    if (!z.waves.includes('noticeBoss')) fx.banner(this, z.label, '민원 접수 중', 1200);
+    for (const k of z.supervisors) {
+      this.sups.push(new Supervisor(this, k as SupervisorKind, k === 'bogo' ? 3.5 : 1.0));
+    }
   }
 
-  private spawnEnemy(): void {
+  private spawnType(type: string): void {
     const left = ZONES[this.zoneIndex].left;
+    const p = this.player;
+    if (type === 'phone') {
+      const x = Phaser.Math.Clamp(p.x + Phaser.Math.Between(-170, 170), left + 70, left + GAME_W - 70);
+      const y = Phaser.Math.Clamp(p.y + Phaser.Math.Between(-50, 50), FLOOR_TOP + 8, FLOOR_BOTTOM - 8);
+      this.enemies.push(new PhoneEnemy(this, x, y));
+      return;
+    }
     let side = Math.random() < 0.5 ? -1 : 1;
-    if (this.zoneIndex === 0 && this.enemies.length === 0) side = 1;
+    if (type === 'noticeBoss' || (this.zoneIndex === 0 && this.enemies.length === 0)) side = 1;
     const x = side < 0 ? left - 50 : left + GAME_W + 50;
-    const targetX = side < 0 ? left + 90 : left + GAME_W - 90;
+    const tx = side < 0 ? left + 100 : left + GAME_W - 100;
     const y = Phaser.Math.Between(FLOOR_TOP + 10, FLOOR_BOTTOM - 10);
-    this.enemies.push(new MailEnemy(this, x, y, targetX));
+    switch (type) {
+      case 'mail':
+        this.enemies.push(new MailEnemy(this, x, y, tx));
+        break;
+      case 'bubble':
+        this.enemies.push(new BubbleEnemy(this, x, y, tx));
+        break;
+      case 'wrongNumber':
+      case 'lateDoc': {
+        const name = this.names[type];
+        this.enemies.push(new StudentEnemy(this, type, x, y, tx, name));
+        fx.banner(this, `${name} 학생 방문`, TYPE_LABEL[type], 1500);
+        break;
+      }
+      case 'noticeBoss': {
+        const name = this.names.noticeBoss;
+        const by = Phaser.Math.Clamp(p.y, FLOOR_TOP + 20, FLOOR_BOTTOM - 20);
+        this.boss = new NoticeBoss(this, x, by, tx - 80, name);
+        this.enemies.push(this.boss);
+        this.noticeT = 1.5; // 첫 안내문 롤은 곧바로 놓는다
+        fx.banner(this, `보스 · ${name}`, `${TYPE_LABEL.noticeBoss} — 안내문을 3번 붙이세요`, 2800);
+        break;
+      }
+    }
   }
 
   private clearZone(): void {
+    for (const s of this.sups) s.leave();
+    for (const t of this.traps) t.destroy();
+    this.traps = [];
     if (this.zoneIndex >= ZONES.length - 1) {
-      this.finish();
+      this.finishStage();
       return;
     }
     this.zoneIndex++;
@@ -236,49 +398,60 @@ export class StageScene extends Phaser.Scene {
     fx.floatText(this, this.player.x, this.player.y - 130, '구역 정리 완료!', '#7CFC9A', 22);
   }
 
-  private finish(): void {
+  private finishStage(): void {
     this.zoneState = 'done';
-    const m = Math.floor(this.elapsed / 60);
-    const s = Math.floor(this.elapsed % 60);
-    this.showOverlay(
-      'M0 클리어 · 정시 퇴근!',
-      `걸린 시간 ${m}분 ${s.toString().padStart(2, '0')}초 · 최대 연속 처리 ${this.maxCombo} · 남은 목숨 ${this.player.lives}`,
-      '#7CFC9A',
-    );
+    this.finishing = true;
+    const stats: StageStats = {
+      stageTitle: STAGE.title,
+      elapsed: this.elapsed,
+      damage: this.damageTaken,
+      maxCombo: this.maxCombo,
+      lives: this.player.lives,
+      clockMin: this.clockMin,
+    };
+    this.time.delayedCall(1400, () => {
+      this.cameras.main.fadeOut(300, 0, 0, 0);
+      this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => this.scene.start('result', stats));
+    });
   }
 
   private gameOver(): void {
-    this.showOverlay('야근 확정…', '민원에 밀려 퇴근하지 못했습니다', '#ff6b6b');
-  }
-
-  private showOverlay(title: string, sub: string, color: string): void {
     this.over = true;
     this.goText.setVisible(false);
     const objs = [
       this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0x000000, 0.6),
       this.add
-        .text(GAME_W / 2, GAME_H / 2 - 50, title, {
+        .text(GAME_W / 2, GAME_H / 2 - 50, '야근 확정…', {
           fontFamily: FONT,
           fontSize: '52px',
           fontStyle: 'bold',
-          color,
+          color: '#ff6b6b',
           stroke: '#111318',
           strokeThickness: 8,
         })
         .setOrigin(0.5),
       this.add
-        .text(GAME_W / 2, GAME_H / 2 + 14, sub, { fontFamily: FONT, fontSize: '18px', color: '#ffffff' })
+        .text(GAME_W / 2, GAME_H / 2 + 14, '민원에 밀려 퇴근하지 못했습니다', {
+          fontFamily: FONT,
+          fontSize: '18px',
+          color: '#ffffff',
+        })
         .setOrigin(0.5),
       this.add
-        .text(GAME_W / 2, GAME_H / 2 + 70, this.pad ? '화면을 탭해서 다시 하기' : 'Enter 또는 R로 다시 하기', {
-          fontFamily: FONT,
-          fontSize: '20px',
-          fontStyle: 'bold',
-          color: '#f5c542',
-        })
+        .text(
+          GAME_W / 2,
+          GAME_H / 2 + 70,
+          this.pad ? '화면을 탭해서 다시 하기' : 'Enter·R 다시 하기   ·   T 타이틀로',
+          { fontFamily: FONT, fontSize: '20px', fontStyle: 'bold', color: '#f5c542' },
+        )
         .setOrigin(0.5),
     ];
     for (const o of objs) o.setScrollFactor(0).setDepth(2600);
+  }
+
+  /** 화면 위쪽 안내 */
+  hint(title: string, sub?: string): void {
+    fx.banner(this, title, sub, 2600);
   }
 
   // ---------- 카메라 ----------
@@ -305,22 +478,122 @@ export class StageScene extends Phaser.Scene {
       const dx = (e.x - p.x) * p.facing;
       if (dx < -8 || dx > def.reach + e.halfW * 0.5) continue;
       if (Math.abs(p.z - e.z) > def.zReach) continue;
-      if (e.takeHit({ dmg: def.dmg, dir: p.facing, kb: def.kb, knockdown: def.knockdown })) {
+      if (e.takeHit({ dmg: def.dmg, dir: p.facing, kb: def.kb, knockdown: def.knockdown, tag: def.tag })) {
         hitSet.add(e);
         hits++;
-        fx.stampMark(this, e.x - p.facing * 4, e.y - e.z - 36);
+        fx.stampMark(this, e.x - p.facing * 4, e.y - e.z - Math.min(e.height, 70) * 0.6);
       }
     }
     if (this.debug) this.debugBoxes.push({ x: p.x, y: p.y, facing: p.facing, reach: def.reach, ttl: 0.12 });
-    if (hits > 0) {
-      this.hitstop = def.knockdown ? 0.09 : 0.05;
-      p.sp = Math.min(100, p.sp + 7 * hits);
-      this.combo += hits;
-      this.comboT = 1.2;
-      this.maxCombo = Math.max(this.maxCombo, this.combo);
-      if (def.knockdown) this.cameras.main.shake(90, 0.005);
-    }
+    if (hits > 0) this.addCombo(hits, def.knockdown);
     return hits;
+  }
+
+  private addCombo(hits: number, heavy: boolean): void {
+    this.hitstop = heavy ? 0.09 : 0.05;
+    this.player.sp = Math.min(100, this.player.sp + 7 * hits);
+    this.combo += hits;
+    this.comboT = 1.2;
+    this.maxCombo = Math.max(this.maxCombo, this.combo);
+    if (heavy) this.cameras.main.shake(90, 0.005);
+  }
+
+  private updateProjectiles(dt: number): void {
+    const left = this.cameras.main.scrollX;
+    const p = this.player;
+    for (const pr of this.projectiles) {
+      pr.update(dt);
+      if (pr.removed) continue;
+      if (pr.x < left - 80 || pr.x > left + GAME_W + 80) {
+        pr.destroy();
+        continue;
+      }
+      if (pr.owner === 'enemy') {
+        const near = Math.abs(pr.y - p.y) <= DEPTH_RANGE && Math.abs(pr.x - p.x) <= pr.halfW + p.halfW;
+        if (near && pr.z >= p.z - 10 && pr.z <= p.z + 80) {
+          if (p.takeHit({ dmg: pr.dmg, dir: Math.sign(pr.vx) || 1, kb: 120, knockdown: pr.knockdown })) {
+            fx.hitSpark(this, p.x, p.y - p.z - 60);
+            pr.destroy();
+          }
+        }
+        continue;
+      }
+      for (const e of this.enemies) {
+        if (!e.hittable) continue;
+        if (Math.abs(pr.y - e.y) > DEPTH_RANGE || Math.abs(pr.x - e.x) > pr.halfW + e.halfW) continue;
+        if (pr.z < e.z - 10 || pr.z > e.z + e.height + 10) continue;
+        const hit = e.takeHit({
+          dmg: pr.dmg,
+          dir: Math.sign(pr.vx) || 1,
+          kb: 0,
+          knockdown: pr.knockdown,
+          tag: pr.tag,
+        });
+        if (hit) {
+          fx.stampMark(this, e.x, e.y - e.z - Math.min(e.height, 70) * 0.6, pr.tag === 'notice' ? '부착' : '처리');
+          this.addCombo(1, true);
+          pr.destroy();
+          break;
+        }
+      }
+    }
+    this.projectiles = this.projectiles.filter((x) => !x.removed);
+  }
+
+  /** 무기 줍기: 발밑 근처의 무기를 집는다 */
+  tryPickup(p: Player): boolean {
+    const it = this.items.find((i) => Math.abs(i.x - p.x) < 44 && Math.abs(i.y - p.y) < 24);
+    if (!it) return false;
+    p.equip(it.id);
+    it.destroy();
+    fx.floatText(this, p.x, p.y - 124, `${WEAPONS[it.id].name} 장착!`, '#9fd3ff', 18);
+    return true;
+  }
+
+  throwWeapon(p: Player): void {
+    const w = p.takeWeaponForThrow();
+    if (!w) return;
+    this.projectiles.push(
+      new Projectile(this, {
+        x: p.x + p.facing * 26,
+        y: p.y,
+        z: 52,
+        vx: p.facing * 640,
+        owner: 'player',
+        dmg: w.def.throwDmg,
+        knockdown: true,
+        tag: w.id === 'notice' ? 'notice' : undefined,
+        halfW: 24,
+        ttl: 1.3,
+        obj: createWeaponIcon(this, w.id),
+        spin: 16 * p.facing,
+      }),
+    );
+  }
+
+  /** 공지를 안 읽는 학생의 "?" 질문 */
+  fireQuestion(b: NoticeBoss): void {
+    this.projectiles.push(
+      new Projectile(this, {
+        x: b.x + b.facing * 34,
+        y: b.y,
+        z: 44,
+        vx: b.facing * 330,
+        owner: 'enemy',
+        dmg: 1,
+        knockdown: false,
+        halfW: 16,
+        ttl: 3.2,
+        obj: createQuestionBubble(this),
+      }),
+    );
+  }
+
+  addReportTrap(fromX: number, laneY: number, toX: number, toY: number): void {
+    const left = this.cameras.main.scrollX;
+    const tx = Phaser.Math.Clamp(toX, left + 60, left + GAME_W - 60);
+    const ty = Phaser.Math.Clamp(toY, FLOOR_TOP + 10, FLOOR_BOTTOM - 10);
+    this.traps.push(new ReportTrap(this, fromX, laneY, tx, ty));
   }
 
   canTakeToken(): boolean {
@@ -328,7 +601,7 @@ export class StageScene extends Phaser.Scene {
   }
 
   /** 동시에 공격하는 적을 MAX_ATTACKERS명으로 제한한다 */
-  takeToken(e: MailEnemy): boolean {
+  takeToken(e: Enemy): boolean {
     if (this.attackers.has(e)) return true;
     if (this.attackers.size >= MAX_ATTACKERS) return false;
     this.attackers.add(e);
@@ -336,12 +609,25 @@ export class StageScene extends Phaser.Scene {
     return true;
   }
 
-  releaseToken(e: MailEnemy): void {
+  releaseToken(e: Enemy): void {
     this.attackers.delete(e);
     e.hasToken = false;
   }
 
-  onPlayerHit(): void {
+  onEnemyDefeated(e: Enemy): void {
+    if (e.kind === 'noticeBoss') {
+      fx.banner(this, '민원 처리 완료!', `${this.names.noticeBoss} 학생이 드디어 공지를 읽었습니다`, 2200);
+      for (const o of this.enemies) {
+        if (o !== e && !o.dead) o.takeHit({ dmg: 99, dir: o.x >= this.player.x ? 1 : -1, kb: 0, knockdown: true, force: true });
+      }
+      for (const s of this.sups) s.leave();
+      return;
+    }
+    for (const s of this.sups) if (s.tryRecheck(e)) break;
+  }
+
+  onPlayerHit(dmg: number): void {
+    this.damageTaken += dmg;
     this.combo = 0;
     this.comboT = 0;
     this.hitstop = 0.06;
@@ -401,9 +687,10 @@ export class StageScene extends Phaser.Scene {
       const left = this.cameras.main.scrollX;
       for (const e of this.enemies) {
         if (e.dead || e.x < left - 10 || e.x > left + GAME_W + 10) continue;
+        if (e.state === 'drop' || e.state === 'hidden' || e.state === 'away') continue;
         const dir = e.x >= this.player.x ? 1 : -1;
         if (e.takeHit({ dmg: 3, dir, kb: 0, knockdown: true, force: true })) {
-          fx.stampMark(this, e.x, e.y - e.z - 36, '공지');
+          fx.stampMark(this, e.x, e.y - e.z - Math.min(e.height, 70) * 0.6, '공지');
         }
       }
     }

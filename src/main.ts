@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { DEBUG_DEFAULT, FORCE_TIMER, GAME_W, GAME_H } from './config';
 import { TitleScene } from './scenes/TitleScene';
 import { StageScene } from './scenes/StageScene';
+import { ResultScene } from './scenes/ResultScene';
 
 const game = new Phaser.Game({
   type: Phaser.AUTO,
@@ -15,7 +16,7 @@ const game = new Phaser.Game({
   },
   input: { activePointers: 4 },
   fps: { target: 60, forceSetTimeOut: FORCE_TIMER },
-  scene: [TitleScene, StageScene],
+  scene: [TitleScene, StageScene, ResultScene],
 });
 
 // 디버그 모드에서는 콘솔에서 상태를 볼 수 있게 한다

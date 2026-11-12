@@ -1,11 +1,24 @@
 // 키보드와 터치 입력을 한곳에 모은다.
 // 키보드는 e.code(물리 키)로 읽어 한글 입력 상태와 상관없이 동작하게 한다.
 
-export type Action = 'attack' | 'jump' | 'special' | 'pause' | 'confirm' | 'restart' | 'debug';
+export type Action =
+  | 'attack'
+  | 'jump'
+  | 'special'
+  | 'pickup'
+  | 'pause'
+  | 'confirm'
+  | 'restart'
+  | 'title'
+  | 'help'
+  | 'debug';
 
 const KEYMAP: Record<string, Action[]> = {
   KeyJ: ['attack', 'confirm'],
   KeyK: ['jump'],
+  KeyL: ['pickup'],
+  KeyH: ['help'],
+  KeyT: ['title'],
   Space: ['jump', 'confirm'],
   KeyI: ['special'],
   Escape: ['pause'],

@@ -1,7 +1,8 @@
 import Phaser from 'phaser';
 import { FONT } from '../config';
 
-// M0용 회색 상자 배경: 본관 사무실 → 복도 → 현관. 실제 건물을 본뜨지 않는다.
+// 1스테이지 배경: 민원 창구 → 본관 복도 → 행정실 → 학생 상담실.
+// 서울캠퍼스 분위기만 빌리고 실제 건물을 본뜨지 않는다. 구역 하나 = 화면 한 장(960px).
 
 export function drawBackground(scene: Phaser.Scene, width: number): void {
   const g = scene.add.graphics().setDepth(-100);
@@ -10,6 +11,7 @@ export function drawBackground(scene: Phaser.Scene, width: number): void {
       .text(x, y, text, { fontFamily: FONT, fontSize: `${size}px`, fontStyle: 'bold', color })
       .setOrigin(0.5)
       .setDepth(-99);
+  const rnd = new Phaser.Math.RandomDataGenerator(['staff-smash']);
 
   // 벽과 바닥
   g.fillStyle(0xe8e0cf).fillRect(0, 0, width, 300);
@@ -29,18 +31,18 @@ export function drawBackground(scene: Phaser.Scene, width: number): void {
     g.lineStyle(3, 0x7b8794, 1).strokeRect(x, 92, 200, 104);
     label(x + 100, 228, `창구 ${i + 1}`, 15, '#f6efe0');
   }
-  label(480, 56, '민원 창구', 26);
+  label(480, 74, '민원 창구', 26);
   g.fillStyle(0x111318).fillRect(780, 30, 120, 44);
   label(840, 52, '대기 087', 18, '#ff4d4d');
   g.fillStyle(0xffffff).fillCircle(680, 50, 24);
   g.lineStyle(3, 0x333333, 1).strokeCircle(680, 50, 24);
-  g.lineStyle(3, 0x333333, 1).lineBetween(680, 50, 680, 32).lineBetween(680, 50, 693, 56);
-  label(680, 84, '17:52', 13);
+  // 4시 52분: 분침은 52분 자리, 시침은 5시 가까이
+  g.lineStyle(3, 0x333333, 1).lineBetween(680, 50, 667, 38).lineBetween(680, 50, 686, 61);
+  label(680, 84, '16:52', 13);
 
   // 구역 2: 본관 복도
   g.fillStyle(0xc79a62).fillRect(1060, 70, 280, 150);
   g.lineStyle(4, 0x7a5b3e, 1).strokeRect(1060, 70, 280, 150);
-  const rnd = new Phaser.Math.RandomDataGenerator(['staff-smash']);
   for (let i = 0; i < 9; i++) {
     g.fillStyle(0xffffff, 0.95).fillRect(1074 + (i % 3) * 88 + rnd.between(-6, 6), 84 + Math.floor(i / 3) * 44, 62, 36);
   }
@@ -53,12 +55,36 @@ export function drawBackground(scene: Phaser.Scene, width: number): void {
   g.fillStyle(0xcfe6f3, 0.85).fillRect(1700, 70, 170, 120);
   g.lineStyle(3, 0x7b8794, 1).strokeRect(1700, 70, 170, 120);
 
-  // 구역 3: 본관 현관
-  g.fillStyle(0x3d7a4f).fillRect(2052, 230, 36, 62);
-  g.fillStyle(0x4f9a63).fillCircle(2070, 214, 34);
-  g.fillStyle(0x5c6b78).fillRect(2480, 56, 340, 240);
-  g.fillStyle(0xcfe8f5).fillRect(2492, 96, 154, 196);
-  g.fillStyle(0xcfe8f5).fillRect(2654, 96, 154, 196);
-  g.fillStyle(0x2f8f4e).fillRect(2540, 62, 220, 30);
-  label(2650, 77, '출구 · 정시 퇴근', 16, '#ffffff');
+  // 구역 3: 행정실 (책상, 모니터, 서류함)
+  label(2400, 74, '행정실', 26);
+  for (let i = 0; i < 3; i++) {
+    const x = 2010 + i * 260;
+    g.fillStyle(0x2b2f38).fillRect(x + 64, 178, 72, 50);
+    g.fillStyle(0x7fb3d5).fillRect(x + 69, 183, 62, 38);
+    g.fillStyle(0x2b2f38).fillRect(x + 94, 228, 12, 10);
+    g.fillStyle(0x6f523a).fillRect(x, 236, 200, 12);
+    g.fillStyle(0x8c6a4a).fillRect(x + 10, 248, 180, 46);
+    g.fillStyle(0xffffff).fillRect(x + 20, 226, 30, 10).fillRect(x + 150, 222, 26, 14);
+  }
+  g.fillStyle(0x8a929c).fillRect(2800, 120, 60, 172);
+  g.lineStyle(2, 0x5f6670, 1);
+  for (let k = 0; k < 4; k++) g.strokeRect(2806, 128 + k * 40, 48, 34);
+
+  // 구역 4: 학생 상담실 (공지 게시판이 가득한데 아무도 안 읽는다)
+  label(3460, 60, '학생 상담실', 24);
+  g.fillStyle(0xc79a62).fillRect(2960, 76, 360, 156);
+  g.lineStyle(4, 0x7a5b3e, 1).strokeRect(2960, 76, 360, 156);
+  for (let i = 0; i < 12; i++) {
+    g.fillStyle(0xffffff, 0.95).fillRect(2972 + (i % 4) * 86 + rnd.between(-5, 5), 88 + Math.floor(i / 4) * 46, 64, 38);
+  }
+  g.fillStyle(0xd0202f).fillRect(2990, 240, 300, 34);
+  label(3140, 257, '공지 꼭 읽어 주세요!', 18, '#ffffff');
+  g.fillStyle(0x8b6b4e).fillRect(3560, 92, 130, 200);
+  g.lineStyle(3, 0x5d4632, 1).strokeRect(3560, 92, 130, 200);
+  g.fillStyle(0xffffff).fillRect(3580, 112, 90, 28);
+  label(3625, 126, '상담실', 15);
+  for (const cx of [3420, 3480]) {
+    g.fillStyle(0x3d5a80).fillRect(cx, 240, 44, 30);
+    g.fillStyle(0x34495e).fillRect(cx, 270, 6, 22).fillRect(cx + 38, 270, 6, 22);
+  }
 }
