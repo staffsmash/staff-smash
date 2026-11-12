@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no"
+    />
+    <meta name="theme-color" content="#1d1f24" />
+    <meta name="description" content="Staff Smash: HUFS — 비공식 벨트스크롤 액션 게임 (M0 프로토타입)" />
+    <title>Staff Smash: HUFS (비공식)</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #111318;
+        overflow: hidden;
+        touch-action: none;
+        -webkit-user-select: none;
+        user-select: none;
+        -webkit-touch-callout: none;
+        -webkit-tap-highlight-color: transparent;
+      }
+      #game {
+        width: 100%;
+        height: 100%;
+      }
+      #rotate {
+        display: none;
+        position: fixed;
+        inset: 0;
+        z-index: 10;
+        background: #111318;
+        color: #fff;
+        font: 600 20px/1.5 "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
+        align-items: center;
+        justify-content: center;
+        flex-direction: column;
+        gap: 12px;
+        text-align: center;
+      }
+      #rotate .icon {
+        font-size: 56px;
+      }
+      @media (orientation: portrait) and (pointer: coarse) {
+        #rotate {
+          display: flex;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="game"></div>
+    <div id="rotate">
+      <div class="icon">📱↻</div>
+      <div>가로로 돌려주세요</div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
