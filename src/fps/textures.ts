@@ -298,6 +298,409 @@ export function stampMarkTex(): THREE.CanvasTexture {
   });
 }
 
+function roundRect(g: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
+  g.beginPath();
+  g.moveTo(x + r, y);
+  g.lineTo(x + w - r, y);
+  g.quadraticCurveTo(x + w, y, x + w, y + r);
+  g.lineTo(x + w, y + h - r);
+  g.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  g.lineTo(x + r, y + h);
+  g.quadraticCurveTo(x, y + h, x, y + h - r);
+  g.lineTo(x, y + r);
+  g.quadraticCurveTo(x, y, x + r, y);
+  g.closePath();
+}
+
+function angryEyes(g: CanvasRenderingContext2D, cx: number, cy: number, gap: number, size: number): void {
+  g.fillStyle = '#1d1d22';
+  for (const s of [-1, 1]) {
+    g.fillRect(cx + s * gap - size / 2, cy, size, size);
+    g.save();
+    g.translate(cx + s * gap, cy - size * 0.5);
+    g.rotate(-s * 0.35);
+    g.fillRect(-size * 0.8, -size * 0.18, size * 1.6, size * 0.36);
+    g.restore();
+  }
+}
+
+/** 울리는 전화기 앞면: 번호 단추 3×3, 빨간 불, 화난 눈 */
+export function phoneFaceTex(): THREE.CanvasTexture {
+  return canvasTex(256, 128, (g) => {
+    g.fillStyle = '#e9e4d4';
+    g.fillRect(0, 0, 256, 128);
+    g.strokeStyle = '#1d1d22';
+    g.lineWidth = 8;
+    g.strokeRect(4, 4, 248, 120);
+    angryEyes(g, 70, 46, 30, 18);
+    for (let i = 0; i < 3; i++) {
+      for (let j = 0; j < 3; j++) {
+        g.fillStyle = '#777777';
+        g.fillRect(140 + j * 30, 26 + i * 28, 22, 18);
+      }
+    }
+    g.fillStyle = '#ff4d4d';
+    g.beginPath();
+    g.arc(70, 98, 10, 0, Math.PI * 2);
+    g.fill();
+  });
+}
+
+/** "교수님이 된다고 했는데요" 말풍선 (투명 배경, 꼬리 포함) */
+export function bubbleTex(): THREE.CanvasTexture {
+  return canvasTex(512, 256, (g) => {
+    g.lineJoin = 'round';
+    g.fillStyle = '#ffffff';
+    g.strokeStyle = '#111318';
+    g.lineWidth = 10;
+    roundRect(g, 10, 10, 492, 178, 60);
+    g.fill();
+    g.stroke();
+    // 꼬리
+    g.beginPath();
+    g.moveTo(96, 180);
+    g.lineTo(70, 246);
+    g.lineTo(156, 182);
+    g.closePath();
+    g.fill();
+    g.stroke();
+    g.fillRect(100, 168, 52, 16);
+    g.fillStyle = '#111318';
+    g.font = `bold 56px ${FONT}`;
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText('교수님이', 256, 66);
+    g.fillText('된다고 했는데요', 256, 134);
+  });
+}
+
+/** 마감 1분 전 서류 뭉치: 앞면(눈 + 종이 결), 옆면(종이 층) */
+export function bombFaceTex(): THREE.CanvasTexture {
+  return canvasTex(256, 192, (g) => {
+    g.fillStyle = '#f1e7c8';
+    g.fillRect(0, 0, 256, 192);
+    g.fillStyle = '#9aa3ad';
+    for (let i = 0; i < 4; i++) g.fillRect(40, 22 + i * 16, 170, 5);
+    angryEyes(g, 128, 118, 40, 22);
+    g.strokeStyle = '#1d1d22';
+    g.lineWidth = 8;
+    g.strokeRect(4, 4, 248, 184);
+  });
+}
+
+export function bombSideTex(): THREE.CanvasTexture {
+  return canvasTex(128, 128, (g) => {
+    g.fillStyle = '#f6f0dc';
+    g.fillRect(0, 0, 128, 128);
+    for (let y = 6; y < 128; y += 9) {
+      g.fillStyle = y % 2 ? '#d8cfb4' : '#e7dfc6';
+      g.fillRect(0, y, 128, 3);
+    }
+    g.strokeStyle = '#1d1d22';
+    g.lineWidth = 6;
+    g.strokeRect(3, 3, 122, 122);
+  });
+}
+
+/** 서류 뭉치 위 마감 시계 (초가 바뀔 때마다 다시 그린다) */
+export function drawTimer(c: HTMLCanvasElement, secs: number, hot: boolean): void {
+  const g = c.getContext('2d') as CanvasRenderingContext2D;
+  g.fillStyle = hot ? '#ff3b3b' : '#d0202f';
+  g.fillRect(0, 0, c.width, c.height);
+  g.strokeStyle = '#111318';
+  g.lineWidth = 6;
+  g.strokeRect(3, 3, c.width - 6, c.height - 6);
+  g.fillStyle = '#ffffff';
+  g.font = `bold 46px ${FONT}`;
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillText(`0:0${Math.max(0, Math.min(9, secs))}`, c.width / 2, c.height / 2 + 2);
+}
+
+/** 단체 회신 메일 폭풍(보스) 앞면 */
+export function bossTex(): THREE.CanvasTexture {
+  return canvasTex(512, 352, (g) => {
+    g.fillStyle = '#f2ead8';
+    g.fillRect(0, 0, 512, 352);
+    g.strokeStyle = '#1d1d22';
+    g.lineWidth = 14;
+    g.strokeRect(7, 7, 498, 338);
+    g.lineWidth = 10;
+    g.beginPath();
+    g.moveTo(10, 14);
+    g.lineTo(256, 186);
+    g.lineTo(502, 14);
+    g.stroke();
+    angryEyes(g, 256, 200, 92, 46);
+    g.fillStyle = '#d0202f';
+    g.fillRect(0, 290, 512, 62);
+    g.fillStyle = '#ffffff';
+    g.font = `bold 40px ${FONT}`;
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText('전체 회신', 256, 322);
+    g.fillStyle = '#9a1520';
+    g.font = `bold 24px ${FONT}`;
+    g.textAlign = 'left';
+    g.fillText('RE: RE: RE: RE:', 30, 46);
+    // 안 읽은 메일 수 배지
+    g.fillStyle = '#d0202f';
+    g.beginPath();
+    g.arc(446, 60, 40, 0, Math.PI * 2);
+    g.fill();
+    g.fillStyle = '#ffffff';
+    g.font = `bold 30px ${FONT}`;
+    g.textAlign = 'center';
+    g.fillText('999+', 446, 62);
+  });
+}
+
+/** 흩날리는 종이(보스의 종이 탄막) */
+export function paperTex(): THREE.CanvasTexture {
+  return canvasTex(64, 80, (g) => {
+    g.fillStyle = '#ffffff';
+    g.fillRect(0, 0, 64, 80);
+    g.fillStyle = '#9aa3ad';
+    for (let i = 0; i < 5; i++) g.fillRect(10, 14 + i * 11, 44, 4);
+    g.fillStyle = '#d0202f';
+    g.fillRect(10, 66, 22, 5);
+    g.strokeStyle = '#1d1d22';
+    g.lineWidth = 3;
+    g.strokeRect(1.5, 1.5, 61, 77);
+  });
+}
+
+/** 글자 딱지 (줍는 물건 이름, 머리 위 대사) */
+export function labelTex(text: string, color = '#ffffff', bg = 'rgba(17,19,24,0.72)'): THREE.CanvasTexture {
+  const size = 44;
+  const probe = document.createElement('canvas').getContext('2d') as CanvasRenderingContext2D;
+  probe.font = `bold ${size}px ${FONT}`;
+  const w = Math.ceil(probe.measureText(text).width) + 40;
+  const t = canvasTex(w, 72, (g) => {
+    if (bg) {
+      g.fillStyle = bg;
+      roundRect(g, 2, 2, w - 4, 68, 16);
+      g.fill();
+    }
+    g.font = `bold ${size}px ${FONT}`;
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.lineWidth = 8;
+    g.strokeStyle = '#111318';
+    g.strokeText(text, w / 2, 38);
+    g.fillStyle = color;
+    g.fillText(text, w / 2, 38);
+  });
+  t.userData = { aspect: w / 72 };
+  return t;
+}
+
+/** 전화기가 떨어질 자리의 빨간 그림자 */
+export function warnTex(): THREE.CanvasTexture {
+  return canvasTex(128, 128, (g) => {
+    const gr = g.createRadialGradient(64, 64, 8, 64, 64, 62);
+    gr.addColorStop(0, 'rgba(208,32,47,0.75)');
+    gr.addColorStop(0.75, 'rgba(208,32,47,0.45)');
+    gr.addColorStop(1, 'rgba(208,32,47,0)');
+    g.fillStyle = gr;
+    g.fillRect(0, 0, 128, 128);
+    g.strokeStyle = 'rgba(255,255,255,0.85)';
+    g.lineWidth = 5;
+    g.beginPath();
+    g.arc(64, 64, 52, 0, Math.PI * 2);
+    g.stroke();
+  });
+}
+
+/** 바닥에 놓인 물건 둘레의 빛 */
+export function glowTex(rgb: string): THREE.CanvasTexture {
+  return canvasTex(128, 128, (g) => {
+    const gr = g.createRadialGradient(64, 64, 10, 64, 64, 62);
+    gr.addColorStop(0, `rgba(${rgb},0.8)`);
+    gr.addColorStop(1, `rgba(${rgb},0)`);
+    g.fillStyle = gr;
+    g.fillRect(0, 0, 128, 128);
+  });
+}
+
+/** 길 안내 화살표 (바닥) */
+export function chevronTex(): THREE.CanvasTexture {
+  return canvasTex(128, 128, (g) => {
+    g.fillStyle = '#f5c542';
+    g.strokeStyle = '#111318';
+    g.lineWidth = 6;
+    g.beginPath();
+    g.moveTo(24, 20);
+    g.lineTo(70, 20);
+    g.lineTo(112, 64);
+    g.lineTo(70, 108);
+    g.lineTo(24, 108);
+    g.lineTo(66, 64);
+    g.closePath();
+    g.fill();
+    g.stroke();
+  });
+}
+
+/** 노랑·검정 빗금 (통행 막는 바리케이드) */
+export function stripeTex(): THREE.CanvasTexture {
+  const t = canvasTex(128, 32, (g) => {
+    g.fillStyle = '#f5c542';
+    g.fillRect(0, 0, 128, 32);
+    g.fillStyle = '#1d1d22';
+    for (let x = -32; x < 160; x += 32) {
+      g.beginPath();
+      g.moveTo(x, 32);
+      g.lineTo(x + 16, 32);
+      g.lineTo(x + 32, 0);
+      g.lineTo(x + 16, 0);
+      g.closePath();
+      g.fill();
+    }
+  });
+  t.wrapS = THREE.RepeatWrapping;
+  return t;
+}
+
+// ---------- 사회과학관 ----------
+
+/** 안으로 들어간 유리창 띠: 창 4칸 + 기둥 하나를 한 장으로 (가로 반복) */
+export function glassBandTex(): THREE.CanvasTexture {
+  const t = canvasTex(512, 128, (g) => {
+    g.fillStyle = '#8e959a';
+    g.fillRect(0, 0, 512, 128);
+    for (let i = 0; i < 4; i++) {
+      const x = 36 + i * 118;
+      g.fillStyle = '#5a7184';
+      g.fillRect(x, 16, 96, 96);
+      g.fillStyle = 'rgba(255,255,255,0.18)';
+      g.fillRect(x, 16, 30, 96);
+      g.fillStyle = '#7d868c';
+      g.fillRect(x + 46, 16, 4, 96);
+    }
+    g.fillStyle = '#cac5bb';
+    g.fillRect(0, 0, 22, 128);
+  });
+  t.wrapS = THREE.RepeatWrapping;
+  return t;
+}
+
+/** 유리 현관문 (세로 문살) */
+export function glassDoorTex(): THREE.CanvasTexture {
+  return canvasTex(512, 160, (g) => {
+    g.fillStyle = '#3e5561';
+    g.fillRect(0, 0, 512, 160);
+    g.fillStyle = 'rgba(255,255,255,0.16)';
+    for (let i = 0; i < 5; i++) g.fillRect(i * 102 + 10, 0, 30, 160);
+    g.fillStyle = '#9aa3a8';
+    for (let i = 0; i <= 5; i++) g.fillRect(i * 102 - 3, 0, 7, 160);
+    g.fillRect(0, 0, 512, 7);
+    g.fillStyle = '#c9cfd2';
+    g.fillRect(240, 70, 8, 34);
+    g.fillRect(264, 70, 8, 34);
+  });
+}
+
+/** 보라색 사회과학관 간판: 흰 심벌 + 사회과학관 */
+export function socialSignTex(logos: Logos): THREE.CanvasTexture {
+  return canvasTex(1024, 128, (g) => {
+    g.fillStyle = '#5a2a86';
+    g.fillRect(0, 0, 1024, 128);
+    drawTinted(g, logos.line, 120, 64, 92, '#ffffff');
+    g.fillStyle = '#ffffff';
+    g.font = `bold 76px ${FONT}`;
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText('사회과학관', 560, 68);
+  });
+}
+
+/** 분홍 "학생 상담 주간" 현수막 */
+export function counselTex(): THREE.CanvasTexture {
+  return canvasTex(512, 112, (g) => {
+    g.fillStyle = '#f2a7c6';
+    g.fillRect(0, 0, 512, 112);
+    g.fillStyle = '#7a1d48';
+    g.font = `bold 58px ${FONT}`;
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText('학생 상담 주간', 256, 60);
+  });
+}
+
+/** 공지를 아무도 안 읽는 게시판 */
+export function noticeBoardTex(): THREE.CanvasTexture {
+  return canvasTex(1024, 560, (g) => {
+    g.fillStyle = '#d0202f';
+    g.fillRect(0, 0, 1024, 112);
+    g.fillStyle = '#ffffff';
+    g.font = `bold 72px ${FONT}`;
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText('공지 꼭 읽어 주세요!', 512, 60);
+    g.fillStyle = '#7a5b3e';
+    g.fillRect(0, 112, 1024, 448);
+    g.fillStyle = '#c99a62';
+    g.fillRect(24, 134, 976, 404);
+    let seed = 7;
+    const rnd = () => {
+      seed = (seed * 16807) % 2147483647;
+      return seed / 2147483647;
+    };
+    const papers = ['#ffffff', '#fff3b0', '#ffffff', '#cfe8ff', '#ffffff', '#ffd6e0'];
+    for (let i = 0; i < 14; i++) {
+      const w = 110 + rnd() * 70;
+      const h = 130 + rnd() * 80;
+      const x = 40 + (i % 7) * 136 + rnd() * 20;
+      const y = 148 + Math.floor(i / 7) * 190 + rnd() * 20;
+      g.save();
+      g.translate(x + w / 2, y + h / 2);
+      g.rotate((rnd() - 0.5) * 0.12);
+      g.fillStyle = papers[i % papers.length];
+      g.fillRect(-w / 2, -h / 2, w, h);
+      g.fillStyle = '#9aa3ad';
+      for (let k = 0; k < 5; k++) g.fillRect(-w / 2 + 14, -h / 2 + 34 + k * 18, w - 28 - (k % 2) * 20, 6);
+      g.fillStyle = '#3c3c44';
+      g.fillRect(-w / 2 + 14, -h / 2 + 12, w * 0.5, 10);
+      g.fillStyle = '#d0202f';
+      g.beginPath();
+      g.arc(0, -h / 2 + 4, 7, 0, Math.PI * 2);
+      g.fill();
+      g.restore();
+    }
+  });
+}
+
+/** 사회과학관 앞 붉은 보도블록 */
+export function brickTex(): THREE.CanvasTexture {
+  const t = canvasTex(256, 256, (g) => {
+    g.fillStyle = '#cfa79a';
+    g.fillRect(0, 0, 256, 256);
+    for (let i = 0; i < 300; i++) {
+      g.fillStyle = i % 2 ? 'rgba(150,100,88,0.22)' : 'rgba(255,255,255,0.18)';
+      g.fillRect(Math.random() * 256, Math.random() * 256, 2, 2);
+    }
+    g.strokeStyle = '#b98f82';
+    g.lineWidth = 4;
+    for (let r = 0; r < 4; r++) {
+      const y = r * 64;
+      g.beginPath();
+      g.moveTo(0, y);
+      g.lineTo(256, y);
+      g.stroke();
+      for (let x = (r % 2) * 64; x < 256; x += 128) {
+        g.beginPath();
+        g.moveTo(x, y);
+        g.lineTo(x, y + 64);
+        g.stroke();
+      }
+    }
+  });
+  t.wrapS = THREE.RepeatWrapping;
+  t.wrapT = THREE.RepeatWrapping;
+  return t;
+}
+
 /** 하늘: 위 파랑 → 아래 늦은 오후 빛 */
 export function skyTex(): THREE.CanvasTexture {
   return canvasTex(8, 256, (g) => {

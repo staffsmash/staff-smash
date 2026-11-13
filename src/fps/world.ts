@@ -1,100 +1,44 @@
 import * as THREE from 'three';
+import { box, frontBox, lamp, lambert, plane, tree, type Rect } from './blocks';
+import { buildSocial } from './social';
 import {
-  bannerTex,
+  chevronTex,
   emblemTex,
   facadeTex,
   friezeTex,
   lawnTex,
   pavingTex,
   skyTex,
+  stripeTex,
   tealBannerTex,
   towerSignTex,
   type Logos,
 } from './textures';
 
-// 1인칭 시험판의 무대: 해 질 무렵 서울캠퍼스 본관 앞 (블록형).
-// 단위는 m. 플레이어는 +z 쪽에서 -z(본관) 쪽을 본다. 본관 정면 벽은 z = -22.
+// 1인칭 시험판의 무대: 해 질 무렵 서울캠퍼스 본관 앞 (블록형) → 오른쪽 길 → 사회과학관 앞.
+// 단위는 m. 첫 구역에서 플레이어는 +z 쪽에서 -z(본관) 쪽을 본다. 본관 정면 벽은 z = -22.
+// 사회과학관은 동쪽(+x) 길 끝에 있고 정면이 서쪽(-x)을 본다 (social.ts).
 
 const STONE = 0xe9e1cf;
 const STONE_L = 0xf3ecdd;
 const STONE_D = 0xd6ccb8;
 
-export interface Obstacle {
-  minX: number;
-  maxX: number;
-  minZ: number;
-  maxZ: number;
-}
+export type Obstacle = Rect;
 
 export interface World {
-  obstacles: Obstacle[];
-  bounds: Obstacle;
-}
-
-function lambert(color: number): THREE.MeshLambertMaterial {
-  return new THREE.MeshLambertMaterial({ color });
-}
-
-function box(
-  parent: THREE.Object3D,
-  w: number,
-  h: number,
-  d: number,
-  x: number,
-  y: number,
-  z: number,
-  mat: THREE.Material | THREE.Material[],
-  shadow = true,
-): THREE.Mesh {
-  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
-  m.position.set(x, y, z);
-  m.castShadow = shadow;
-  m.receiveShadow = true;
-  parent.add(m);
-  return m;
-}
-
-/** 앞면(+z)에만 그림을 붙인 상자 */
-function frontBox(
-  parent: THREE.Object3D,
-  w: number,
-  h: number,
-  d: number,
-  x: number,
-  y: number,
-  z: number,
-  side: number,
-  front: THREE.Texture,
-): THREE.Mesh {
-  const s = lambert(side);
-  const f = new THREE.MeshLambertMaterial({ map: front });
-  return box(parent, w, h, d, x, y, z, [s, s, s, s, f, s]);
-}
-
-function plane(
-  parent: THREE.Object3D,
-  w: number,
-  h: number,
-  x: number,
-  y: number,
-  z: number,
-  tex: THREE.Texture,
-  opts: { transparent?: boolean; double?: boolean; rotY?: number; rotX?: number } = {},
-): THREE.Mesh {
-  const m = new THREE.Mesh(
-    new THREE.PlaneGeometry(w, h),
-    new THREE.MeshLambertMaterial({
-      map: tex,
-      transparent: !!opts.transparent,
-      alphaTest: opts.transparent ? 0.05 : 0,
-      side: opts.double ? THREE.DoubleSide : THREE.FrontSide,
-    }),
-  );
-  m.position.set(x, y, z);
-  if (opts.rotY) m.rotation.y = opts.rotY;
-  if (opts.rotX) m.rotation.x = opts.rotX;
-  parent.add(m);
-  return m;
+  obstacles: Rect[];
+  /** 본관 앞 마당 */
+  yard: Rect;
+  /** 본관 앞에서 사회과학관 앞으로 가는 길 */
+  path: Rect;
+  /** 사회과학관 앞 광장 */
+  plaza: Rect;
+  /** 길을 막고 있다가 열리는 바리케이드 */
+  barricade: THREE.Group;
+  /** 길 바닥의 안내 화살표 */
+  arrows: THREE.Group;
+  arrowMat: THREE.MeshBasicMaterial;
+  sun: THREE.DirectionalLight;
 }
 
 /** 계단식 박공 (복셀처럼 층층이 좁아진다) */
@@ -109,36 +53,6 @@ function column(parent: THREE.Object3D, x: number, z: number, base: number, h: n
   box(parent, w + 0.3, 0.3, w + 0.3, x, base + 0.15, z, lambert(STONE_D));
   box(parent, w, h, w, x, base + 0.3 + h / 2, z, lambert(STONE_L));
   box(parent, w + 0.5, 0.45, w + 0.5, x, base + 0.3 + h + 0.22, z, lambert(STONE_D));
-}
-
-function ginkgo(parent: THREE.Object3D, x: number, z: number, s = 1): void {
-  box(parent, 0.5 * s, 3.2 * s, 0.5 * s, x, 1.6 * s, z, lambert(0x6b4a2f));
-  const cols = [0xf0c02c, 0xf6d050, 0xe0a91e];
-  const blocks: [number, number, number, number][] = [
-    [0, 4.2, 0, 3.2],
-    [0.9, 3.6, 0.6, 2.2],
-    [-1.0, 3.7, -0.4, 2.2],
-    [0.2, 5.4, -0.2, 2.0],
-    [-0.4, 3.4, 1.0, 1.8],
-  ];
-  blocks.forEach(([bx, by, bz, size], i) => box(parent, size * s, size * s, size * s, x + bx * s, by * s, z + bz * s, lambert(cols[i % 3])));
-}
-
-/** 가로등 + 학교 배너 두 장 */
-function lamp(parent: THREE.Object3D, x: number, z: number, logos: Logos, texCache: Map<string, THREE.Texture>): void {
-  box(parent, 0.22, 7.5, 0.22, x, 3.75, z, lambert(0xe9ecee));
-  box(parent, 0.9, 0.3, 0.6, x, 7.6, z, lambert(0x8f979e));
-  box(parent, 3.2, 0.08, 0.08, x, 6.5, z, lambert(0xcfd4d8), false);
-  const get = (k: 'emblem' | 'slogan') => {
-    let t = texCache.get(k);
-    if (!t) {
-      t = bannerTex(logos, k);
-      texCache.set(k, t);
-    }
-    return t;
-  };
-  plane(parent, 1.4, 3.5, x - 0.82, 4.75, z, get('emblem'), { double: true, transparent: true });
-  plane(parent, 1.4, 3.5, x + 0.82, 4.75, z, get('slogan'), { double: true, transparent: true });
 }
 
 /** 홍보 사진 속 잔디의 "HUFS" 꽃글씨. 눈높이에서 읽히도록 비탈진 화단에 심는다 */
@@ -187,16 +101,16 @@ function flowerLetters(root: THREE.Object3D, cx: number, z: number, y: number, l
 export function buildWorld(scene: THREE.Scene, logos: Logos): World {
   const root = new THREE.Group();
   scene.add(root);
-  const banners = new Map<string, THREE.Texture>();
 
   // 하늘 (큰 구 안쪽에 그라데이션)
   const sky = new THREE.Mesh(
     new THREE.SphereGeometry(400, 24, 12),
     new THREE.MeshBasicMaterial({ map: skyTex(), side: THREE.BackSide, fog: false, depthWrite: false }),
   );
+  sky.position.x = 50;
   scene.add(sky);
 
-  // 빛: 늦은 오후 햇빛
+  // 빛: 늦은 오후 햇빛. 그림자 범위는 플레이어를 따라 옮긴다 (main.ts)
   scene.add(new THREE.HemisphereLight(0xe6f0ff, 0x8a7f6a, 1.6));
   const sun = new THREE.DirectionalLight(0xfff0d6, 2.2);
   sun.position.set(-40, 60, 30);
@@ -209,24 +123,25 @@ export function buildWorld(scene: THREE.Scene, logos: Logos): World {
   sc.bottom = -60;
   sc.far = 200;
   scene.add(sun);
+  scene.add(sun.target);
   scene.fog = new THREE.Fog(0xe9e2cf, 90, 260);
 
-  // 바닥: 화강암 광장
+  // 바닥: 화강암 광장 (사회과학관 쪽까지 이어진다)
   const pave = pavingTex();
-  pave.repeat.set(40, 30);
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(160, 120), new THREE.MeshLambertMaterial({ map: pave }));
+  pave.repeat.set(90, 45);
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(360, 180), new THREE.MeshLambertMaterial({ map: pave }));
   ground.rotation.x = -Math.PI / 2;
+  ground.position.x = 50;
   ground.receiveShadow = true;
   root.add(ground);
 
   // 먼 산과 건물 (배경)
-  for (let i = 0; i < 9; i++) {
+  for (let i = 0; i < 13; i++) {
     const w = 30 + (i % 3) * 8;
     box(root, w, 18 + (i % 4) * 6, 10, -120 + i * 30, 9, -110, lambert(0x5d7a52), false);
   }
   const sideFacade = facadeTex({ w: 512, h: 256, cols: 10, rows: 5, wall: '#d9d5cc', glass: '#5a7184', frame: '#b8b3aa' });
   frontBox(root, 30, 16, 14, -62, 8, -10, 0xd9d5cc, sideFacade).rotation.y = Math.PI / 2;
-  frontBox(root, 30, 18, 14, 62, 9, -6, 0xe9e6df, sideFacade).rotation.y = -Math.PI / 2;
 
   // ---------- 본관 ----------
   // 가운데 몸체 (탑 아래)
@@ -234,11 +149,16 @@ export function buildWorld(scene: THREE.Scene, logos: Logos): World {
   frontBox(root, 30, 14, 12, 0, 7, -28, STONE, centerFacade);
   // 날개 (양쪽, 끝에 작은 박공 현관)
   const wingFacade = facadeTex({ w: 1024, h: 384, cols: 12, rows: 3, wall: '#e9e1cf', glass: '#4f8c86', frame: '#d6ccb8', pilaster: '#ddd3bf', top: 0.12 });
+  const rail = new THREE.InstancedMesh(new THREE.BoxGeometry(0.3, 0.6, 0.3), lambert(STONE_L), 60);
+  const m4 = new THREE.Matrix4();
   for (const sx of [-1, 1]) {
     frontBox(root, 30, 11, 10, sx * 30, 5.5, -27, STONE, wingFacade);
     // 난간
     box(root, 30, 0.3, 10.2, sx * 30, 11.15, -27, lambert(STONE_D));
-    for (let i = 0; i < 30; i++) box(root, 0.3, 0.6, 0.3, sx * 30 - 14.5 + i, 11.6, -22.2, lambert(STONE_L), false);
+    for (let i = 0; i < 30; i++) {
+      m4.makeTranslation(sx * 30 - 14.5 + i, 11.6, -22.2);
+      rail.setMatrixAt((sx > 0 ? 30 : 0) + i, m4);
+    }
     // 작은 박공 현관
     const px = sx * 38;
     box(root, 9, 8, 0.4, px, 4, -21.9, lambert(0x857d6f), false);
@@ -246,6 +166,7 @@ export function buildWorld(scene: THREE.Scene, logos: Logos): World {
     box(root, 10, 1, 3, px, 8.85, -21, lambert(STONE));
     pediment(root, px, 9.35, -21, 10, 4, 2.6);
   }
+  root.add(rail);
 
   // 가운데 박공 현관: 계단 → 기둥 8개 → 엔타블러처(학교 영문명) → 계단식 박공(심벌)
   box(root, 30, 0.4, 7, 0, 0.2, -19.5, lambert(0xc2b9a7));
@@ -270,23 +191,24 @@ export function buildWorld(scene: THREE.Scene, logos: Logos): World {
   // 잔디 화단 (왼쪽: HUFS 꽃글씨, 오른쪽: 은행나무)
   const lawn = lawnTex();
   lawn.repeat.set(4, 2);
-  const obstacles: Obstacle[] = [];
+  const lawnMat = new THREE.MeshLambertMaterial({ map: lawn });
+  const obstacles: Rect[] = [];
   for (const sx of [-1, 1]) {
     const cx = sx * 16;
     box(root, 15, 0.4, 7.4, cx, 0.2, -10, lambert(0xa9a191));
-    const top = new THREE.Mesh(new THREE.BoxGeometry(14.4, 0.42, 6.8), new THREE.MeshLambertMaterial({ map: lawn }));
+    const top = new THREE.Mesh(new THREE.BoxGeometry(14.4, 0.42, 6.8), lawnMat);
     top.position.set(cx, 0.22, -10);
     top.receiveShadow = true;
     root.add(top);
     obstacles.push({ minX: cx - 7.6, maxX: cx + 7.6, minZ: -13.8, maxZ: -6.2 });
   }
   flowerLetters(root, -16, -7.0, 0.43, lawn);
-  ginkgo(root, 13, -10.5, 1.1);
-  ginkgo(root, 19.5, -9.5, 0.9);
-  ginkgo(root, -29, 4, 1.2);
-  ginkgo(root, 29, 6, 1.2);
-  ginkgo(root, -30, -6, 1.0);
-  ginkgo(root, 30, -5, 1.0);
+  tree(root, 13, -10.5, 1.1);
+  tree(root, 19.5, -9.5, 0.9);
+  tree(root, -29, 4, 1.2);
+  tree(root, 29, 7.5, 1.2);
+  tree(root, -30, -6, 1.0);
+  tree(root, 30, -6.5, 1.0);
 
   // 가로등 배너 (본관 쪽에서 오는 길 양옆)
   for (const [lx, lz] of [
@@ -295,9 +217,62 @@ export function buildWorld(scene: THREE.Scene, logos: Logos): World {
     [-7, 6],
     [7, 6],
   ] as [number, number][]) {
-    lamp(root, lx, lz, logos, banners);
+    lamp(root, lx, lz, logos);
     obstacles.push({ minX: lx - 0.3, maxX: lx + 0.3, minZ: lz - 0.3, maxZ: lz + 0.3 });
   }
 
-  return { obstacles, bounds: { minX: -26, maxX: 26, minZ: -15.5, maxZ: 16 } };
+  // ---------- 사회과학관 가는 길 (동쪽) ----------
+  const lawn2 = lawnTex();
+  lawn2.repeat.set(12, 1);
+  const lawn2Mat = new THREE.MeshLambertMaterial({ map: lawn2 });
+  for (const z of [-4.6, 6.6]) {
+    box(root, 44, 0.3, 3.4, 50, 0.15, z, lambert(0xa9a191));
+    const t = new THREE.Mesh(new THREE.BoxGeometry(43.6, 0.32, 3.0), lawn2Mat);
+    t.position.set(50, 0.17, z);
+    t.receiveShadow = true;
+    root.add(t);
+  }
+  for (const lx of [38, 58]) {
+    lamp(root, lx, -3.4, logos, -Math.PI / 2);
+    lamp(root, lx, 5.4, logos, -Math.PI / 2);
+  }
+
+  // 길을 막는 바리케이드 (마당을 다 정리하면 땅으로 내려간다)
+  const barricade = new THREE.Group();
+  barricade.position.set(26.6, 0, 1);
+  root.add(barricade);
+  const stripe = stripeTex();
+  stripe.repeat.set(5, 1);
+  const stripeMat = new THREE.MeshLambertMaterial({ map: stripe });
+  const plain = lambert(0xf5c542);
+  for (const y of [0.55, 1.15]) box(barricade, 0.12, 0.36, 7.4, 0, y, 0, [stripeMat, stripeMat, plain, plain, plain, plain]);
+  for (const z of [-3.2, 3.2]) {
+    box(barricade, 0.5, 1.4, 0.12, 0, 0.7, z, lambert(0x3a3a44));
+  }
+
+  // 바닥 안내 화살표
+  const arrows = new THREE.Group();
+  arrows.visible = false;
+  root.add(arrows);
+  const arrowMat = new THREE.MeshBasicMaterial({ map: chevronTex(), transparent: true, depthWrite: false });
+  const arrowGeo = new THREE.PlaneGeometry(2.2, 2.2);
+  for (let x = 22; x <= 76; x += 6) {
+    const a = new THREE.Mesh(arrowGeo, arrowMat);
+    a.rotation.x = -Math.PI / 2;
+    a.position.set(x, 0.04, 1);
+    arrows.add(a);
+  }
+
+  obstacles.push(...buildSocial(root, logos));
+
+  return {
+    obstacles,
+    yard: { minX: -26, maxX: 26, minZ: -15.5, maxZ: 16 },
+    path: { minX: 20, maxX: 74, minZ: -1.8, maxZ: 3.8 },
+    plaza: { minX: 70, maxX: 119, minZ: -18, maxZ: 18 },
+    barricade,
+    arrows,
+    arrowMat,
+    sun,
+  };
 }
