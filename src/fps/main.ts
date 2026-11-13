@@ -194,6 +194,8 @@ class Game implements Ctx {
   pitch = 0.12;
   hp = MAX_HP;
   invuln = 0;
+  /** 마지막으로 맞은 뒤 지난 시간 (초보 회복) */
+  calmT = 0;
   slow = 0;
   cooldown = 0;
   swing = 0;
@@ -788,6 +790,7 @@ class Game implements Ctx {
     this.dropCd = 4;
     this.slow = 0;
     this.invuln = 0;
+    this.calmT = 0;
     this.waveDelay = -1;
     this.doneT = 0;
     this.clearT = 0;
@@ -815,7 +818,10 @@ class Game implements Ctx {
     this.wave = i;
     const w = WAVES[i];
     this.queue = [];
-    for (const [k, n] of Object.entries(w) as [SpawnKind, number][]) for (let j = 0; j < n; j++) this.queue.push(k);
+    for (const [k, n0] of Object.entries(w) as [SpawnKind, number][]) {
+      const n = Math.max(1, Math.round(n0 * this.diff.count));
+      for (let j = 0; j < n; j++) this.queue.push(k);
+    }
     for (let k = this.queue.length - 1; k > 0; k--) {
       const j = Math.floor(Math.random() * (k + 1));
       [this.queue[k], this.queue[j]] = [this.queue[j], this.queue[k]];
@@ -1144,7 +1150,7 @@ class Game implements Ctx {
 
   private maybeDrop(at: THREE.Vector3, kind: Kind): void {
     if (this.dropCd > 0) return;
-    let chance = 0.15;
+    let chance = 0.15 + this.diff.drop;
     if (this.hp <= 4) chance += 0.15;
     if (kind === 'bulk' || kind === 'bomb') chance += 0.1;
     if (Math.random() > chance) return;
@@ -1280,6 +1286,7 @@ class Game implements Ctx {
     this.hp = Math.max(0, this.hp - dmg);
     this.damageTaken += dmg;
     this.invuln = 0.6;
+    this.calmT = 0;
     this.slow = 1.2;
     this.note(HURT_NOTE[kind]);
     const v = $('vignette');
@@ -1322,7 +1329,8 @@ class Game implements Ctx {
     _q.setFromEuler(_e.set(this.pitch, this.yaw, 0, 'YXZ'));
     const dir = _dir.set(0, 0, -1).applyQuaternion(_q);
     const start = _v.set(0.3, -0.25, -0.5).applyQuaternion(_q).add(_w.set(this.pos.x, EYE + this.jumpY, this.pos.z));
-    if (TOUCH && this.settings.assist) this.aimAssist(start, dir);
+    const cone = TOUCH && this.settings.assist ? Math.max(0.14, this.diff.assist) : this.diff.assist;
+    if (cone > 0) this.aimAssist(start, dir, cone);
     let s = this.stamps.find((x) => !x.on);
     if (!s) {
       s = { obj: this.models.stamp(), vel: new THREE.Vector3(), life: 0, on: false };
@@ -1338,10 +1346,10 @@ class Game implements Ctx {
     s.life = 1.6;
   }
 
-  /** 터치에서만: 조준점 가까이(약 8도)의 적이 있으면 도장 방향을 살짝 그쪽으로 꺾는다 */
-  private aimAssist(start: THREE.Vector3, dir: THREE.Vector3): void {
+  /** 조준점 가까이(cone 라디안 안)의 적이 있으면 도장 방향을 살짝 그쪽으로 꺾는다. 터치는 설정, PC는 초보·중급에서 */
+  private aimAssist(start: THREE.Vector3, dir: THREE.Vector3, cone: number): void {
     let best: THREE.Vector3 | null = null;
-    let bestCos = Math.cos(0.14);
+    let bestCos = Math.cos(cone);
     for (const e of this.enemies) {
       if (!e.targetable) continue;
       // 확성기는 약점이 열려 있으면 나팔 가운데를 노린다
@@ -1734,6 +1742,9 @@ class Game implements Ctx {
   private step(dt: number): void {
     if (this.stage !== 'done') this.elapsed += dt;
     if (this.invuln > 0) this.invuln -= dt;
+    // 초보: 4초 동안 안 맞으면 체력이 조금씩 찬다
+    this.calmT += dt;
+    if (this.diff.regen > 0 && this.calmT > 4 && this.hp > 0 && this.hp < MAX_HP) this.hp = Math.min(MAX_HP, this.hp + this.diff.regen * dt);
     if (this.slow > 0) this.slow -= dt;
     if (this.cooldown > 0) this.cooldown -= dt;
     if (this.buffT > 0) this.buffT -= dt;

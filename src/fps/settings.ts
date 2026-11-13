@@ -12,12 +12,21 @@ export interface Diff {
   damage: number;
   /** 보스 체력 */
   bossHp: number;
+  /** 차례마다 몰려오는 민원 수 */
+  count: number;
+  /** 조준 보조 각도(라디안, 0이면 PC에서는 안 씀. 터치는 설정을 켜면 최소 0.14) */
+  assist: number;
+  /** 음식이 떨어질 확률 더하기 */
+  drop: number;
+  /** 4초 동안 안 맞으면 1초에 회복하는 체력 */
+  regen: number;
 }
 
 export const DIFFS: Record<DiffKey, Diff> = {
-  easy: { label: '쉬움', speed: 0.82, damage: 0.6, bossHp: 0.75 },
-  normal: { label: '보통', speed: 1, damage: 1, bossHp: 1 },
-  hard: { label: '어려움', speed: 1.18, damage: 1.4, bossHp: 1.3 },
+  // 2026-11-13 사용자: v2(옛 보통)도 "넘 어렵다" → 초보를 처음 고르는 값으로, 고급이 옛 보통 정도
+  easy: { label: '초보', speed: 0.7, damage: 0.4, bossHp: 0.6, count: 0.6, assist: 0.22, drop: 0.15, regen: 0.25 },
+  normal: { label: '중급', speed: 0.88, damage: 0.7, bossHp: 0.85, count: 0.85, assist: 0.1, drop: 0.05, regen: 0 },
+  hard: { label: '고급', speed: 1.05, damage: 1.1, bossHp: 1.1, count: 1, assist: 0, drop: 0, regen: 0 },
 };
 
 export const DIFF_KEYS: DiffKey[] = ['easy', 'normal', 'hard'];
@@ -37,7 +46,7 @@ export interface Settings {
 const SETTINGS_KEY = 'staffsmash.fps.settings';
 const BEST_KEY = 'staffsmash.fps.best';
 
-const DEFAULTS: Settings = { diff: 'normal', sens: 1, volume: 0.8, assist: true, calm: false };
+const DEFAULTS: Settings = { diff: 'easy', sens: 1, volume: 0.8, assist: true, calm: false };
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 const isDiff = (v: unknown): v is DiffKey => typeof v === 'string' && v in DIFFS;
@@ -121,7 +130,7 @@ export function timeText(sec: number): string {
   return `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`;
 }
 
-/** 타이틀·결과 화면용 한 줄: "쉬움 A · 3:42 | 보통 — | 어려움 —" */
+/** 타이틀·결과 화면용 한 줄: "초보 A · 3:42 | 중급 — | 고급 —" */
 export function bestLine(highlight?: DiffKey): string {
   const all = loadBest();
   return DIFF_KEYS.map((k) => {
@@ -140,7 +149,7 @@ export function settingsHtml(s: Settings, opts: { touch: boolean; inRun: boolean
   return `
     <div class="settings">
       <div class="srow"><span class="slabel">난이도</span><div class="seg" role="group" aria-label="난이도">${seg}</div></div>
-      <p class="snote">${opts.inRun ? '난이도는 다음 판부터 적용됩니다' : '적의 빠르기·받는 피해·보스 체력이 달라집니다'}</p>
+      <p class="snote">${opts.inRun ? '난이도는 다음 판부터 적용됩니다' : '초보는 민원이 적고 느리며, 안 맞고 있으면 체력이 차오르고 조준을 도와줍니다'}</p>
       <div class="srow"><label class="slabel" for="setSens">${opts.touch ? '터치 감도' : '마우스 감도'}</label>
         <input type="range" id="setSens" min="0.4" max="2.5" step="0.1" value="${s.sens}"><output id="setSensOut">${s.sens.toFixed(1)}배</output></div>
       <div class="srow"><label class="slabel" for="setVol">소리 크기</label>
