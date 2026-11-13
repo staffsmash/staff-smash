@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { bannerTex, type Logos } from './textures';
 
 // 블록형 무대를 쌓는 도구. 같은 색 재질은 하나만 만들어 함께 쓴다.
@@ -97,6 +98,50 @@ export function tree(parent: THREE.Object3D, x: number, z: number, s = 1, cols =
     [-0.4, 3.4, 1.0, 1.8],
   ];
   blocks.forEach(([bx, by, bz, size], i) => box(parent, size * s, size * s, size * s, x + bx * s, by * s, z + bz * s, lambert(cols[i % 3])));
+}
+
+/**
+ * 움직이지 않는 상자들을 재질별로 한 덩어리로 합친다 (그리기 호출 수를 크게 줄인다).
+ * userData.dynamic 이 붙은 묶음, 여러 재질 상자, 투명한 것, 인스턴스는 그대로 둔다.
+ * root는 원점에 그대로 있어야 한다 (합친 모양은 월드 좌표로 만든다).
+ */
+export function mergeStatic(root: THREE.Object3D): number {
+  root.updateMatrixWorld(true);
+  const groups = new Map<string, { mat: THREE.Material; shadow: boolean; meshes: THREE.Mesh[] }>();
+  const walk = (o: THREE.Object3D) => {
+    if (o.userData.dynamic) return;
+    for (const c of o.children) walk(c);
+    if (!(o instanceof THREE.Mesh) || o instanceof THREE.InstancedMesh || Array.isArray(o.material)) return;
+    const m = o.material as THREE.Material;
+    const g = o.geometry as THREE.BufferGeometry;
+    if (m.transparent || !g.index || !g.attributes.uv || !g.attributes.normal) return;
+    const key = `${m.uuid}|${o.castShadow ? 1 : 0}`;
+    let grp = groups.get(key);
+    if (!grp) {
+      grp = { mat: m, shadow: o.castShadow, meshes: [] };
+      groups.set(key, grp);
+    }
+    grp.meshes.push(o);
+  };
+  walk(root);
+  let saved = 0;
+  for (const grp of groups.values()) {
+    if (grp.meshes.length < 2) continue;
+    const geos = grp.meshes.map((m) => {
+      const g = (m.geometry as THREE.BufferGeometry).clone().applyMatrix4(m.matrixWorld);
+      for (const name of Object.keys(g.attributes)) if (name !== 'position' && name !== 'normal' && name !== 'uv') g.deleteAttribute(name);
+      return g;
+    });
+    const merged = mergeGeometries(geos, false);
+    if (!merged) continue;
+    const mesh = new THREE.Mesh(merged, grp.mat);
+    mesh.castShadow = grp.shadow;
+    mesh.receiveShadow = true;
+    for (const m of grp.meshes) m.removeFromParent();
+    root.add(mesh);
+    saved += grp.meshes.length - 1;
+  }
+  return saved;
 }
 
 const bannerCache = new Map<string, THREE.Texture>();

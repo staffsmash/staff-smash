@@ -174,6 +174,8 @@ export class Phone extends Enemy {
   private body: THREE.Group;
   private vy = 0;
   private ringT = 1.3;
+  /** 안 받으면 이만큼 울리고 끊긴다 */
+  private ringsLeft = 4;
   private ox: number;
   private oz: number;
 
@@ -270,6 +272,12 @@ export class Phone extends Enemy {
       c.fx.ring(o.position.x, 0.08, o.position.z, 0.4, RING_R, 0.5, 0xff4d4d);
       c.fx.text(_a.set(o.position.x, 1.5, o.position.z), '따르릉!', '#ffe066');
       if (d < RING_R) c.hurt(1, o.position, this.kind);
+      if (--this.ringsLeft <= 0) {
+        // 끝내 안 받으면 끊긴다 (처리한 것으로 치지 않는다)
+        c.fx.text(_a.set(o.position.x, 1.2, o.position.z), '뚝.', '#cfd4d8');
+        this.dead = true;
+        this.die();
+      }
     }
   }
 

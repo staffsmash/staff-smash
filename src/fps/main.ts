@@ -183,7 +183,7 @@ class Game implements Ctx {
     this.renderer = new THREE.WebGLRenderer({ antialias: !TOUCH });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, TOUCH ? 1.5 : 2));
     this.renderer.shadowMap.enabled = !TOUCH;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
     $('app').appendChild(this.renderer.domElement);
     this.fx = new Fx(this.scene);
     this.scene.add(this.camera);
@@ -208,6 +208,7 @@ class Game implements Ctx {
     const logos = await loadLogos();
     this.world = buildWorld(this.scene, logos);
     this.bounds = [this.world.yard];
+    this.warmup();
     this.bindInput();
     this.showTitle();
     this.updateMuteUi();
@@ -220,6 +221,73 @@ class Game implements Ctx {
     } else {
       this.renderer.setAnimationLoop(() => this.tick());
     }
+  }
+
+  /**
+   * 적·물건·효과를 한 번씩 미리 그려 둔다 (셰이더 컴파일·텍스처 업로드를 타이틀 화면 뒤에서 끝낸다).
+   * 안 하면 처음 나오는 적마다 한 프레임이 크게 끊긴다.
+   */
+  private warmup(): void {
+    const g = new THREE.Group();
+    g.position.set(0, 1.6, 6);
+    const m = this.models;
+    const items: THREE.Object3D[] = [
+      m.mail(false).obj,
+      m.mail(true).obj,
+      m.phone().obj,
+      m.bubble().obj,
+      m.bomb().obj,
+      m.boss().obj,
+      m.food('donkatsu').obj,
+      m.food('gimbap').obj,
+      m.food('americano').obj,
+      m.sheet(),
+      m.stamp(),
+      new THREE.Mesh(m.warnGeo, m.warnMat),
+    ];
+    items.forEach((o, i) => {
+      o.position.x = (i - 6) * 0.4;
+      o.scale.setScalar(0.15);
+      g.add(o);
+    });
+    this.scene.add(g);
+    const p = _v.set(0, 1.6, 6);
+    this.fx.confetti(p, 4, 1);
+    this.fx.blast(p, 1);
+    this.fx.ring(0, 0.1, 6, 1, 2, 1, 0xffffff);
+    this.fx.mark(p, 1);
+    this.fx.decal(0, 6);
+    // 떠오르는 글자는 글자+색마다 그림이 하나씩이라 실제로 쓰는 조합을 모두 미리 만든다
+    for (const [t, col] of [
+      ['따르릉!', '#ffe066'],
+      ['네, 행정실입니다~', '#ffffff'],
+      ['펑!', '#ffffff'],
+      ['펑! 마감!', '#ffb347'],
+      ['뚝.', '#cfd4d8'],
+    ]) {
+      this.fx.text(p, t, col);
+    }
+    this.fx.update(0.001);
+    this.camera.position.set(0, EYE, 11);
+    this.camera.rotation.set(0, 0, 0);
+    this.camera.updateMatrixWorld();
+    // 화면 밖(사회과학관 등)에 있는 재질과 그림도 지금 올려 둔다
+    this.renderer.compile(this.scene, this.camera);
+    const seen = new Set<THREE.Texture>();
+    this.scene.traverse((o) => {
+      const mat = (o as THREE.Mesh).material as THREE.Material | THREE.Material[] | undefined;
+      if (!mat) return;
+      for (const m of Array.isArray(mat) ? mat : [mat]) {
+        const map = (m as THREE.MeshBasicMaterial).map;
+        if (map && !seen.has(map)) {
+          seen.add(map);
+          this.renderer.initTexture(map);
+        }
+      }
+    });
+    this.renderer.render(this.scene, this.camera);
+    this.scene.remove(g);
+    this.fx.clear();
   }
 
   private resize(): void {
@@ -706,8 +774,33 @@ class Game implements Ctx {
     this.dropCd = 7;
     const r = Math.random();
     const food: FoodKind = this.hp <= 4 ? (r < 0.5 ? 'donkatsu' : 'gimbap') : r < 0.45 ? 'gimbap' : r < 0.75 ? 'americano' : 'donkatsu';
+    const spot = this.freeSpot(at.x, at.z);
+    this.spawnPickup(food, spot.x, spot.z);
+  }
+
+  /** 걸어서 닿을 수 있는 자리로: 구역 안, 화단·가로등 같은 장애물 밖 */
+  private freeSpot(x: number, z: number): { x: number; z: number } {
     const a = this.area;
-    this.spawnPickup(food, Math.max(a.minX + 1, Math.min(a.maxX - 1, at.x)), Math.max(a.minZ + 1, Math.min(a.maxZ - 1, at.z)));
+    const M = 0.6;
+    for (let it = 0; it < 3; it++) {
+      x = Math.max(a.minX + 1, Math.min(a.maxX - 1, x));
+      z = Math.max(a.minZ + 1, Math.min(a.maxZ - 1, z));
+      for (const o of this.world.obstacles) {
+        if (x <= o.minX - M || x >= o.maxX + M || z <= o.minZ - M || z >= o.maxZ + M) continue;
+        // 가장 가까운 변 밖으로 민다 (구역 밖으로 나가는 쪽은 피한다)
+        const opts: [number, number, number][] = [
+          [x - (o.minX - M), o.minX - M, z],
+          [o.maxX + M - x, o.maxX + M, z],
+          [z - (o.minZ - M), x, o.minZ - M],
+          [o.maxZ + M - z, x, o.maxZ + M],
+        ];
+        opts.sort((p, q) => p[0] - q[0]);
+        const ok = opts.find(([, nx, nz]) => nx >= a.minX && nx <= a.maxX && nz >= a.minZ && nz <= a.maxZ) ?? opts[0];
+        x = ok[1];
+        z = ok[2];
+      }
+    }
+    return { x, z };
   }
 
   spawnPickup(kind: FoodKind, x: number, z: number): void {
@@ -754,7 +847,7 @@ class Game implements Ctx {
   // ---------- 필살기: 전체 공지 발송 ----------
 
   special(): void {
-    if (this.phase !== 'play' || this.sp < SP_MAX || this.stage === 'done') return;
+    if (this.phase !== 'play' || this.sp < SP_MAX || this.stage === 'done' || this.stage === 'path') return;
     this.sp = 0;
     this.spReadyShown = false;
     this.sound('special');
@@ -983,7 +1076,8 @@ class Game implements Ctx {
       fz /= len;
     }
     const running = k.has('ShiftLeft') || k.has('ShiftRight') || this.stick.length() > 0.95;
-    const speed = (running ? RUN : WALK) * (this.slow > 0 ? 0.55 : 1);
+    // 적이 없는 길에서는 조금 빨리 걷는다
+    const speed = (running ? RUN : WALK) * (this.slow > 0 ? 0.55 : 1) * (this.stage === 'path' ? 1.35 : 1);
     const sin = Math.sin(this.yaw);
     const cos = Math.cos(this.yaw);
     // 앞 = (-sin, -cos), 오른쪽 = (cos, -sin)
@@ -1119,9 +1213,12 @@ class Game implements Ctx {
     this.camera.position.set(this.pos.x, EYE + Math.sin(this.bob) * 0.05, this.pos.z);
     this.camera.rotation.set(this.pitch, this.yaw, 0, 'YXZ');
     // 도장 휘두르기
+    // 팔을 앞으로 밀며 도장 머리를 숙인다 (소매가 화면을 가리지 않게)
     this.swing = Math.max(0, this.swing - dt * 5);
-    this.viewmodel.rotation.x = 0.15 - Math.sin(this.swing * Math.PI) * 1.1;
-    this.viewmodel.position.y = -0.3 + Math.sin(this.bob * 0.5) * 0.012;
+    const sw = Math.sin(this.swing * Math.PI);
+    this.viewmodel.rotation.x = 0.15 + sw * 0.55;
+    this.viewmodel.position.y = -0.3 + Math.sin(this.bob * 0.5) * 0.012 + sw * 0.04;
+    this.viewmodel.position.z = -0.6 - sw * 0.16;
     this.handStamp.visible = this.cooldown < this.curCd * 0.4;
     if (this.fovKick > 0) {
       this.fovKick = Math.max(0, this.fovKick - dt * 1.8);

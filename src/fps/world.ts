@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { box, frontBox, lamp, lambert, plane, tree, type Rect } from './blocks';
+import { box, frontBox, lamp, lambert, mergeStatic, plane, tree, type Rect } from './blocks';
 import { buildSocial } from './social';
 import {
   chevronTex,
@@ -264,6 +264,11 @@ export function buildWorld(scene: THREE.Scene, logos: Logos): World {
   }
 
   obstacles.push(...buildSocial(root, logos));
+
+  // 움직이는 것(바리케이드·화살표)만 빼고 재질별로 합친다
+  barricade.userData.dynamic = true;
+  arrows.userData.dynamic = true;
+  mergeStatic(root);
 
   return {
     obstacles,

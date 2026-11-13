@@ -82,7 +82,6 @@ export function buildSocial(root: THREE.Object3D, logos: Logos): Rect[] {
       brackets.setMatrixAt(i * 2 + (s > 0 ? 1 : 0), m4);
     }
   }
-  brackets.castShadow = true;
   b.add(brackets);
 
   // 현관: 유리문 + 캐노피 + 보라색 간판 + 계단
