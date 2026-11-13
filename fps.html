@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
     <meta name="theme-color" content="#0b2a4a" />
-    <meta name="description" content="Staff Smash: HUFS — 1인칭 시험판 (본관 앞)" />
+    <meta name="description" content="Staff Smash: HUFS — 1인칭 시험판 (본관 앞 → 사회과학관 앞)" />
     <title>Staff Smash: HUFS 1인칭 시험판 (비공식)</title>
     <style>
       html,
@@ -45,21 +45,57 @@
       #topleft .name {
         font-size: 13px;
       }
-      #hp {
+      #hp,
+      #sp {
+        position: relative;
         margin-top: 6px;
         height: 12px;
         background: #3a1f24;
         border: 1px solid rgba(255, 255, 255, 0.5);
       }
-      #hpbar {
+      #sp {
+        height: 10px;
+        background: #2a2a1a;
+      }
+      #hpbar,
+      #spbar {
         height: 100%;
         width: 100%;
         background: #5bd16b;
+      }
+      #spbar {
+        width: 0;
+        background: #c9a227;
+      }
+      #sp span {
+        position: absolute;
+        left: 4px;
+        top: -1px;
+        font-size: 9px;
+        line-height: 12px;
+        color: #fff;
+        text-shadow: 0 0 2px #111318;
+      }
+      #sp.ready {
+        border-color: #f5c542;
+        box-shadow: 0 0 8px #f5c542;
+      }
+      #sp.ready #spbar {
+        background: #f5c542;
       }
       #wave {
         margin-top: 6px;
         font-size: 12px;
         color: #9fd3ff;
+      }
+      #buff {
+        margin-top: 3px;
+        font-size: 12px;
+        font-weight: 700;
+        color: #f2c48b;
+      }
+      #buff:empty {
+        display: none;
       }
       #clock {
         left: 50%;
@@ -75,6 +111,33 @@
         font-size: 12px;
         font-weight: 400;
         color: #dfe6f2;
+      }
+      #bossbox {
+        left: 50%;
+        top: 62px;
+        transform: translateX(-50%);
+        width: min(60vw, 520px);
+        text-align: center;
+        display: none;
+      }
+      #bossbox.on {
+        display: block;
+      }
+      #bossbox .bname {
+        font-size: 14px;
+        font-weight: 700;
+        color: #ffd6d6;
+      }
+      #bosshp {
+        margin-top: 3px;
+        height: 12px;
+        background: #3a1f24;
+        border: 1px solid rgba(255, 255, 255, 0.6);
+      }
+      #bossbar {
+        height: 100%;
+        width: 100%;
+        background: #e5484d;
       }
       #cross {
         left: 50%;
@@ -96,6 +159,68 @@
         margin: -2px 0 0 -2px;
         background: #ff5a5a;
         border-radius: 50%;
+      }
+      #hitmark {
+        left: 50%;
+        top: 50%;
+        width: 0;
+        height: 0;
+        opacity: 0;
+      }
+      #hitmark i {
+        position: absolute;
+        left: -1.5px;
+        top: -5px;
+        width: 3px;
+        height: 10px;
+        background: #fff;
+        box-shadow: 0 0 2px #111318;
+      }
+      #hitmark i:nth-child(1) {
+        transform: rotate(45deg) translateY(-17px);
+      }
+      #hitmark i:nth-child(2) {
+        transform: rotate(135deg) translateY(-17px);
+      }
+      #hitmark i:nth-child(3) {
+        transform: rotate(225deg) translateY(-17px);
+      }
+      #hitmark i:nth-child(4) {
+        transform: rotate(315deg) translateY(-17px);
+      }
+      #hitmark.kill i {
+        background: #f5c542;
+        height: 13px;
+      }
+      .dir {
+        left: 50%;
+        top: 50%;
+        width: 0;
+        height: 0;
+        opacity: 0;
+      }
+      .dir b {
+        position: absolute;
+        left: -46px;
+        top: -170px;
+        width: 92px;
+        height: 30px;
+        border-radius: 50% 50% 0 0 / 100% 100% 0 0;
+        border-top: 5px solid #ff4d4d;
+        background: radial-gradient(ellipse at 50% 0%, rgba(255, 60, 60, 0.55), rgba(255, 60, 60, 0) 70%);
+      }
+      #guide b {
+        left: -16px;
+        top: -132px;
+        width: 0;
+        height: 0;
+        border-radius: 0;
+        background: none;
+        border-top: 0;
+        border-left: 16px solid transparent;
+        border-right: 16px solid transparent;
+        border-bottom: 26px solid #f5c542;
+        filter: drop-shadow(0 0 2px #111318);
       }
       #banner {
         left: 50%;
@@ -123,12 +248,18 @@
         color: #9fd3ff;
         opacity: 0;
         transition: opacity 0.2s;
+        white-space: nowrap;
       }
       #vignette {
         inset: 0;
         box-shadow: inset 0 0 160px 40px rgba(208, 32, 47, 0.75);
         opacity: 0;
         transition: opacity 0.15s;
+      }
+      #flash {
+        inset: 0;
+        background: #fff6d8;
+        opacity: 0;
       }
       #help {
         right: 12px;
@@ -148,17 +279,18 @@
         position: fixed;
         inset: 0;
         display: flex;
-        align-items: center;
+        align-items: safe center;
         justify-content: center;
         background: rgba(11, 42, 74, 0.82);
         z-index: 5;
+        overflow-y: auto;
       }
       #overlay[hidden] {
         display: none;
       }
       .panel {
         text-align: center;
-        max-width: 560px;
+        max-width: 600px;
         padding: 24px;
       }
       .panel img.emblem {
@@ -209,6 +341,57 @@
       .panel a.btn {
         background: #2f6fd1;
       }
+      .result .sheet {
+        display: flex;
+        gap: 18px;
+        align-items: center;
+        justify-content: center;
+        margin: 8px 0;
+      }
+      .result .grade {
+        flex: none;
+        width: 104px;
+        height: 104px;
+        border-radius: 50%;
+        background: #f5c542;
+        color: #111318;
+        font-size: 64px;
+        font-weight: 800;
+        line-height: 104px;
+        border: 3px solid #111318;
+        position: relative;
+      }
+      .result .grade small {
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 10px;
+        font-size: 11px;
+        line-height: 1;
+        font-weight: 700;
+      }
+      .result .grade.g-C,
+      .result .grade.g-D {
+        background: #9aa3ad;
+      }
+      .result table {
+        border-collapse: collapse;
+        font-size: 14px;
+      }
+      .result td {
+        padding: 3px 8px;
+        text-align: left;
+        color: #dfe6f2;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+      }
+      .result td.pts {
+        text-align: right;
+        color: #f5c542;
+        font-weight: 700;
+      }
+      .result .counts {
+        font-size: 13px;
+      }
       #touch {
         display: none;
       }
@@ -250,6 +433,41 @@
         color: #fff;
         font: 700 20px 'Malgun Gothic', sans-serif;
       }
+      #spBtn {
+        position: fixed;
+        right: 146px;
+        bottom: 36px;
+        width: 66px;
+        height: 66px;
+        border-radius: 50%;
+        border: 3px solid #111318;
+        background: #4a4f5a;
+        color: #c9ced8;
+        font: 700 14px 'Malgun Gothic', sans-serif;
+      }
+      #spBtn.ready {
+        background: #f5c542;
+        color: #111318;
+        box-shadow: 0 0 12px #f5c542;
+      }
+      .mini {
+        position: fixed;
+        top: 12px;
+        height: 38px;
+        min-width: 44px;
+        padding: 0 10px;
+        border-radius: 6px;
+        border: 2px solid rgba(255, 255, 255, 0.5);
+        background: rgba(11, 13, 18, 0.6);
+        color: #fff;
+        font: 700 13px 'Malgun Gothic', sans-serif;
+      }
+      #pauseBtn {
+        right: 12px;
+      }
+      #muteBtn {
+        right: 66px;
+      }
       #rotate {
         display: none;
         position: fixed;
@@ -267,6 +485,55 @@
           display: flex;
         }
       }
+      @media (max-height: 500px) {
+        .panel {
+          padding: 10px 16px;
+        }
+        .panel img.emblem {
+          width: 40px;
+        }
+        .panel img.type {
+          height: 26px;
+        }
+        .panel h1 {
+          font-size: 24px;
+          margin: 4px 0 2px;
+        }
+        .panel p {
+          margin: 4px 0;
+          line-height: 1.45;
+          font-size: 14px;
+        }
+        .panel .big {
+          font-size: 17px;
+        }
+        .panel button,
+        .panel a.btn {
+          margin-top: 6px;
+          padding: 9px 18px;
+          font-size: 15px;
+        }
+        .result .grade {
+          width: 80px;
+          height: 80px;
+          line-height: 80px;
+          font-size: 48px;
+        }
+        .result .grade small {
+          top: 7px;
+        }
+        .result td {
+          padding: 1px 6px;
+          font-size: 13px;
+        }
+        #banner {
+          font-size: 24px;
+        }
+        #topleft {
+          min-width: 190px;
+          padding: 6px 10px 8px;
+        }
+      }
     </style>
   </head>
   <body>
@@ -274,21 +541,38 @@
     <div class="hud" id="topleft">
       <div class="name">김국제 · 1인칭 시험판</div>
       <div id="hp"><div id="hpbar"></div></div>
+      <div id="sp"><div id="spbar"></div><span id="splabel">전체 공지 발송</span></div>
       <div id="wave"></div>
+      <div id="buff"></div>
     </div>
     <div class="hud" id="clock"></div>
+    <div class="hud" id="bossbox">
+      <div class="bname">단체 회신 메일 폭풍</div>
+      <div id="bosshp"><div id="bossbar"></div></div>
+    </div>
     <div class="hud" id="cross"></div>
+    <div class="hud" id="hitmark"><i></i><i></i><i></i><i></i></div>
+    <div class="hud dir dmg"><b></b></div>
+    <div class="hud dir dmg"><b></b></div>
+    <div class="hud dir dmg"><b></b></div>
+    <div class="hud dir dmg"><b></b></div>
+    <div class="hud dir" id="guide"><b></b></div>
     <div class="hud" id="banner"></div>
     <div class="hud" id="note"></div>
     <div class="hud" id="vignette"></div>
+    <div class="hud" id="flash"></div>
     <div class="hud" id="help">
       <b>조작법</b><br />
       이동 WASD · 달리기 Shift · 시점 마우스<br />
-      도장 던지기 클릭 · 일시정지 Esc
+      도장 던지기 클릭 · 필살기 Q<br />
+      소리 M (<span id="muteState">켜짐</span>) · 일시정지 Esc
     </div>
     <div id="touch">
       <div id="stick"><div id="knob"></div></div>
+      <button id="spBtn" type="button">필살기</button>
       <button id="fire" type="button">도장</button>
+      <button id="muteBtn" class="mini" type="button">소리 켬</button>
+      <button id="pauseBtn" class="mini" type="button">II</button>
     </div>
     <div id="overlay"></div>
     <div id="rotate">
