@@ -1806,7 +1806,7 @@ class Game implements Ctx {
     const clock = START_CLOCK + this.elapsed / 60;
     const g = this.gradeRun();
     const rec = recordBest(this.runDiff, { total: g.total, grade: g.grade, time: this.elapsed });
-    const offText = clock <= OFF_HOURS ? `정시 퇴근 · 17:00까지 ${Math.ceil(OFF_HOURS - clock)}분 여유` : `초과근무 ${Math.ceil(clock - OFF_HOURS)}분`;
+    const offText = clock <= OFF_HOURS ? `정시 퇴근 · 17:00까지 ${Math.ceil(OFF_HOURS - clock)}분 여유` : `초과근무 ${Math.max(1, Math.floor(clock - OFF_HOURS))}분`;
     const rows = g.rows.map(([l, v, p, mx]) => `<tr><td>${l}</td><td>${v}</td><td class="pts">${p}/${mx}</td></tr>`).join('');
     const areas = this.areaStats.map((s, i) => `<span>${AREA_NAMES[i]} <em>${timeText(s.time)}</em></span>`).join('');
     const bestTxt = rec.isNew
@@ -2077,7 +2077,7 @@ class Game implements Ctx {
     const clock = START_CLOCK + this.elapsed / 60;
     const left = Math.ceil(OFF_HOURS - clock);
     const places = PLACES;
-    const clockLine = this.stage === 'done' && this.offShown ? `${clockText(clock)} · 퇴근 승인!` : `${clockText(clock)} · ${left > 0 ? `퇴근까지 ${left}분` : `초과근무 ${Math.floor(clock - OFF_HOURS)}분`}`;
+    const clockLine = this.stage === 'done' && this.offShown ? `${clockText(clock)} · 퇴근 승인!` : `${clockText(clock)} · ${left > 0 ? `퇴근까지 ${left}분` : `초과근무 ${Math.max(1, Math.floor(clock - OFF_HOURS))}분`}`;
     this.setText('clock', `${clockLine}<small>1인칭 시험판 · ${places[this.stage]}</small>`, true);
     const r = Math.min(1, this.hp / MAX_HP);
     this.setStyle('hpbar', 'width', `${(r * 100).toFixed(1)}%`);
