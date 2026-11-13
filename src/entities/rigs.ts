@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { FONT } from '../config';
 import { HEROES, type StaffLook } from '../data/heroes';
+import type { StudentHeroLook } from '../data/students';
 import { Rig } from './Rig';
 import type { WeaponId } from './weapons';
 
@@ -475,6 +476,21 @@ export function createPresidentPortrait(scene: Phaser.Scene, x: number, y: numbe
     }).setOrigin(0.5, 0),
   );
   return c;
+}
+
+// ---------- 학생 모드 주인공 ----------
+
+/** 학생 모드 주인공 (김러샤·이엘LT·박불어·최터키). 등에 멘 가방은 3타 "가방 휘두르기"에 쓴다. 기본 외형 — M3에서 다듬는다 */
+export function createStudentHeroRig(scene: Phaser.Scene, look: StudentHeroLook): Rig {
+  const rig = createStudentRig(scene, { jacket: look.jacket, hair: look.hair, longHair: look.longHair, earphones: look.earphones });
+  if (look.glasses) {
+    rig.head.add(rig.part(4, -21, 9, 8, 0xcfe8f5, 0.5, 0));
+    rig.head.add(rig.part(13, -21, 8, 8, 0xcfe8f5, 0.5, 0));
+  }
+  // 가방 (몸통 뒤쪽)
+  rig.torso.add(rig.part(-20, -34, 12, 28, look.bag, 0.5, 0));
+  rig.torso.add(rig.part(-8, -36, 3, 22, look.bag, 0.5, 0, false));
+  return rig;
 }
 
 // ---------- 가상 상사 (방해 요소) ----------

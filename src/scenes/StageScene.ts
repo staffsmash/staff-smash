@@ -128,7 +128,7 @@ export class StageScene extends Phaser.Scene {
   }
 
   init(data: StageData): void {
-    this.run = data.run ?? newRun('kimgukje', 'notice');
+    this.run = data.run ?? newRun('staff', 'kimgukje', 'notice');
     this.stageIndex = Phaser.Math.Clamp(data.stage ?? 0, 0, STAGES.length - 1);
     this.stage = STAGES[this.stageIndex];
     this.zones = this.stage.zones;
@@ -529,6 +529,7 @@ export class StageScene extends Phaser.Scene {
 
   private stageStats(): StageStats {
     return {
+      mode: this.run.mode,
       stageTitle: this.stage.title,
       elapsed: this.elapsed,
       damage: this.damageTaken,

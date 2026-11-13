@@ -1,10 +1,11 @@
 import { START_CLOCK } from './config';
 import { assignStudentNames, type StudentType } from './data/names';
-import type { HeroId } from './data/heroes';
 import type { SkillId } from './data/skills';
 import type { Grade } from './grade';
+import type { GameMode } from './records';
 
-// 한 판(교직원 모드 1~3스테이지)의 진행 상태. 스테이지 사이에 넘겨준다.
+// 한 판(모드 하나, 1~3스테이지)의 진행 상태. 스테이지 사이에 넘겨준다.
+// 교직원 모드: hero = HeroId(data/heroes), skill = 업무 스킬. 학생 모드: hero = StudentHeroId(data/students), skill = 외국어 주문(data/spells, 같은 SkillId).
 
 export interface StageRecord {
   stage: number;
@@ -15,7 +16,8 @@ export interface StageRecord {
 }
 
 export interface RunState {
-  hero: HeroId;
+  mode: GameMode;
+  hero: string;
   skill: SkillId;
   names: Record<StudentType, string>;
   lives: number;
@@ -31,8 +33,9 @@ export interface RunState {
   cleared: boolean;
 }
 
-export function newRun(hero: HeroId, skill: SkillId): RunState {
+export function newRun(mode: GameMode, hero: string, skill: SkillId): RunState {
   return {
+    mode,
     hero,
     skill,
     names: assignStudentNames(),
@@ -47,7 +50,8 @@ export function newRun(hero: HeroId, skill: SkillId): RunState {
   };
 }
 
-/** 게임 속 시각(자정부터 센 분). 16:52에 시작해 실제 시간과 같은 속도로 흐른다. */
+/** 게임 속 시각(자정부터 센 분). 두 모드 모두 16:52에 시작해 실제 시간과 같은 속도로 흐른다.
+ *  교직원: 17:00 퇴근, 학생: 17:00 본관 업무 마감 전에 총장 승인. 기록판은 이 시각으로 순위를 매긴다. */
 export function runClock(run: RunState, stageElapsed = 0): number {
   return START_CLOCK + (run.elapsed + stageElapsed) / 60 + run.penaltyMin;
 }

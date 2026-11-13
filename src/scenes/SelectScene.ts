@@ -127,7 +127,7 @@ export class SelectScene extends Phaser.Scene {
   private start(): void {
     if (this.leaving) return;
     this.leaving = true;
-    fadeTo(this, 'stage', { run: newRun(HEROES[this.hero].id, SKILLS[this.skill].id), stage: 0 });
+    fadeTo(this, 'stage', { run: newRun('staff', HEROES[this.hero].id, SKILLS[this.skill].id), stage: 0 });
   }
 
   update(_t: number, deltaMs: number): void {

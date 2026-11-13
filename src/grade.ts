@@ -1,6 +1,9 @@
-// 스테이지 근무평정 (S~D). 기준: 처리 시간, 받은 피해, 최대 연속 처리 (PRD 12절)
+import type { GameMode } from './records';
+
+// 스테이지 평가. 교직원: 근무평정 S~D, 학생: 학점 A+~F (PRD 12절). 기준: 걸린 시간, 받은 피해, 최대 연속 처리
 
 export interface StageStats {
+  mode: GameMode;
   stageTitle: string;
   elapsed: number;
   damage: number;
