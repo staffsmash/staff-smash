@@ -1,16 +1,19 @@
 import * as THREE from 'three';
 import { lambert } from './blocks';
-import { clipPaperTex, faceTex, labelTex, mailTex, stampMarkTex } from './textures';
+import { HeadTag } from './speech';
+import { clipPaperTex, faceTex, mailTex, stampMarkTex } from './textures';
 
 // 1인칭 시험판 v4의 사람 보스 (로블록스풍 블록 사람). 외형은 본편 2D rigs.ts 값을 옮겼다.
-// - 최장학: 창구 직원 외형(베이지 셔츠, 갈색 넥타이, 긴 머리, 안경, 사원증)
+// - 김총괄 (교직원): 대관(시설 대여)을 총괄하는 가상 교직원. 1인칭 전용 외형 — 하늘색 셔츠, 짙은 초록 조끼,
+//   남색 넥타이, 짧은 검은 머리, 허리띠에 찬 열쇠 꾸러미, 왼손에 강의실 열쇠 고리 (2D 창구 직원 외형은 쓰지 않는다)
 // - 김보고 처장: createSupervisorRig('bogo') — 남색 정장, 빨간 넥타이, 옆머리만 남은 회색 머리, 콧수염
 // - 회의소집 부총장: createSupervisorRig('meeting') — 짙은 남색 정장, 자주 넥타이, 회색 머리, 안경, 금 배지
 // - 프레지던트 캉: createPresidentRig — 남색 정장, 물방울 넥타이, 위로 넘긴 짙은 갈색 머리, 눈웃음, 옷깃 배지, 손목시계
 // 사람 보스는 다치지 않는다: 맞으면 몸이 아니라 들고 있는 결재판에 도장 자국과 반짝임이 생긴다.
+// 머리 위 이름표·말풍선은 speech.ts의 HeadTag (화면에서 늘 같은 크기, 자막도 같이).
 // 모형은 처음에 한 번만 만들고(미리 그리기) 판마다 다시 쓴다.
 
-export type Who = 'janghak' | 'bogo' | 'meeting' | 'president';
+export type Who = 'chonggwal' | 'bogo' | 'meeting' | 'president';
 
 interface Look {
   /** 웃옷 (정장 또는 셔츠) */
@@ -28,15 +31,19 @@ interface Look {
   lanyard?: boolean;
   tieDots?: boolean;
   watch?: boolean;
+  /** 셔츠 위 조끼 색 */
+  vest?: number;
+  /** 허리띠에 찬 열쇠 꾸러미 */
+  beltKeys?: boolean;
   /** 왼손에 드는 것 */
-  left: 'pouch' | 'report' | 'megaphone' | 'stamp';
+  left: 'keys' | 'report' | 'megaphone' | 'stamp';
   scale: number;
 }
 
 const SKIN = 0xf1c7a0;
 
 export const LOOKS: Record<Who, Look> = {
-  janghak: { top: 0xf3d9a4, pants: 0x2d3b63, tie: 0x8a5a1c, skin: SKIN, hair: 0x3b2a20, hairStyle: 'long', jacket: false, glasses: true, lanyard: true, left: 'pouch', scale: 1.5 },
+  chonggwal: { top: 0xcfe2f5, pants: 0x3a3f47, tie: 0x23395d, skin: SKIN, hair: 0x1b1712, hairStyle: 'full', jacket: false, vest: 0x2e5a46, beltKeys: true, left: 'keys', scale: 1.55 },
   bogo: { top: 0x2f3a56, pants: 0x2f3a56, tie: 0xb3262d, skin: SKIN, hair: 0xa8a8a8, hairStyle: 'bald', jacket: true, mustache: 0x555555, left: 'report', scale: 1.62 },
   meeting: { top: 0x1f2a44, pants: 0x1f2a44, tie: 0x8a1f2c, skin: SKIN, hair: 0xb0b0b0, hairStyle: 'full', jacket: true, glasses: true, badge: true, left: 'megaphone', scale: 1.8 },
   president: { top: 0x1c2740, pants: 0x1c2740, tie: 0x22396b, skin: 0xefc29c, hair: 0x2a211c, hairStyle: 'swept', jacket: true, smile: true, badge: true, tieDots: true, watch: true, left: 'stamp', scale: 1.8 },
@@ -61,22 +68,9 @@ class Kit {
   readonly stormGeo = new THREE.PlaneGeometry(0.5, 0.34);
   readonly stormMat = new THREE.MeshLambertMaterial({ map: mailTex(), side: THREE.DoubleSide });
   readonly textures: THREE.Texture[] = [];
-  private speech = new Map<string, THREE.SpriteMaterial>();
 
   constructor() {
     this.textures.push(this.paperMat.map as THREE.Texture, this.markMat.map as THREE.Texture, this.stormMat.map as THREE.Texture);
-  }
-
-  /** 말풍선 (흰 바탕 검은 글씨). 글자마다 그림 하나 */
-  speechMat(text: string): THREE.SpriteMaterial {
-    let m = this.speech.get(text);
-    if (!m) {
-      const tex = labelTex(text, '#111318', 'rgba(255,255,255,0.94)', '');
-      m = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false, depthWrite: false });
-      this.speech.set(text, m);
-      this.textures.push(tex);
-    }
-    return m;
   }
 }
 
@@ -112,13 +106,14 @@ export class Person {
   readonly chest = new THREE.Vector3();
   /** 김보고 처장 주위를 도는 메일 폭풍 */
   storm: THREE.InstancedMesh | null = null;
-  readonly label: THREE.Sprite;
+  /** 머리 위 이름표 + 말풍선 (speech.ts) */
+  readonly tag: HeadTag;
+  readonly label: THREE.Sprite | null;
   readonly speech: THREE.Sprite;
   private marks: THREE.Mesh[] = [];
   private markN = 0;
   private glow: THREE.Sprite;
   private glowT = 0;
-  private speechT = 0;
   private walkT = 0;
   private t = 0;
   private faceMat: THREE.MeshLambertMaterial;
@@ -130,7 +125,7 @@ export class Person {
     this.faceMat = new THREE.MeshLambertMaterial({
       map: faceTex({
         skin: hex(L.skin),
-        brow: hex(who === 'janghak' ? L.hair : who === 'president' ? L.hair : 0x6b6b6b),
+        brow: hex(who === 'chonggwal' ? L.hair : who === 'president' ? L.hair : 0x6b6b6b),
         glasses: L.glasses,
         mustache: L.mustache ? hex(L.mustache) : undefined,
         smile: L.smile,
@@ -161,12 +156,21 @@ export class Person {
       this.part(this.body, 0.22, 0.34, 0.02, 0, 1.45, 0.205, lambert(0xffffff));
       this.part(this.body, 0.08, 0.36, 0.03, -0.12, 1.44, 0.21, lambert(darken(L.top))).rotation.z = 0.35;
       this.part(this.body, 0.08, 0.36, 0.03, 0.12, 1.44, 0.21, lambert(darken(L.top))).rotation.z = -0.35;
+    } else if (L.vest !== undefined) {
+      // 조끼: 몸통을 감싸고 앞가슴만 셔츠가 보인다 (넥타이는 그 위)
+      this.part(this.body, 0.74, 0.62, 0.44, 0, 1.18, 0, lambert(L.vest));
+      this.part(this.body, 0.2, 0.3, 0.02, 0, 1.43, 0.215, top);
+      this.part(this.body, 0.05, 0.05, 0.02, 0.08, 1.08, 0.225, lambert(0xd9d9d9));
+      this.part(this.body, 0.05, 0.05, 0.02, 0.08, 0.96, 0.225, lambert(0xd9d9d9));
+      // 허리띠
+      this.part(this.body, 0.72, 0.07, 0.42, 0, 0.88, 0, lambert(0x1c1c1c));
     } else {
       // 셔츠 단추 줄
       this.part(this.body, 0.03, 0.6, 0.02, 0.09, 1.25, 0.205, lambert(darken(L.top)));
     }
-    this.part(this.body, 0.09, 0.07, 0.03, 0, 1.58, 0.22, lambert(L.tie));
-    this.part(this.body, 0.08, 0.4, 0.03, 0, 1.36, 0.22, lambert(L.tie));
+    if (L.beltKeys) this.keyBunch(this.body, -0.28, 0.84, 0.23, 0.06);
+    this.part(this.body, 0.09, 0.07, 0.03, 0, 1.58, 0.225, lambert(L.tie));
+    this.part(this.body, 0.08, 0.4, 0.03, 0, 1.36, 0.225, lambert(L.tie));
     if (L.tieDots) for (const [dx, dy] of [[-0.015, 1.47], [0.015, 1.39], [-0.015, 1.31], [0.015, 1.23]]) this.part(this.body, 0.018, 0.018, 0.01, dx, dy, 0.24, lambert(0xcfe3ff));
     if (L.badge) this.part(this.body, 0.05, 0.05, 0.02, -0.2, 1.52, 0.215, lambert(0xd9b44a));
     if (L.lanyard) {
@@ -212,15 +216,12 @@ export class Person {
     this.glow.visible = false;
     this.glow.renderOrder = 9;
     this.clip.add(this.glow);
-    // 이름표·말풍선 (머리 위)
-    this.label = makeLabel(labelText, labelColor);
-    this.label.position.set(0, 2.55, 0);
-    this.root.add(this.label);
-    this.speech = new THREE.Sprite(k.speechMat(' '));
-    this.speech.renderOrder = 12;
-    this.speech.visible = false;
-    this.speech.position.set(0, 3.05, 0);
-    this.root.add(this.speech);
+    // 이름표·말풍선: 머리 위 기준점에 붙인다. 들어 올린 결재판 꼭대기(약 2.64) 높이라 약점을 거의 가리지 않는다
+    this.tag = new HeadTag(labelText, labelColor, L.scale);
+    this.tag.group.position.set(0, 2.62, 0);
+    this.root.add(this.tag.group);
+    this.label = this.tag.label;
+    this.speech = this.tag.bubble;
     this.root.traverse((o) => {
       if ((o as THREE.Mesh).isMesh) o.castShadow = true;
     });
@@ -291,10 +292,10 @@ export class Person {
     const a = this.armL;
     const y = -0.8;
     switch (this.look.left) {
-      case 'pouch':
-        // 장학금 동전 주머니
-        this.part(a, 0.22, 0.24, 0.16, 0, y - 0.06, 0.05, lambert(0xd9a62a));
-        this.part(a, 0.24, 0.05, 0.18, 0, y + 0.07, 0.05, lambert(0x8a5a1c));
+      case 'keys':
+        // 강의실 열쇠 고리 (큰 고리 + 열쇠 넷 + 파란 번호표)
+        this.keyBunch(a, 0, y - 0.08, 0.08, 0.1);
+        this.part(a, 0.1, 0.13, 0.02, 0.1, y - 0.3, 0.09, lambert(0x2f6fd1));
         break;
       case 'report':
         this.part(a, 0.3, 0.4, 0.02, 0, y - 0.1, 0.14, lambert(0xffffff));
@@ -320,14 +321,28 @@ export class Person {
     }
   }
 
-  /** 말풍선 띄우기 */
-  say(text: string, sec: number): void {
-    const m = peopleKit().speechMat(text);
-    this.speech.material = m;
-    const aspect = (m.map?.userData as { aspect?: number } | undefined)?.aspect ?? 3;
-    this.speech.scale.set(0.3 * aspect, 0.3, 1);
-    this.speech.visible = true;
-    this.speechT = sec;
+  /** 열쇠 꾸러미: 놋쇠 고리 하나에 열쇠 넷이 부채처럼 매달린다 (r = 고리 반지름) */
+  private keyBunch(parent: THREE.Object3D, x: number, y: number, z: number, r: number): void {
+    const brass = lambert(0xd9b23a);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(r, r * 0.22, 6, 14), brass);
+    ring.position.set(x, y, z);
+    parent.add(ring);
+    const kc = [0xd9b23a, 0xc0c4ca, 0xd9b23a, 0xc0c4ca];
+    for (let i = 0; i < 4; i++) {
+      const g = new THREE.Group();
+      g.position.set(x, y - r, z + 0.01);
+      g.rotation.z = (i - 1.5) * 0.32;
+      const m = lambert(kc[i]);
+      this.part(g, r * 0.6, r * 0.45, 0.02, 0, -r * 0.3, 0, m);
+      this.part(g, r * 0.22, r * 1.5, 0.02, 0, -r * 1.2, 0, m);
+      this.part(g, r * 0.3, r * 0.22, 0.02, r * 0.22, -r * 1.7, 0, m);
+      parent.add(g);
+    }
+  }
+
+  /** 말풍선 띄우기 (+ 화면 위쪽 자막. 미리 그릴 때는 subtitle = false) */
+  say(text: string, sec: number, subtitle = true): void {
+    this.tag.say(text, sec, subtitle);
   }
 
   /** 도장이 결재판에 닿았다: 자국 하나 + 반짝 */
@@ -346,8 +361,7 @@ export class Person {
   reset(): void {
     for (const m of this.marks) m.visible = false;
     this.markN = 0;
-    this.speech.visible = false;
-    this.speechT = 0;
+    this.tag.hide();
     this.glow.visible = false;
     this.root.visible = true;
     this.root.rotation.set(0, 0, 0);
@@ -375,10 +389,7 @@ export class Person {
     this.armL.rotation.z = p.wave ? -0.35 : 0;
     this.head.rotation.x = p.raise > 0.5 ? -0.12 : 0;
     // 말풍선·반짝임
-    if (this.speechT > 0) {
-      this.speechT -= dt;
-      if (this.speechT <= 0) this.speech.visible = false;
-    }
+    this.tag.update(dt);
     if (this.glowT > 0) {
       this.glowT -= dt;
       const g = this.glow.material;
@@ -422,15 +433,4 @@ const _m = new THREE.Matrix4();
 function darken(c: number): number {
   const f = 0.72;
   return (Math.round(((c >> 16) & 255) * f) << 16) | (Math.round(((c >> 8) & 255) * f) << 8) | Math.round((c & 255) * f);
-}
-
-function makeLabel(text: string, color: string): THREE.Sprite {
-  const tex = labelTex(text, color);
-  peopleKit().textures.push(tex);
-  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false });
-  const sp = new THREE.Sprite(mat);
-  const aspect = (tex.userData as { aspect?: number }).aspect ?? 3;
-  sp.scale.set(0.24 * aspect, 0.24, 1);
-  sp.renderOrder = 8;
-  return sp;
 }

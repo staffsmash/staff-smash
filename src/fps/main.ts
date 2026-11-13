@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { Sfx, type SfxName } from './audio';
 import type { Rect } from './blocks';
-import { BODY_DMG, BOSS_HINTS, BOSS_NAMES, Bogo, Janghak, Meeting, PersonBoss, President, SERVER_SPOT, WEAK_DMG } from './bosses';
+import { BODY_DMG, BOSS_HINTS, BOSS_NAMES, Bogo, Chonggwal, Meeting, PersonBoss, President, SERVER_SPOT, WEAK_DMG } from './bosses';
 import { Bomb, Bubble, Mail, Phone, type Ctx, type Enemy, type HurtKind, type Kind, type SheetKind } from './enemies';
 import { FIELD_ENTER_Z, FC } from './field';
 import { Fx } from './fx';
@@ -20,12 +20,13 @@ import {
   type DiffKey,
   type Settings,
 } from './settings';
+import { clearSubtitle, prepareSpeech, speechTextures, speechView, updateSubtitle } from './speech';
 import { loadLogos } from './textures';
 import { buildWorld, type World } from './world';
 
 // Staff Smash: HUFS 1인칭 시험판 (v4).
 // 본관 앞에서 세 차례 몰려오는 민원(메일·전화기·말풍선·서류 뭉치)을 도장으로 처리하고,
-// 최장학(본관 앞) → 김보고 처장(사회과학관 앞) → 회의소집 부총장(대운동장) → 총장 프레지던트 캉(해 질 녘 본관 앞)의
+// 김총괄(본관 앞) → 김보고 처장(사회과학관 앞) → 회의소집 부총장(대운동장) → 총장 프레지던트 캉(해 질 녘 본관 앞)의
 // 결재를 받으면 퇴근. 잡몹은 사물이고, 보스만 사람이다(사람 보스는 다치지 않고 결재판에 도장을 받는다).
 // 본편(2D)과 따로 도는 시험용 페이지다. 프레지던트 캉을 제외한 인물은 모두 가상이다.
 
@@ -90,7 +91,7 @@ const HURT_NOTE: Partial<Record<HurtKind, string>> = {
   bubble: '말풍선에 부딪힘… (느려짐)',
   bomb: '마감 폭발! (느려짐)',
   paper: '전체 회신 폭탄… (느려짐)',
-  scholar: '장학 서류에 맞음… (느려짐)',
+  rental: '대관 신청서에 맞음… (느려짐)',
   meeting: '회의 자료에 덮임… (느려짐)',
   packet: '패킷 폭주… (느려짐)',
   wave: '회의 중… 회의록 작성 중',
@@ -136,7 +137,7 @@ interface Sheet {
 /** 날아오는 것의 크기 (도장에 맞는 거리, 플레이어에 닿는 거리) */
 const SHEET_R: Record<SheetKind, [number, number]> = {
   paper: [0.55, 0.8],
-  scholar: [0.85, 1.0],
+  rental: [0.85, 1.0],
   meeting: [0.85, 1.0],
   packet: [0.6, 0.75],
 };
@@ -163,11 +164,10 @@ interface AreaStat {
 
 /** 보스 대사 (미리 그려 둔다) */
 const BOSS_LINES = [
-  '제가 왜 협조해야되죠?',
-  '신청 기간이 아닙니다',
-  '서류 다시 내세요.',
-  '회수합니다~',
-  '이번 한 번만이에요.',
+  '제가 왜 협조하죠?',
+  '대관 불가입니다',
+  '이번만 대관 승인입니다.',
+  '열쇠 반납하고 퇴근합니다…',
   '보고해!',
   '보고 잘 받았어.',
   '긴급 회의 소집합니다!',
@@ -261,7 +261,7 @@ class Game implements Ctx {
   rack!: THREE.Group;
   /** 결재받은 보스 이름 */
   approved: string[] = [];
-  /** 잠깐 멈춤 (동전·"보고해!") */
+  /** 잠깐 멈춤 (강의실 열쇠·"보고해!") */
   freezeT = 0;
   doneT = 0;
   clearT = 0;
@@ -354,7 +354,7 @@ class Game implements Ctx {
     this.hz = new Hazards(this.scene, this.models.warnGeo, this.models.warnMat);
     // 보스 넷 (미리 만들어 두고 판마다 다시 쓴다)
     this.people = {
-      janghak: new Person('janghak', BOSS_NAMES.janghak, '#9fd3ff'),
+      chonggwal: new Person('chonggwal', BOSS_NAMES.chonggwal, '#a7f3c0'),
       bogo: new Person('bogo', BOSS_NAMES.bogo, '#c9d3e6'),
       meeting: new Person('meeting', BOSS_NAMES.meeting, '#d8c4ff'),
       president: new Person('president', BOSS_NAMES.president, '#ffe066'),
@@ -398,7 +398,7 @@ class Game implements Ctx {
       m.food('gimbap').obj,
       m.food('americano').obj,
       m.sheet('paper'),
-      m.sheet('scholar'),
+      m.sheet('rental'),
       m.sheet('meeting'),
       m.sheet('packet'),
       m.stamp(),
@@ -413,7 +413,7 @@ class Game implements Ctx {
     const ppl = Object.values(this.people);
     ppl.forEach((pp, i) => {
       pp.root.position.set(-3 + i * 2, -1.6, -2);
-      pp.say('…', 1);
+      pp.say('…', 1, false);
       pp.stampMark(true);
       pp.updateStorm(1);
       pp.update(0.016, { walking: true, raise: 0.5, reach: 0.5, wave: false });
@@ -441,7 +441,7 @@ class Game implements Ctx {
       this.fx.text(p, t, col);
     }
     // 보스 대사 그림도 미리 만든다 (처음 말할 때 끊기지 않게)
-    for (const line of BOSS_LINES) peopleKit().speechMat(line);
+    prepareSpeech(BOSS_LINES);
     this.fx.update(0.001);
     this.camera.position.set(0, EYE, 11);
     this.camera.rotation.set(0, 0, 0);
@@ -463,6 +463,7 @@ class Game implements Ctx {
       }
     });
     for (const t of peopleKit().textures) this.renderer.initTexture(t);
+    for (const t of speechTextures()) this.renderer.initTexture(t);
     for (const t of this.hz.textures) this.renderer.initTexture(t);
     this.renderer.render(this.scene, this.camera);
     this.scene.remove(g);
@@ -482,6 +483,7 @@ class Game implements Ctx {
     this.renderer.setSize(w, h);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
+    speechView(h, this.camera.fov);
   }
 
   /** 화면 오른쪽 아래 주무관의 팔과 도장 */
@@ -715,6 +717,7 @@ class Game implements Ctx {
     // 뒤에 남은 알림 글씨가 비쳐 보이지 않게
     $('banner').style.opacity = '0';
     $('note').style.opacity = '0';
+    clearSubtitle();
     this.bannerTimer = 0;
     this.noteTimer = 0;
     return o;
@@ -740,7 +743,7 @@ class Game implements Ctx {
         <img class="emblem" src="hufs/emblem-mono.png" alt=""> <img class="type" src="hufs/hufs-type.png" alt="HUFS">
         <h1>STAFF SMASH <span class="tag">1인칭 시험판</span></h1>
         <p class="big">오후 4시 52분, 본관 앞</p>
-        <p>퇴근 8분 전, 민원이 몰려옵니다. 도장으로 처리하고 결재를 받으세요.<br>최장학 → 김보고 처장 → 회의소집 부총장 → 총장 프레지던트 캉</p>
+        <p>퇴근 8분 전, 민원이 몰려옵니다. 도장으로 처리하고 결재를 받으세요.<br>김총괄 → 김보고 처장 → 회의소집 부총장 → 총장 프레지던트 캉</p>
         <p class="ctl">${ctl}</p>
         <div class="srow center"><span class="slabel">난이도</span><div class="seg" role="group" aria-label="난이도">${this.diffSeg()}</div></div>
         <p class="best">최고 기록 ${bestLine(this.settings.diff)}</p>
@@ -967,10 +970,10 @@ class Game implements Ctx {
     this.sound('volley');
   }
 
-  /** 3차 민원이 끝나면 본관에서 최장학이 걸어 나온다 */
+  /** 3차 민원이 끝나면 본관에서 김총괄이 걸어 나온다 */
   private startYardBoss(): void {
     this.stage = 'yardBoss';
-    const b = new Janghak(this, this.people.janghak);
+    const b = new Chonggwal(this, this.people.chonggwal);
     this.placeBoss(b);
     this.announceBoss(b);
   }
@@ -987,7 +990,7 @@ class Game implements Ctx {
       return;
     }
     this.clearT = 3.2;
-    this.stage = b.who === 'janghak' ? 'yardClear' : b.who === 'bogo' ? 'plazaClear' : 'fieldClear';
+    this.stage = b.who === 'chonggwal' ? 'yardClear' : b.who === 'bogo' ? 'plazaClear' : 'fieldClear';
   }
 
   /** 본관 앞을 다 정리하면 사회과학관 쪽 길이 열린다 */
@@ -1451,7 +1454,7 @@ class Game implements Ctx {
     }
   }
 
-  /** 잠깐 멈춤 (동전·"보고해!"): 움직이지도 던지지도 못한다. 이미 멈춰 있으면 false */
+  /** 잠깐 멈춤 (강의실 열쇠·"보고해!"): 움직이지도 던지지도 못한다. 이미 멈춰 있으면 false */
   freeze(sec: number, text: string): boolean {
     if (this.freezeT > 0 || this.phase !== 'play' || this.stage === 'done') return false;
     // 초보는 짧게
@@ -1631,7 +1634,7 @@ class Game implements Ctx {
       if (!s.on) continue;
       s.life -= dt;
       s.obj.position.addScaledVector(s.vel, dt);
-      if (s.kind === 'scholar' || s.kind === 'meeting') {
+      if (s.kind === 'rental' || s.kind === 'meeting') {
         // 서류는 펄럭이며 날아온다
         s.obj.rotation.x += dt * 3.2;
         s.obj.rotation.z += dt * 2.1;
@@ -2111,6 +2114,7 @@ class Game implements Ctx {
       this.noteTimer -= dt;
       if (this.noteTimer <= 0) $('note').style.opacity = '0';
     }
+    updateSubtitle(dt);
     if (this.hitTimer > 0) {
       this.hitTimer -= dt;
       if (this.hitTimer <= 0) $('hitmark').style.opacity = '0';
@@ -2156,4 +2160,4 @@ function clockText(min: number): string {
 
 const game = new Game();
 void game.init();
-if (DEBUG) Object.assign(window as object, { __fps: game, __fpsLib: { Mail, Phone, Bubble, Bomb, PersonBoss, Janghak, Bogo, Meeting, President, THREE, FC } });
+if (DEBUG) Object.assign(window as object, { __fps: game, __fpsLib: { Mail, Phone, Bubble, Bomb, PersonBoss, Chonggwal, Bogo, Meeting, President, THREE, FC } });

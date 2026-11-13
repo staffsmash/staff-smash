@@ -877,7 +877,7 @@ export function clipPaperTex(): THREE.CanvasTexture {
   });
 }
 
-/** 날아오는 서류 (최장학의 장학 서류, 부총장의 회의 자료) */
+/** 날아오는 서류 (김총괄의 대관 신청서, 부총장의 회의 자료). 제목이 길면 글자를 줄여 맞춘다 */
 export function docTex(title: string, color: string): THREE.CanvasTexture {
   return canvasTex(128, 176, (g) => {
     g.fillStyle = '#fbf8f0';
@@ -885,7 +885,9 @@ export function docTex(title: string, color: string): THREE.CanvasTexture {
     g.fillStyle = color;
     g.fillRect(0, 0, 128, 44);
     g.fillStyle = '#ffffff';
-    g.font = `bold 26px ${FONT}`;
+    let size = 26;
+    g.font = `bold ${size}px ${FONT}`;
+    while (size > 16 && g.measureText(title).width > 116) g.font = `bold ${--size}px ${FONT}`;
     g.textAlign = 'center';
     g.textBaseline = 'middle';
     g.fillText(title, 64, 23);
@@ -894,6 +896,22 @@ export function docTex(title: string, color: string): THREE.CanvasTexture {
     g.strokeStyle = '#1d1d22';
     g.lineWidth = 4;
     g.strokeRect(2, 2, 124, 172);
+  });
+}
+
+/** 강의실 열쇠에 달린 파란 번호표 ("강의실" + 호수) */
+export function keyTagTex(): THREE.CanvasTexture {
+  return canvasTex(128, 96, (g) => {
+    g.fillStyle = '#2f6fd1';
+    roundRect(g, 0, 0, 128, 96, 14);
+    g.fill();
+    g.fillStyle = '#ffffff';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.font = `bold 30px ${FONT}`;
+    g.fillText('강의실', 64, 32);
+    g.font = `bold 34px ${FONT}`;
+    g.fillText('301', 64, 70);
   });
 }
 

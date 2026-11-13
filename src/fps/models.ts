@@ -67,11 +67,11 @@ export class Models {
   // 보스 탄막 종이
   readonly sheetGeo = new THREE.PlaneGeometry(0.62, 0.78);
   readonly sheetMat = new THREE.MeshLambertMaterial({ map: paperTex(), side: THREE.DoubleSide });
-  // 보스가 날리는 서류 (최장학의 장학 서류, 부총장의 회의 자료)와 수강신청 패킷
+  // 보스가 날리는 서류 (김총괄의 대관 신청서, 부총장의 회의 자료)와 수강신청 패킷
   // 얇은 상자 앞뒤에 같은 그림: 뒤에서 봐도 글씨가 뒤집히지 않는다
   readonly docGeo = new THREE.BoxGeometry(1.0, 1.38, 0.02);
   private docEdge = lam(0xf1ece0);
-  private scholarMat = new THREE.MeshLambertMaterial({ map: docTex('장학 서류', '#b7791f') });
+  private rentalMat = new THREE.MeshLambertMaterial({ map: docTex('대관 신청서', '#1f7a55') });
   private meetingMat = new THREE.MeshLambertMaterial({ map: docTex('회의 자료', '#6d28d9') });
   private packetGeo = new THREE.BoxGeometry(0.42, 0.42, 0.42);
   private packetMat = new THREE.MeshBasicMaterial({ color: 0x5ee0ff });
@@ -171,7 +171,7 @@ export class Models {
   sheet(kind: SheetKind = 'paper'): THREE.Mesh {
     if (kind === 'paper') return new THREE.Mesh(this.sheetGeo, this.sheetMat);
     if (kind === 'packet') return new THREE.Mesh(this.packetGeo, this.packetMat);
-    const f = kind === 'scholar' ? this.scholarMat : this.meetingMat;
+    const f = kind === 'rental' ? this.rentalMat : this.meetingMat;
     const e = this.docEdge;
     const m = new THREE.Mesh(this.docGeo, [e, e, e, e, f, f]);
     m.castShadow = true;
