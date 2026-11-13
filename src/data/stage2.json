@@ -1,11 +1,12 @@
 {
   "id": "staff-2",
   "title": "2스테이지 · 교수학습개발원 → 인문과학관",
-  "background": "learning",
+  "background": { "seed": "learning", "sky": "late", "edges": [960, 2880] },
   "zones": [
     {
       "left": 0,
       "label": "교수학습개발원 앞",
+      "art": "learningFront",
       "maxAlive": 3,
       "waves": ["mail", "docbomb", "bubble", "mail", "phone"],
       "supervisors": ["molla"]
@@ -13,6 +14,7 @@
     {
       "left": 960,
       "label": "교수학습개발원 로비",
+      "art": "learningLobby",
       "maxAlive": 3,
       "waves": ["queue", "mail", "tantrum", "docbomb", "mail"],
       "supervisors": ["hoho"],
@@ -21,6 +23,7 @@
     {
       "left": 1920,
       "label": "인문과학관 앞",
+      "art": "humanitiesFront",
       "maxAlive": 3,
       "waves": ["bubble", "docbomb", "graduation", "mail", "phone", "mail"],
       "supervisors": ["gumto", "bogo"]
@@ -28,6 +31,7 @@
     {
       "left": 2880,
       "label": "인문과학관 강의실 앞",
+      "art": "humanitiesHall",
       "maxAlive": 3,
       "waves": ["deadlineBoss"],
       "adds": { "type": "mail", "every": 10, "max": 1 },

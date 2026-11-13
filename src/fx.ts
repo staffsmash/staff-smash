@@ -67,10 +67,10 @@ export function speechText(scene: Phaser.Scene, text: string): Phaser.GameObject
     .setDepth(1700);
 }
 
-/** 전화벨 울림 파동 */
-export function ringWave(scene: Phaser.Scene, x: number, y: number): void {
+/** 전화벨 울림 파동 (학생 모드 결석 도장은 빨간 파동) */
+export function ringWave(scene: Phaser.Scene, x: number, y: number, color = 0xffd34d): void {
   for (let i = 0; i < 2; i++) {
-    const e = scene.add.ellipse(x, y - 4, 44, 16).setStrokeStyle(3, 0xffd34d, 1).setDepth(y + 1);
+    const e = scene.add.ellipse(x, y - 4, 44, 16).setStrokeStyle(3, color, 1).setDepth(y + 1);
     scene.tweens.add({
       targets: e,
       scaleX: 3.6,

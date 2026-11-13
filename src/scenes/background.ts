@@ -1,14 +1,20 @@
 import Phaser from 'phaser';
 import { FONT } from '../config';
-import type { BackgroundId } from '../data/stages';
+import type { SkyTime, StageDef, ZoneArtId, ZoneDef } from '../data/stages';
 import { HUFS_GOLD, HUFS_KEYS, HUFS_NAVY, hufsImage, type HufsImageOpts, type HufsKey } from '../hufs';
 
 // 스테이지 배경: 한국외대 서울캠퍼스 실제 건물을 블록 도형으로 그린다. 구역 하나 = 화면 한 장(960px).
 // 참고 사진: 학교 캠퍼스맵(hufs.ac.kr HUFS MAP)과 홍보팀 캠퍼스 사진. 사진 자체는 쓰지 않는다.
+// 스테이지 데이터(stageN.json, studentN.json)가 구역마다 그림(art)을 고르고, 스테이지 전체의 하늘·시간(sky)을 정한다.
 //
-//  1스테이지  본관 민원 창구 → 본관 로비 → 본관 앞 → 사회과학관 앞
-//  2스테이지  교수학습개발원 앞 → 교수학습개발원 로비 → 인문과학관 앞 → 인문과학관 강의실 앞
+// 교직원 모드
+//  1스테이지  본관 민원 창구 → 본관 로비 → 본관 앞 → 사회과학관 앞 (낮)
+//  2스테이지  교수학습개발원 앞 → 교수학습개발원 로비 → 인문과학관 앞 → 인문과학관 강의실 앞 (늦은 오후)
 //  3스테이지  국제학사(학생회관 및 기숙사, GlobeeDorm) 앞 → 운동장 스탠드 → 운동장 트랙 → 대운동장 (해 질 녘)
+// 학생 모드 (같은 장소를 거꾸로 올라간다)
+//  1스테이지  대운동장 → 운동장 트랙 → 운동장 스탠드 → 국제학사 앞 (낮)
+//  2스테이지  인문과학관 앞 → 인문과학관 강의실 앞 → 교수학습개발원 로비 → 교수학습개발원 앞 (늦은 오후)
+//  3스테이지  사회과학관 앞 → 본관 앞 → 본관 로비 → 본관 총장실 (해 질 녘)
 //
 // HUD가 화면 왼쪽 위(12~256, 10~82)와 가운데 위(시계·구역, y 50까지)를 덮으므로
 // 간판·로고는 그 밖에 둔다.
@@ -20,6 +26,7 @@ const D_BACK = -100; // 하늘·건물·바닥
 const D_LOGO = -99; // 건물에 붙은 로고·글씨
 const D_FRONT = -98; // 건물 앞 나무·가로등
 const D_FRONT_LOGO = -97; // 가로등 배너의 로고·글씨
+const D_TINT = -96; // 시간대 빛 (배경 전체 위, 그림자·사람 아래)
 
 interface Ctx {
   scene: Phaser.Scene;
@@ -28,38 +35,81 @@ interface Ctx {
   /** 건물 앞에 서는 나무·가로등·배너 */
   fg: G;
   rnd: Rnd;
+  time: SkyTime;
+  /** 하늘 띠 색 (위 → 아래) */
+  bands: number[];
 }
 
 const SKY_DAY = [0x8fc0e8, 0xa5cdee, 0xbcd9ef, 0xd5e5ef, 0xece6d6];
 const SKY_LATE = [0x92bce0, 0xabcbe6, 0xc6d7e2, 0xe2dccf, 0xf2d9bb];
 const SKY_DUSK = [0x6f97cc, 0x9fb1d6, 0xd9bfb3, 0xf0a978, 0xe98b5c];
+const SKY_BANDS: Record<SkyTime, number[]> = { day: SKY_DAY, late: SKY_LATE, dusk: SKY_DUSK };
 
-export function drawBackground(scene: Phaser.Scene, id: BackgroundId): void {
-  const c = makeCtx(scene, id);
-  if (id === 'main') {
-    bonCounter(c, 0);
-    bonLobby(c, 960);
-    bonFront(c, 1920);
-    socialScience(c, 2880);
-    edge(c.g, 1920, 0x8a7454);
-  } else if (id === 'learning') {
-    learningFront(c, 0);
-    learningLobby(c, 960);
-    humanitiesFront(c, 1920);
-    humanitiesHall(c, 2880);
-    edge(c.g, 960, 0x5f6468);
-    edge(c.g, 2880, 0x5f6468);
-  } else {
-    dormFront(c, 0);
-    stands(c, 960);
-    track(c, 1920);
-    fieldCenter(c, 2880, true);
+interface ZoneArt {
+  draw: (c: Ctx, ox: number) => void;
+  indoor: boolean;
+  /** 실내 구역: 바깥과 맞닿는 경계 기둥 색 */
+  edge?: number;
+  /** 실외 구역: 원래 그린 시간. 해 질 녘이 아닌 그림을 해 질 녘에 쓰면 빛 색을 살짝 입힌다 */
+  native?: SkyTime;
+}
+
+const ZONE_ART: Record<ZoneArtId, ZoneArt> = {
+  bonCounter: { draw: (c, ox) => bonCounter(c, ox), indoor: true, edge: 0x8a7454 },
+  bonLobby: { draw: (c, ox) => bonLobby(c, ox), indoor: true, edge: 0x8a7454 },
+  bonFront: { draw: (c, ox) => bonFront(c, ox), indoor: false, native: 'day' },
+  socialScience: { draw: (c, ox) => socialScience(c, ox), indoor: false, native: 'day' },
+  learningFront: { draw: (c, ox) => learningFront(c, ox), indoor: false, native: 'late' },
+  learningLobby: { draw: (c, ox) => learningLobby(c, ox), indoor: true, edge: 0x5f6468 },
+  humanitiesFront: { draw: (c, ox) => humanitiesFront(c, ox), indoor: false, native: 'late' },
+  humanitiesHall: { draw: (c, ox) => humanitiesHall(c, ox), indoor: true, edge: 0x5f6468 },
+  dormFront: { draw: (c, ox) => dormFront(c, ox), indoor: false, native: 'dusk' },
+  stands: { draw: (c, ox) => stands(c, ox), indoor: false, native: 'dusk' },
+  track: { draw: (c, ox) => track(c, ox), indoor: false, native: 'dusk' },
+  fieldExit: { draw: (c, ox) => fieldCenter(c, ox, true), indoor: false, native: 'dusk' },
+  field: { draw: (c, ox) => fieldCenter(c, ox, false), indoor: false, native: 'dusk' },
+  presidentOffice: { draw: (c, ox) => presidentOffice(c, ox), indoor: true, edge: 0x4f311c },
+};
+
+/** 해 질 녘 빛 (낮 그림을 해 질 녘에 쓸 때) */
+const DUSK_TINT = { color: 0xff8a3d, alpha: 0.12 };
+
+export function drawBackground(scene: Phaser.Scene, stage: StageDef): void {
+  const bg = stage.background;
+  const c = makeCtx(scene, bg.seed, bg.sky);
+  for (const z of stage.zones) {
+    const art = ZONE_ART[z.art];
+    art.draw(c, z.left);
+    if (!art.indoor && bg.sky === 'dusk' && art.native !== 'dusk') {
+      scene.add.rectangle(z.left, 0, 960, 540, DUSK_TINT.color, DUSK_TINT.alpha).setOrigin(0, 0).setDepth(D_TINT);
+    }
   }
+  for (const x of bg.edges ?? autoEdges(stage.zones)) {
+    const i = stage.zones.findIndex((z) => z.left === x);
+    if (i <= 0) continue;
+    const a = ZONE_ART[stage.zones[i - 1].art];
+    const b = ZONE_ART[stage.zones[i].art];
+    edge(c.g, x, (a.indoor ? a.edge : b.edge) ?? 0x8a7454);
+  }
+}
+
+/** 실내와 실외가 바뀌는 구역 경계 */
+function autoEdges(zones: ZoneDef[]): number[] {
+  const out: number[] = [];
+  for (let i = 1; i < zones.length; i++) {
+    if (ZONE_ART[zones[i - 1].art].indoor !== ZONE_ART[zones[i].art].indoor) out.push(zones[i].left);
+  }
+  return out;
+}
+
+/** 학생 모드 엔딩용: 해 질 녘 총장실 한 장 (x 0~960) */
+export function drawPresidentOfficeBackdrop(scene: Phaser.Scene): void {
+  presidentOffice(makeCtx(scene, 'president-office', 'dusk'), 0);
 }
 
 /** 교직원 모드 엔딩: 해 질 녘 본관 앞. 프레지던트 캉이 본관에서 내려온다. */
 export function drawEndingBackdrop(scene: Phaser.Scene): void {
-  const c = makeCtx(scene, 'ending');
+  const c = makeCtx(scene, 'ending', 'dusk');
   const g = c.g;
   sky(g, 0, 960, SKY_DUSK);
   g.fillStyle(0xfff0c0, 0.95).fillCircle(860, 236, 34);
@@ -72,12 +122,14 @@ export function drawEndingBackdrop(scene: Phaser.Scene): void {
   lampBanner(c, 712);
 }
 
-function makeCtx(scene: Phaser.Scene, seed: string): Ctx {
+function makeCtx(scene: Phaser.Scene, seed: string, time: SkyTime): Ctx {
   return {
     scene,
     g: scene.add.graphics().setDepth(D_BACK),
     fg: scene.add.graphics().setDepth(D_FRONT),
     rnd: new Phaser.Math.RandomDataGenerator(['staff-smash', seed]),
+    time,
+    bands: SKY_BANDS[time],
   };
 }
 
@@ -122,12 +174,19 @@ function sky(g: G, ox: number, w: number, bands: number[]): void {
   bands.forEach((col, i) => g.fillStyle(col).fillRect(ox, Math.floor(i * bh), w, Math.ceil(bh) + 1));
 }
 
-function cloud(g: G, x: number, y: number, s = 1): void {
-  g.fillStyle(0xffffff, 0.92);
+function cloud(c: Ctx, x: number, y: number, s = 1): void {
+  const g = c.g;
+  const dusk = c.time === 'dusk';
+  g.fillStyle(dusk ? 0xffe2cc : 0xffffff, 0.92);
   g.fillRect(x, y, 96 * s, 16 * s);
   g.fillRect(x + 14 * s, y - 12 * s, 56 * s, 14 * s);
   g.fillRect(x + 32 * s, y - 22 * s, 26 * s, 12 * s);
-  g.fillStyle(0xdce6f0, 0.9).fillRect(x, y + 12 * s, 96 * s, 4 * s);
+  g.fillStyle(dusk ? 0xe8b9a6 : 0xdce6f0, 0.9).fillRect(x, y + 12 * s, 96 * s, 4 * s);
+}
+
+/** 해가 기운 뒤에만 켜지는 창 불빛. 무작위 수는 시간과 상관없이 똑같이 뽑아 나머지 그림이 바뀌지 않게 한다 */
+function lit(c: Ctx, p: number): boolean {
+  return c.rnd.frac() < p && c.time !== 'day';
 }
 
 interface FloorOpts {
@@ -285,13 +344,14 @@ function fence(g: G, ox: number, w: number, top: number, bottom: number): void {
   g.fillRect(ox, top - 6, w, 3);
 }
 
-/** 해 질 녘 먼 산과 아파트 (3스테이지) */
+/** 먼 산과 아파트 (운동장·국제학사 쪽 원경) */
 function skyline(c: Ctx, ox: number): void {
   const g = c.g;
-  g.fillStyle(0x5b6b58).fillRect(ox, 214, 960, 88);
+  const hill = c.time === 'dusk' ? 0x5b6b58 : c.time === 'late' ? 0x627a63 : 0x6f8b74;
+  g.fillStyle(hill).fillRect(ox, 214, 960, 88);
   for (let x = 0; x < 960; x += 40) {
     const h = 18 + Math.round(16 * Math.sin((ox + x) / 170) + 10 * Math.sin((ox + x) / 53));
-    g.fillStyle(0x5b6b58).fillRect(ox + x, 214 - h, 40, h);
+    g.fillStyle(hill).fillRect(ox + x, 214 - h, 40, h);
   }
   for (let x = ox + c.rnd.between(0, 40); x < ox + 940; x += c.rnd.between(80, 130)) {
     const w = c.rnd.between(40, 62);
@@ -299,7 +359,7 @@ function skyline(c: Ctx, ox: number): void {
     g.fillStyle(0xd8cdc3).fillRect(x, 262 - h, w, h);
     g.fillStyle(0xbfb2a6).fillRect(x + w - 8, 262 - h, 8, h);
     for (let yy = 262 - h + 8; yy < 256; yy += 12) {
-      g.fillStyle(c.rnd.frac() < 0.25 ? 0xffd98a : 0x8c8077, 0.7).fillRect(x + 6, yy, w - 18, 3);
+      g.fillStyle(lit(c, 0.25) ? 0xffd98a : 0x8c8077, 0.7).fillRect(x + 6, yy, w - 18, 3);
     }
   }
 }
@@ -541,9 +601,9 @@ function wing(c: Ctx, x0: number, x1: number, side: 'left' | 'right'): void {
 
 function bonFront(c: Ctx, ox: number): void {
   const g = c.g;
-  sky(g, ox, 960, SKY_DAY);
-  cloud(g, ox + 300, 70);
-  cloud(g, ox + 830, 104, 0.8);
+  sky(g, ox, 960, c.bands);
+  cloud(c, ox + 300, 70);
+  cloud(c, ox + 830, 104, 0.8);
   mainBuilding(c, ox + 720, { left: true });
   g.fillStyle(0xbdb5a6).fillRect(ox, 292, 960, 10);
   floor(g, ox, 960, 0xd9d3c8, 0xc5bfb2, { step: 90, slant: 50 });
@@ -554,9 +614,9 @@ function bonFront(c: Ctx, ox: number): void {
 
 function socialScience(c: Ctx, ox: number): void {
   const g = c.g;
-  sky(g, ox, 960, SKY_DAY);
-  cloud(g, ox + 200, 46, 0.9);
-  cloud(g, ox + 640, 34, 0.7);
+  sky(g, ox, 960, c.bands);
+  cloud(c, ox + 200, 46, 0.9);
+  cloud(c, ox + 640, 34, 0.7);
   const x0 = ox + 30;
   const x1 = ox + 960;
   // 지붕 끝 브래킷 장식
@@ -609,8 +669,8 @@ function socialScience(c: Ctx, ox: number): void {
 
 function learningFront(c: Ctx, ox: number): void {
   const g = c.g;
-  sky(g, ox, 960, SKY_LATE);
-  cloud(g, ox + 360, 40, 0.8);
+  sky(g, ox, 960, c.bands);
+  cloud(c, ox + 360, 40, 0.8);
   // 뒷산
   g.fillStyle(0x6e8862).fillRect(ox, 214, 960, 88);
   for (let x = 0; x < 960; x += 48) g.fillStyle(0x6e8862).fillRect(ox + x, 214 - 10 - ((x * 7) % 30), 48, 40);
@@ -715,8 +775,8 @@ function lantern(g: G, x: number, base: number, s: number): void {
 
 function humanitiesFront(c: Ctx, ox: number): void {
   const g = c.g;
-  sky(g, ox, 960, SKY_LATE);
-  cloud(g, ox + 560, 40, 0.75);
+  sky(g, ox, 960, c.bands);
+  cloud(c, ox + 560, 40, 0.75);
   // 인문과학관: 7층 띠창 + 떠 있는 평지붕, 양 끝은 흰 계단실
   const bx = ox + 40;
   const bw = 920;
@@ -808,18 +868,18 @@ function humanitiesHall(c: Ctx, ox: number): void {
 
 // ---------- 3스테이지: 국제학사 → 운동장 (해 질 녘) ----------
 
-/** 저녁이라 창 일부에 불이 켜져 있다 */
+/** 해가 기울면 창 일부에 불이 켜져 있다 (낮에는 꺼져 있다) */
 function litWindows(c: Ctx, x: number, y: number, cols: number, rows: number, dx: number, dy: number, ww: number, wh: number): void {
   for (let r = 0; r < rows; r++) {
     for (let i = 0; i < cols; i++) {
-      c.g.fillStyle(c.rnd.frac() < 0.3 ? 0xffd98a : 0x6e8fa0).fillRect(x + i * dx, y + r * dy, ww, wh);
+      c.g.fillStyle(lit(c, 0.3) ? 0xffd98a : 0x6e8fa0).fillRect(x + i * dx, y + r * dy, ww, wh);
     }
   }
 }
 
 function dormFront(c: Ctx, ox: number): void {
   const g = c.g;
-  sky(g, ox, 960, SKY_DUSK);
+  sky(g, ox, 960, c.bands);
   skyline(c, ox);
   // 왼쪽 동
   g.fillStyle(0xd8d4cc).fillRect(ox + 30, 122, 320, 6);
@@ -832,7 +892,7 @@ function dormFront(c: Ctx, ox: number): void {
   g.fillStyle(0xf2f0ea).fillRect(tx, 66, tw, 226);
   g.fillStyle(0x5fa8ad).fillRect(tx + 20, 72, tw - 40, 26);
   for (const wx of [tx + 14, tx + 36, tx + 150, tx + 172]) {
-    for (let y = 106; y < 214; y += 15) g.fillStyle(c.rnd.frac() < 0.3 ? 0xffd98a : 0x6e8fa0).fillRect(wx, y, 14, 9);
+    for (let y = 106; y < 214; y += 15) g.fillStyle(lit(c, 0.3) ? 0xffd98a : 0x6e8fa0).fillRect(wx, y, 14, 9);
   }
   g.fillStyle(0xffffff).fillRect(tx + 78, 102, 44, 94);
   g.fillStyle(0x13858b).fillRect(tx + 80, 104, 40, 90);
@@ -859,7 +919,7 @@ function dormFront(c: Ctx, ox: number): void {
 
 function stands(c: Ctx, ox: number): void {
   const g = c.g;
-  sky(g, ox, 960, SKY_DUSK);
+  sky(g, ox, 960, c.bands);
   skyline(c, ox);
   // 운동장 건너편: 잔디와 트랙
   g.fillStyle(0x3e8e47).fillRect(ox, 214, 960, 30);
@@ -885,7 +945,7 @@ function stands(c: Ctx, ox: number): void {
 
 function track(c: Ctx, ox: number): void {
   const g = c.g;
-  sky(g, ox, 960, SKY_DUSK);
+  sky(g, ox, 960, c.bands);
   skyline(c, ox);
   // 멀리 보이는 본관 (탑 + 박공 현관)
   const mx = ox + 765;
@@ -918,8 +978,8 @@ function track(c: Ctx, ox: number): void {
 
 function fieldCenter(c: Ctx, ox: number, exit: boolean): void {
   const g = c.g;
-  sky(g, ox, 960, SKY_DUSK);
-  g.fillStyle(0xfff0c0, 0.95).fillCircle(ox + 700, 226, 30);
+  sky(g, ox, 960, c.bands);
+  if (c.time === 'dusk') g.fillStyle(0xfff0c0, 0.95).fillCircle(ox + 700, 226, 30);
   skyline(c, ox);
   fence(g, ox, 960, 100, 212);
   // 대형 현수막
@@ -942,4 +1002,153 @@ function fieldCenter(c: Ctx, ox: number, exit: boolean): void {
     g.fillStyle(0x2f8f4e).fillRect(ox + 800, 236, 140, 34);
     text(c, ox + 870, 253, '퇴근 (정문) →', 15, '#ffffff');
   }
+}
+
+// ---------- 학생 모드 3스테이지 끝: 본관 총장실 ----------
+
+const BOOK_COLORS = [0x7a1f2b, 0x1f3a6b, 0x2f5d3a, 0x6b4a2a, 0x3d3d55, 0x8a6d1f, 0x5b2a4a];
+
+/** 본관 총장실 (가상의 방 — 실제 총장실을 본뜨지 않았다). 나무 판벽, 큰 책상, 남색 학교 깃발, 책장, 캠퍼스가 보이는 창, 문패 */
+function presidentOffice(c: Ctx, ox: number): void {
+  const g = c.g;
+  const wood = 0x6b4428;
+  const woodD = 0x4f311c;
+  const woodL = 0x8a5a36;
+
+  // 위쪽 벽: 크림색 벽지와 옅은 세로 줄무늬, 천장 몰딩
+  g.fillStyle(0xefe6cf).fillRect(ox, 0, 960, 300);
+  for (let x = ox + 6; x < ox + 960; x += 28) g.fillStyle(0xe7dcc1).fillRect(x, 20, 12, 140);
+  g.fillStyle(woodD).fillRect(ox, 0, 960, 12);
+  g.fillStyle(woodL).fillRect(ox, 12, 960, 6);
+  // 징두리 판벽과 걸레받이
+  g.fillStyle(wood).fillRect(ox, 160, 960, 124);
+  g.fillStyle(woodL).fillRect(ox, 160, 960, 7);
+  g.fillStyle(woodD).fillRect(ox, 167, 960, 3);
+  for (let x = ox + 14; x < ox + 950; x += 116) {
+    g.fillStyle(woodD).fillRect(x, 182, 100, 92);
+    g.fillStyle(0x76492b).fillRect(x + 5, 187, 90, 82);
+    g.fillStyle(woodL, 0.5).fillRect(x + 5, 187, 90, 4);
+  }
+  g.fillStyle(0x3a2414).fillRect(ox, 284, 960, 18);
+  g.fillStyle(woodD).fillRect(ox, 0, 8, 302);
+
+  // 바닥: 나무 마루 + 남색 카펫 (금색 테두리, 가운데 금색 심벌)
+  floor(g, ox, 960, 0x9a6a40, 0x7d522f, { step: 64, slant: 0 });
+  g.fillStyle(0x1b2a52).fillRect(ox + 140, 334, 680, 190);
+  g.lineStyle(3, HUFS_GOLD, 0.9).strokeRect(ox + 152, 344, 656, 170);
+  g.lineStyle(1, HUFS_GOLD, 0.6).strokeRect(ox + 160, 350, 640, 158);
+  logo(c, HUFS_KEYS.line, ox + 480, 428, { h: 150, squash: 0.36, tint: HUFS_GOLD, alpha: 0.5 });
+
+  // 출입문과 문패 (로비에서 들어온 왼쪽 문)
+  const dx = ox + 26;
+  g.fillStyle(woodD).fillRect(dx - 8, 92, 136, 200);
+  g.fillStyle(0x7a4c2c).fillRect(dx, 100, 58, 192).fillRect(dx + 62, 100, 58, 192);
+  for (const lx of [dx + 8, dx + 70]) {
+    g.fillStyle(0x6a4126).fillRect(lx, 142, 42, 58).fillRect(lx, 210, 42, 66);
+    g.fillStyle(0x86563a).fillRect(lx, 142, 42, 3).fillRect(lx, 210, 42, 3);
+  }
+  g.fillStyle(0xd9b44a).fillRect(dx + 50, 200, 4, 22).fillRect(dx + 66, 200, 4, 22);
+  g.fillStyle(0xd9b44a).fillRect(dx + 16, 108, 88, 26);
+  g.fillStyle(0xb08d3a).fillRect(dx + 16, 130, 88, 4);
+  text(c, dx + 60, 120, '총장실', 15, '#3a2414');
+
+  // 창: 해 질 녘 캠퍼스 (먼 산, 건물, 대운동장)
+  const wx = ox + 206;
+  const wy = 76;
+  const ww = 226;
+  const wh = 156;
+  const bh = Math.ceil((wh * 0.62) / SKY_DUSK.length);
+  SKY_DUSK.forEach((col, i) => g.fillStyle(col).fillRect(wx, wy + i * bh, ww, bh + 1));
+  g.fillStyle(0xfff0c0, 0.95).fillCircle(wx + 172, wy + 88, 12);
+  g.fillStyle(0x5b6b58).fillRect(wx, wy + 92, ww, 30);
+  for (let x = 0; x < ww; x += 18) g.fillStyle(0x5b6b58).fillRect(wx + x, wy + 84 + ((x * 7) % 10), 18, 10);
+  for (const [bx, bw, bt] of [
+    [8, 44, 70],
+    [60, 30, 84],
+    [124, 52, 64],
+    [184, 34, 80],
+  ]) {
+    g.fillStyle(0xd8cdc3).fillRect(wx + bx, wy + bt, bw, 122 - bt);
+    g.fillStyle(0xbfb2a6).fillRect(wx + bx + bw - 6, wy + bt, 6, 122 - bt);
+    for (let yy = wy + bt + 6; yy < wy + 116; yy += 9) {
+      g.fillStyle(c.rnd.frac() < 0.35 ? 0xffd98a : 0x8c8077, 0.8).fillRect(wx + bx + 4, yy, bw - 12, 3);
+    }
+  }
+  g.fillStyle(0x3f9a4a).fillRect(wx, wy + 122, ww, 20);
+  g.fillStyle(0xf4f4f4).fillRect(wx + ww / 2 - 1, wy + 122, 2, 20);
+  g.fillStyle(0xb84d3a).fillRect(wx, wy + 142, ww, 14);
+  crown(g, wx + 18, wy + 98, 34, 30, 0xd9622b);
+  crown(g, wx + 206, wy + 100, 30, 26, 0xe39b2d);
+  // 창틀·창살·창턱
+  g.fillStyle(0xf3ecdd);
+  g.fillRect(wx - 8, wy - 8, ww + 16, 8).fillRect(wx - 8, wy + wh, ww + 16, 8);
+  g.fillRect(wx - 8, wy, 8, wh).fillRect(wx + ww, wy, 8, wh);
+  g.fillRect(wx + ww / 2 - 3, wy, 6, wh).fillRect(wx, wy + 60, ww, 5);
+  g.fillStyle(0xd9cfbb).fillRect(wx - 14, wy + wh + 8, ww + 28, 6);
+  // 남색 커튼과 금색 끈
+  g.fillStyle(woodD).fillRect(wx - 40, wy - 20, ww + 80, 10);
+  for (const cx of [wx - 38, wx + ww + 6]) {
+    g.fillStyle(0x1b2a52).fillRect(cx, wy - 10, 32, wh + 30);
+    g.fillStyle(0x15213f).fillRect(cx + 8, wy - 10, 4, wh + 30).fillRect(cx + 20, wy - 10, 4, wh + 30);
+    g.fillStyle(HUFS_GOLD).fillRect(cx - 2, wy + 96, 36, 5);
+  }
+
+  // 책장
+  const bx = ox + 486;
+  const by = 66;
+  const bw = 140;
+  g.fillStyle(woodD).fillRect(bx, by, bw, 218);
+  for (let k = 0; k < 4; k++) {
+    const sy = by + 10 + k * 52;
+    g.fillStyle(0x2e1c10).fillRect(bx + 8, sy, bw - 16, 44);
+    let x = bx + 10;
+    while (x < bx + bw - 22) {
+      const w = c.rnd.between(6, 11);
+      const h = c.rnd.between(30, 42);
+      g.fillStyle(c.rnd.pick(BOOK_COLORS)).fillRect(x, sy + 44 - h, w, h);
+      g.fillStyle(0xd9b44a, 0.7).fillRect(x + 1, sy + 48 - h, w - 2, 2);
+      x += w + 1;
+      if (c.rnd.frac() < 0.12) x += 10;
+    }
+    g.fillStyle(woodL).fillRect(bx + 4, sy + 44, bw - 8, 6);
+  }
+
+  // 남색 학교 깃발 (흰 심벌 + HUFS)
+  const px = ox + 930;
+  g.fillStyle(0xd9b44a).fillCircle(px + 2, 74, 6);
+  g.fillStyle(0xb9a46a).fillRect(px, 78, 5, 214);
+  g.fillStyle(0x6b5a3a).fillRect(px - 14, 284, 33, 8);
+  const fx0 = px - 124;
+  g.fillStyle(HUFS_NAVY).fillRect(fx0, 84, 124, 82);
+  for (let k = 0; k < 4; k++) g.fillStyle(0x001d38, 0.6).fillRect(fx0 + 14 + k * 30, 84, 8, 82);
+  g.fillStyle(HUFS_GOLD).fillRect(fx0, 164, 124, 3);
+  for (let k = 2; k < 124; k += 4) g.fillRect(fx0 + k, 167, 2, 6);
+  logo(c, HUFS_KEYS.line, fx0 + 36, 122, { h: 46, tint: 0xffffff });
+  logo(c, HUFS_KEYS.type, fx0 + 88, 122, { w: 52, tint: 0xffffff });
+
+  // 높은 의자 (책상 뒤)
+  g.fillStyle(0x3b1f1a).fillRect(ox + 690, 150, 84, 84);
+  g.fillStyle(0x4d2a22).fillRect(ox + 696, 156, 72, 72);
+  g.fillStyle(0x2a1512);
+  for (let r = 0; r < 3; r++) for (let k = 0; k < 3; k++) g.fillRect(ox + 708 + k * 22, 168 + r * 20, 4, 4);
+
+  // 큰 책상과 책상 위 물건 (서류함, 큰 도장, 노트북)
+  g.fillStyle(0x5a3820).fillRect(ox + 556, 228, 344, 12);
+  g.fillStyle(woodL).fillRect(ox + 556, 228, 344, 3);
+  g.fillStyle(0x4a2e1a).fillRect(ox + 564, 240, 328, 58);
+  g.fillStyle(HUFS_GOLD).fillRect(ox + 564, 240, 328, 3);
+  for (const ppx of [ox + 580, ox + 790]) g.fillStyle(0x553521).fillRect(ppx, 252, 86, 38);
+  logo(c, HUFS_KEYS.line, ox + 728, 270, { h: 28, tint: HUFS_GOLD });
+  for (let k = 0; k < 4; k++) {
+    g.fillStyle(k % 2 ? 0xf4f0e0 : 0xffffff).fillRect(ox + 590 + (k % 2) * 3, 222 - k * 4, 50, 4);
+  }
+  g.fillStyle(0x8b5a2b).fillRect(ox + 664, 204, 10, 16);
+  g.fillStyle(0xc8202f).fillRect(ox + 657, 219, 24, 9);
+  g.fillStyle(0x2b2b30).fillRect(ox + 824, 196, 48, 30);
+  g.fillStyle(0x3b6db3).fillRect(ox + 828, 200, 40, 22);
+  g.fillStyle(0xffffff).fillRect(ox + 836, 205, 22, 12);
+  g.fillStyle(0xd0202f).fillRect(ox + 836, 205, 22, 3);
+  g.fillStyle(0x1d1d22).fillRect(ox + 818, 225, 60, 4);
+  g.fillStyle(0x6b7280).fillRect(ox + 772, 212, 10, 16);
+  g.fillStyle(0x1d1d22).fillRect(ox + 774, 202, 2, 10).fillRect(ox + 778, 204, 2, 8);
 }

@@ -1,11 +1,13 @@
 import Phaser from 'phaser';
 import { GAME_W } from '../config';
-import type { HeroDef } from '../data/heroes';
+import type { StaffLook } from '../data/heroes';
+import type { StudentHeroLook } from '../data/students';
 import type { Controls } from '../input/Controls';
 import type { StageScene } from '../scenes/StageScene';
 import { Fighter, type AttackDef, type HitInfo } from './Fighter';
-import { neutralPose, type Pose } from './Rig';
+import { neutralPose, type Pose, type Rig } from './Rig';
 import {
+  BACKPACK_NAME,
   createClipboard,
   createHeldBomb,
   createHeldBook,
@@ -14,11 +16,23 @@ import {
   createHeldStapler,
   createStaffRig,
   createStamp,
+  createStudentHeroRig,
 } from './rigs';
-import { WEAPONS, type WeaponDef, type WeaponId } from './weapons';
+import {
+  createHeldBag,
+  createHeldClock,
+  createHeldMajorBook,
+  createHeldStudentId,
+  createHeldTumbler,
+  createHeldUmbrella,
+} from './studentRigs';
+import { WEAPONS, weaponName, type WeaponDef, type WeaponId } from './weapons';
 import * as fx from '../fx';
 
-/** 맨손: 도장 → 도장 → 결재판 내려치기 */
+/** 주인공 외형: 교직원(가상 행정직원) 또는 학생 */
+export type PlayerLook = { student: false; look: StaffLook } | { student: true; look: StudentHeroLook };
+
+/** 맨손 (교직원: 도장 → 도장 → 결재판 내려치기, 학생: 잽 → 잽 → 가방 휘두르기). 수치는 같다 */
 export const COMBO: AttackDef[] = [
   { total: 0.24, active: [0.06, 0.12], chainAt: 0.11, reach: 66, zReach: 30, dmg: 1, kb: 70, knockdown: false },
   { total: 0.26, active: [0.07, 0.13], chainAt: 0.12, reach: 68, zReach: 30, dmg: 1, kb: 70, knockdown: false },
@@ -47,6 +61,8 @@ const CLING_MUL = 0.4;
 /** 아메리카노: 공격 속도 */
 const COFFEE_MUL = 1.35;
 const SHAKE_OFF = 4;
+/** 국물 위: 속도가 목표에 늦게 따라간다 (클수록 덜 미끄럽다) */
+const SLIP_GRIP = 2.2;
 
 export type PlayerState =
   | 'idle'
@@ -61,6 +77,7 @@ export type PlayerState =
   | 'special'
   | 'report'
   | 'meeting'
+  | 'frozen'
   | 'ko';
 
 export interface HeldWeapon {
@@ -78,22 +95,27 @@ export interface Clinger {
   releaseCling(): void;
 }
 
-type PropId = 'stamp' | 'board' | 'stapler' | 'notice' | 'card' | 'book' | 'bomb';
+type PropId = 'stamp' | 'board' | 'stapler' | 'notice' | 'card' | 'book' | 'bomb' | 'bag';
 
 export class Player extends Fighter {
   readonly halfW = 20;
   readonly height = 106;
-  readonly hero: HeroDef;
+  /** 학생 모드 주인공인지 */
+  readonly student: boolean;
   state: PlayerState = 'idle';
   sp = 0;
   lives = 3;
   weapon: HeldWeapon | null = null;
   slowT = 0;
   coffeeT = 0;
+  /** 국물 위에 서 있다 (김학생식당). 스테이지가 매 프레임 채운다 */
+  slipT = 0;
   clingBy: Clinger | null = null;
   private clingPresses = 0;
   private reportT = 0;
   private meetingT = 0;
+  private frozenT = 0;
+  private readonly backpack: Phaser.GameObjects.Container | null;
   private combo = 0;
   private buffered = false;
   private running = false;
@@ -104,20 +126,38 @@ export class Player extends Fighter {
   private readonly props: Record<PropId, Phaser.GameObjects.Container>;
   private readonly scene: StageScene;
 
-  constructor(scene: StageScene, x: number, y: number, hero: HeroDef) {
-    const rig = createStaffRig(scene, hero.look);
+  constructor(scene: StageScene, x: number, y: number, hero: PlayerLook) {
+    const rig: Rig = hero.student ? createStudentHeroRig(scene, hero.look) : createStaffRig(scene, hero.look);
     super(scene, x, y, rig, 12, 46);
     this.scene = scene;
-    this.hero = hero;
-    this.props = {
-      stamp: createStamp(scene, rig),
-      board: createClipboard(scene, rig),
-      stapler: createHeldStapler(scene, rig),
-      notice: createHeldNotice(scene, rig),
-      card: createHeldCard(scene, rig),
-      book: createHeldBook(scene, rig),
-      bomb: createHeldBomb(scene, rig),
-    };
+    this.student = hero.student;
+    const empty = () => new Phaser.GameObjects.Container(scene, 0, 0);
+    if (hero.student) {
+      // 학생: 맨손 잽은 주먹만, 3타는 등의 가방을 내려 휘두른다
+      this.props = {
+        stamp: empty(),
+        board: createHeldMajorBook(scene, rig),
+        stapler: createHeldTumbler(scene, rig),
+        notice: createHeldUmbrella(scene, rig),
+        card: createHeldStudentId(scene, rig),
+        book: createHeldBook(scene, rig),
+        bomb: createHeldClock(scene, rig),
+        bag: createHeldBag(scene, rig, hero.look.bag),
+      };
+      this.backpack = (rig.torso.getByName(BACKPACK_NAME) as Phaser.GameObjects.Container | null) ?? null;
+    } else {
+      this.props = {
+        stamp: createStamp(scene, rig),
+        board: createClipboard(scene, rig),
+        stapler: createHeldStapler(scene, rig),
+        notice: createHeldNotice(scene, rig),
+        card: createHeldCard(scene, rig),
+        book: createHeldBook(scene, rig),
+        bomb: createHeldBomb(scene, rig),
+        bag: empty(),
+      };
+      this.backpack = null;
+    }
     for (const c of Object.values(this.props)) {
       rig.itemF.add(c);
       c.setVisible(false);
@@ -128,6 +168,11 @@ export class Player extends Fighter {
   private set(s: PlayerState): void {
     if (this.state !== s) this.stateT = 0;
     this.state = s;
+  }
+
+  /** 모드에 맞는 무기 이름 */
+  wname(def: WeaponDef): string {
+    return weaponName(def, this.student);
   }
 
   get hittable(): boolean {
@@ -154,6 +199,7 @@ export class Player extends Fighter {
     if (this.invuln > 0) this.invuln -= dt;
     if (this.slowT > 0) this.slowT -= dt;
     if (this.coffeeT > 0) this.coffeeT -= dt;
+    if (this.slipT > 0) this.slipT -= dt;
 
     // 손에 든 마감 서류 뭉치
     if (this.weapon?.id === 'bomb') {
@@ -167,7 +213,7 @@ export class Player extends Fighter {
     switch (this.state) {
       case 'idle':
       case 'walk':
-        this.updateFree(c);
+        this.updateFree(c, dt);
         break;
       case 'attack':
         this.updateAttack(dt, c);
@@ -216,6 +262,11 @@ export class Player extends Fighter {
         this.vy = 0;
         if (this.stateT >= this.reportT) this.set('idle');
         break;
+      case 'frozen':
+        this.vx = 0;
+        this.vy = 0;
+        if (this.stateT >= this.frozenT) this.set('idle');
+        break;
       case 'meeting':
         this.vx = 0;
         this.vy = 0;
@@ -252,7 +303,7 @@ export class Player extends Fighter {
     this.shadow.setVisible(this.state !== 'meeting');
   }
 
-  private updateFree(c: Controls): void {
+  private updateFree(c: Controls, dt: number): void {
     const mx = c.moveX;
     const my = c.moveY;
     const mul = this.speedMul;
@@ -286,10 +337,20 @@ export class Player extends Fighter {
       return;
     }
     this.running = c.running && mx !== 0;
-    this.vx = mx * (this.running ? RUN : WALK) * mul;
-    this.vy = my * DEPTH_SPEED * mul;
+    const tvx = mx * (this.running ? RUN : WALK) * mul;
+    const tvy = my * DEPTH_SPEED * mul;
+    if (this.slipT > 0) {
+      // 국물 위: 미끄러져서 방향을 바꾸거나 멈추기가 어렵다
+      const k = 1 - Math.exp(-SLIP_GRIP * dt);
+      this.vx += (tvx - this.vx) * k;
+      this.vy += (tvy - this.vy) * k;
+    } else {
+      this.vx = tvx;
+      this.vy = tvy;
+    }
     if (mx !== 0) this.facing = mx > 0 ? 1 : -1;
-    this.set(mx !== 0 || my !== 0 ? 'walk' : 'idle');
+    const sliding = Math.abs(this.vx) > 12 || Math.abs(this.vy) > 12;
+    this.set(mx !== 0 || my !== 0 || sliding ? 'walk' : 'idle');
   }
 
   /** 매달린 학생 떨쳐내기: 공격 버튼을 연타한다 */
@@ -378,7 +439,7 @@ export class Player extends Fighter {
     if (chain || this.stateT >= a.total) {
       if (w.def.durability > 0 && w.dur <= 0) {
         this.weapon = null;
-        fx.floatText(this.scene, this.x, this.y - 124, `${w.def.name} 다 씀`, '#cfd6e3', 16);
+        fx.floatText(this.scene, this.x, this.y - 124, `${this.wname(w.def)} 다 씀`, '#cfd6e3', 16);
         this.set('idle');
         return;
       }
@@ -419,8 +480,22 @@ export class Player extends Fighter {
   }
 
   applySlow(sec: number): void {
-    if (this.slowT <= 0) fx.floatText(this.scene, this.x, this.y - 128, '메일 확인 중… (느려짐)', '#9fd3ff', 16);
+    if (this.slowT <= 0) {
+      const text = this.student ? '반려 사유 읽는 중… (느려짐)' : '메일 확인 중… (느려짐)';
+      fx.floatText(this.scene, this.x, this.y - 128, text, '#9fd3ff', 16);
+    }
     this.slowT = Math.max(this.slowT, sec);
+  }
+
+  /** 잠깐 멈춘다 (최장학의 동전을 밟았을 때). 그동안 맞을 수 있다 */
+  freeze(sec: number, text: string): boolean {
+    if (!['idle', 'walk', 'attack', 'wattack'].includes(this.state)) return false;
+    this.set('frozen');
+    this.frozenT = sec;
+    this.vx = 0;
+    this.vy = 0;
+    fx.floatText(this.scene, this.x, this.y - 128, text, '#9fd3ff', 18);
+    return true;
   }
 
   /** "보고해!"를 밟거나 일거리를 주우면 잠깐 보고서를 쓴다 */
@@ -454,11 +529,11 @@ export class Player extends Fighter {
     const front = this.facing === -Math.sign(h.dir);
     if (w?.def.guard && front && !h.force && ['idle', 'walk', 'wattack'].includes(this.state)) {
       w.dur--;
-      fx.floatText(this.scene, this.x + this.facing * 20, this.y - 110, '결재판으로 막음!', '#9fd3ff', 16);
+      fx.floatText(this.scene, this.x + this.facing * 20, this.y - 110, `${this.wname(w.def)}으로 막음!`, '#9fd3ff', 16);
       this.vx = h.dir * 60;
       if (w.dur <= 0) {
         this.weapon = null;
-        fx.floatText(this.scene, this.x, this.y - 130, '결재판 다 씀', '#cfd6e3', 16);
+        fx.floatText(this.scene, this.x, this.y - 130, `${this.wname(w.def)} 다 씀`, '#cfd6e3', 16);
       }
       return false;
     }
@@ -533,6 +608,10 @@ export class Player extends Fighter {
         const a = COMBO[this.combo];
         p.legF = -0.28;
         p.legB = 0.28;
+        if (this.student) {
+          this.studentAttackPose(p, a);
+          break;
+        }
         if (this.combo === 0) {
           p.armF = -1.45;
           p.armB = 0.4;
@@ -629,21 +708,58 @@ export class Player extends Fighter {
         p.armB = -2.95;
         p.bob = -4;
         break;
+      case 'frozen':
+        // 깜짝 놀라 굳었다
+        sharp = 30;
+        p.armF = -2.5 + Math.sin(t * 40) * 0.05;
+        p.armB = -2.3;
+        p.body = -0.12;
+        p.bob = Math.sin(t * 50) * 1.2;
+        break;
     }
 
     const w = this.weapon;
     const id = w && !w.inFlight ? w.id : null;
     const holding = this.state !== 'down' && this.state !== 'ko' && this.state !== 'report';
+    const st = this.student;
+    const swingBag = st && this.state === 'attack' && this.combo === 2;
     const show: Record<PropId, boolean> = {
       stamp: (this.state === 'attack' && this.combo < 2) || (this.state === 'jump' && this.jumpAttacking && !id),
-      board: (this.state === 'attack' && this.combo === 2) || this.state === 'report' || (id === 'clipboard' && holding),
+      board:
+        (!st && ((this.state === 'attack' && this.combo === 2) || this.state === 'report')) ||
+        (id === 'clipboard' && holding && !swingBag),
       stapler: id === 'stapler' && holding,
       notice: id === 'notice' && holding,
       card: id === 'idcard' && holding && this.state !== 'attack',
       book: id === 'rulebook' && holding,
       bomb: id === 'bomb' && holding,
+      bag: swingBag,
     };
     for (const k of Object.keys(show) as PropId[]) this.props[k].setVisible(show[k]);
+    this.backpack?.setVisible(!swingBag);
     this.rig.update(dt, p, sharp);
+  }
+
+  /** 학생 맨손: 잽(앞손) → 잽(뒷손) → 등의 가방을 내려 크게 휘두르기 */
+  private studentAttackPose(p: Pose, a: AttackDef): void {
+    if (this.combo === 0) {
+      p.armF = -1.57;
+      p.armB = 0.5;
+      p.body = 0.1;
+    } else if (this.combo === 1) {
+      p.armF = 0.45;
+      p.armB = -1.62;
+      p.body = 0.16;
+    } else if (this.stateT < a.active[0]) {
+      p.armF = 1.0;
+      p.armB = -0.5;
+      p.body = -0.16;
+    } else {
+      p.armF = -1.8;
+      p.armB = 0.6;
+      p.body = 0.26;
+      p.legF = -0.45;
+      p.legB = 0.38;
+    }
   }
 }

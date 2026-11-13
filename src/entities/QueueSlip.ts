@@ -6,8 +6,9 @@ import { Enemy } from './Enemy';
 import type { Player } from './Player';
 import { neutralPose, type Pose } from './Rig';
 import { createSlipRig } from './rigs';
+import { createTicketRig } from './studentRigs';
 
-// 잡몹 "단체 문의 줄": 문의 쪽지 다섯 장이 줄줄이 이어져 다가오며 길을 막는다.
+// 잡몹 "단체 문의 줄"(학생 모드: "대기번호표"): 문의 쪽지 다섯 장이 줄줄이 이어져 다가오며 길을 막는다.
 // 맨 앞 쪽지가 플레이어 쪽으로 가고, 나머지는 앞 쪽지를 따라간다. 부딪히면 밀려난다.
 
 const S = stats.queue;
@@ -24,10 +25,17 @@ export class QueueSlip extends Enemy {
   private readonly tagText: Phaser.GameObjects.Text;
 
   constructor(scene: StageScene, x: number, y: number, enterTargetX: number, ahead: QueueSlip | null) {
-    super(scene, x, y, createSlipRig(scene), S.hp, 44, enterTargetX);
+    const st = scene.studentMode;
+    super(scene, x, y, st ? createTicketRig(scene) : createSlipRig(scene), S.hp, 44, enterTargetX);
     this.ahead = ahead;
+    if (st) this.defeatText = '호출 완료';
     this.tagText = scene.add
-      .text(x, y, '문의', { fontFamily: FONT, fontSize: '11px', fontStyle: 'bold', color: '#d0202f' })
+      .text(x, y, st ? scene.nextTicketNo() : '문의', {
+        fontFamily: FONT,
+        fontSize: st ? '13px' : '11px',
+        fontStyle: 'bold',
+        color: st ? '#002c52' : '#d0202f',
+      })
       .setOrigin(0.5);
     this.sync();
   }

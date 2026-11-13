@@ -7,9 +7,10 @@ import type { HitInfo } from './Fighter';
 import type { Player } from './Player';
 import { neutralPose, type Pose } from './Rig';
 import { createDocBombRig } from './rigs';
+import { createAlarmClockRig } from './studentRigs';
 import * as fx from '../fx';
 
-// 잡몹 "마감 1분 전 서류 뭉치": 째깍거리며 다가오다 시간이 다 되면 터진다.
+// 잡몹 "마감 1분 전 서류 뭉치"(학생 모드: "마감 시계"): 째깍거리며 다가오다 시간이 다 되면 터진다.
 // 치면 넘어지고, 넘어진 것은 L(줍기)로 집어 적에게 던져 되돌릴 수 있다.
 
 const S = stats.docbomb;
@@ -25,7 +26,7 @@ export class DocBomb extends Enemy {
   private readonly timer: Phaser.GameObjects.Text;
 
   constructor(scene: StageScene, x: number, y: number, enterTargetX: number) {
-    super(scene, x, y, createDocBombRig(scene), S.hp, 54, enterTargetX);
+    super(scene, x, y, scene.studentMode ? createAlarmClockRig(scene) : createDocBombRig(scene), S.hp, 54, enterTargetX);
     this.timer = scene.add
       .text(x, y, '', {
         fontFamily: FONT,
@@ -47,7 +48,7 @@ export class DocBomb extends Enemy {
   protected think(dt: number, player: Player): void {
     this.fuse -= dt;
     if (this.fuse <= 0) {
-      this.scene.explode(this.x, this.y, 95, { player: 2, enemies: 2 }, '펑! 마감!');
+      this.scene.explode(this.x, this.y, 95, { player: 2, enemies: 2 }, this.scene.studentMode ? '따르릉! 마감!' : '펑! 마감!');
       this.destroy();
       return;
     }

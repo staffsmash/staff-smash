@@ -1,5 +1,7 @@
 import Phaser from 'phaser';
+import { FLOOR_BOTTOM, FLOOR_TOP } from '../config';
 import type { Fighter } from './Fighter';
+import type { WeaponId } from './weapons';
 
 // 날아가는 물체: 보스의 "?" 질문, 서류·요구안, 확성기 음파, 플레이어가 던진 무기.
 // 판정은 그림자(y) 기준이고, 높이(z)로 점프 회피를 가른다. 충돌 처리는 StageScene이 한다.
@@ -21,6 +23,10 @@ export interface ProjectileOpts {
   returnTo?: Fighter;
   /** 마감 서류 뭉치: 맞거나 멈추면 터진다 */
   explodes?: boolean;
+  /** 깊이 방향 속도 (부채꼴로 흩어지는 여권 등) */
+  vy?: number;
+  /** 플레이어가 던진 무기 (되받아칠 때 같은 모양으로 돌려보낸다) */
+  weaponId?: WeaponId;
 }
 
 export class Projectile {
@@ -35,6 +41,8 @@ export class Projectile {
   readonly halfW: number;
   readonly returnTo: Fighter | undefined;
   readonly explodes: boolean;
+  readonly weaponId: WeaponId | undefined;
+  vy: number;
   removed = false;
   returning = false;
   /** 한 번 지나가며 이미 맞힌 대상 (사원증은 가고 올 때 각각 한 번씩) */
@@ -60,6 +68,8 @@ export class Projectile {
     this.spin = o.spin ?? 0;
     this.returnTo = o.returnTo;
     this.explodes = !!o.explodes;
+    this.vy = o.vy ?? 0;
+    this.weaponId = o.weaponId;
     this.obj = o.obj;
     this.shadow = scene.add.ellipse(o.x, o.y, o.halfW * 1.4, 8, 0x000000, 0.22).setDepth(-5);
     this.sync();
@@ -86,6 +96,13 @@ export class Projectile {
       }
     }
     this.x += this.vx * dt;
+    if (this.vy !== 0) {
+      this.y += this.vy * dt;
+      if (this.y < FLOOR_TOP || this.y > FLOOR_BOTTOM) {
+        this.y = Phaser.Math.Clamp(this.y, FLOOR_TOP, FLOOR_BOTTOM);
+        this.vy = 0;
+      }
+    }
     this.ttl -= dt;
     this.obj.rotation += this.spin * dt;
     this.sync();

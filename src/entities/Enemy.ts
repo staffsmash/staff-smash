@@ -8,6 +8,7 @@ import * as fx from '../fx';
 
 // 모든 적의 공통 부분: 등장·피격·다운·기상·퇴장 상태와 판정, 이름표·말풍선.
 // 사물(메일·전화기 등)은 넘어지고, 학생은 넘어지지 않고 비틀거리다가 인사하고 돌아간다 (PRD 4절).
+// 학생 모드의 창구 직원·처장·부총장·총장도 넘어지지 않는다 — 맞는 것은 "설득"이고, 설득되면 퇴근하며 물러난다.
 
 export type EnemyKind =
   | 'mail'
@@ -23,7 +24,18 @@ export type EnemyKind =
   | 'minwon'
   | 'noticeBoss'
   | 'deadlineBoss'
-  | 'chonghak';
+  | 'chonghak'
+  // 학생 모드: 창구 중간보스(가상 행정직원), 보스
+  | 'haksa'
+  | 'sikdang'
+  | 'jinchwi'
+  | 'gukje'
+  | 'hakjong'
+  | 'janghak'
+  | 'banryeoBoss'
+  | 'docTower'
+  | 'bansaBoss'
+  | 'presidentBoss';
 
 /** 보스 체력바에 보여 줄 정보 */
 export interface BossLike {
@@ -53,6 +65,10 @@ export abstract class Enemy extends Fighter {
   /** 가벼운 적: 넘어지지 않고 밀려나며, 체력이 다하면 바로 사라진다 */
   readonly light: boolean = false;
   readonly canRecheck: boolean = true;
+  /** 학생 모드의 사람(창구 직원·보스): 맞힌 자리에 "설득" 도장이 찍힌다 */
+  readonly persuadable: boolean = false;
+  /** 처리된 뒤에도 화면에 남아 구역 정리를 막지 않는다 (프레지던트 캉) */
+  readonly staysAfter: boolean = false;
   /** 동시 공격 제한(토큰)을 따르는지 */
   readonly usesToken: boolean = true;
   defeatText = '처리 완료';
@@ -193,7 +209,7 @@ export abstract class Enemy extends Fighter {
     this.set('bow');
     this.vx = 0;
     this.say(this.thanksText, 1.6);
-    fx.floatText(this.scene, this.x, this.y - this.height - 30, '처리 완료', '#7CFC9A', 18);
+    fx.floatText(this.scene, this.x, this.y - this.height - 30, this.scene.studentMode ? '설득 완료!' : '처리 완료', '#7CFC9A', 18);
     this.scene.onEnemyDefeated(this);
   }
 

@@ -1,0 +1,45 @@
+{
+  "id": "student-1",
+  "title": "1스테이지 · 대운동장 → 국제학사",
+  "background": { "seed": "student-field", "sky": "day" },
+  "zones": [
+    {
+      "left": 0,
+      "label": "대운동장",
+      "art": "field",
+      "maxAlive": 3,
+      "waves": ["mail", "mail", "phone", "mail"],
+      "supervisors": []
+    },
+    {
+      "left": 960,
+      "label": "운동장 트랙",
+      "art": "track",
+      "maxAlive": 3,
+      "waves": ["bubble", "mail", "haksa", "mail", "bubble"],
+      "supervisors": []
+    },
+    {
+      "left": 1920,
+      "label": "운동장 스탠드",
+      "art": "stands",
+      "maxAlive": 3,
+      "waves": ["phone", "mail", "bubble", "sikdang", "mail", "phone"],
+      "supervisors": []
+    },
+    {
+      "left": 2880,
+      "label": "국제학사 앞",
+      "art": "dormFront",
+      "maxAlive": 2,
+      "waves": ["banryeoBoss"],
+      "adds": { "type": "mail", "every": 9, "max": 1 },
+      "supervisors": []
+    }
+  ],
+  "weapons": [
+    { "id": "stapler", "x": 660, "y": 470 },
+    { "id": "notice", "x": 1560, "y": 400 }
+  ],
+  "foods": [{ "id": "gimbap", "x": 2500, "y": 450 }]
+}
