@@ -1,11 +1,16 @@
 import Phaser from 'phaser';
 import { FONT, GAME_H, GAME_W } from '../config';
+import { STUDENT_HEROES } from '../data/students';
 import { Controls } from '../input/Controls';
 import { neutralPose } from '../entities/Rig';
 import type { Rig } from '../entities/Rig';
-import { createMailRig, createStaffRig } from '../entities/rigs';
+import { createStaffRig, createStudentHeroRig } from '../entities/rigs';
+import type { GameMode } from '../records';
 import { fadeTo, makeButton } from '../ui/button';
 import { HUFS_KEYS, HUFS_NAVY, hufsImage, loadHufsAssets } from '../hufs';
+
+// 타이틀: 교직원 모드(출근하기)와 학생 모드(등교하기) 중 하나를 고른다.
+// 키보드: Enter·1 = 교직원 모드, 2 = 학생 모드, B = 기록판.
 
 export class TitleScene extends Phaser.Scene {
   private controls!: Controls;
@@ -54,23 +59,37 @@ export class TitleScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setAngle(-6);
     this.add
-      .text(cx, 198, '교직원 모드 · 오후 4시 52분, 퇴근 8분 전', { fontFamily: FONT, fontSize: '17px', color: '#c9d3e6' })
+      .text(cx, 198, '오후 4시 52분, 마감 8분 전 · 교직원은 정시 퇴근을, 학생은 졸업 승인을 노린다', {
+        fontFamily: FONT,
+        fontSize: '17px',
+        color: '#c9d3e6',
+      })
       .setOrigin(0.5);
 
+    // 왼쪽: 교직원(김국제), 오른쪽: 학생(김러샤)이 서로 마주 본다
     const staff = createStaffRig(this);
-    staff.root.setPosition(170, 450).setScale(1.7);
-    const mail = createMailRig(this);
-    mail.root.setPosition(790, 450).setScale(1.7);
-    mail.root.scaleX = -1.7;
-    this.rigs = [staff, mail];
+    staff.root.setPosition(110, 450).setScale(1.7);
+    const student = createStudentHeroRig(this, STUDENT_HEROES[0].look);
+    student.root.setPosition(850, 450).setScale(1.7);
+    student.root.scaleX = -1.7;
+    this.rigs = [staff, student];
 
     const help = touch
-      ? '왼쪽 화면 드래그: 이동   A: 처리   B: 점프   줍기: 무기 줍기·던지기   SP: 필살기'
-      : '이동 방향키·WASD   대시 같은 방향 두 번   처리 J   점프 K   줍기·던지기 L   필살기 I';
-    this.add.text(cx, 256, help, { fontFamily: FONT, fontSize: '14px', color: '#e6ebf3' }).setOrigin(0.5);
+      ? '왼쪽 화면 드래그: 이동   A: 처리·공격   B: 점프   줍기: 무기 줍기·던지기   SP: 필살기'
+      : '이동 방향키·WASD   대시 같은 방향 두 번   처리·공격 J   점프 K   줍기·던지기 L   필살기 I';
+    this.add.text(cx, 238, help, { fontFamily: FONT, fontSize: '14px', color: '#e6ebf3' }).setOrigin(0.5);
 
-    makeButton(this, cx, 330, 260, 54, touch ? '출근하기' : '출근하기 (Enter)', () => this.go('select'), 0x2f8f4e);
-    makeButton(this, cx, 396, 260, 46, touch ? '기록판' : '기록판 (B)', () => this.go('board'), 0x2f6fd1);
+    // 모드 고르기: 버튼 아래에 한 줄 소개
+    const modeX = { staff: cx - 135, student: cx + 135 };
+    makeButton(this, modeX.staff, 300, 250, 56, touch ? '출근하기' : '출근하기 (Enter·1)', () => this.start('staff'), 0x2f8f4e);
+    makeButton(this, modeX.student, 300, 250, 56, touch ? '등교하기' : '등교하기 (2)', () => this.start('student'), 0xb4532a);
+    const caption = (x: number, title: string, sub: string) => {
+      this.add.text(x, 342, title, { fontFamily: FONT, fontSize: '15px', fontStyle: 'bold', color: '#ffffff' }).setOrigin(0.5);
+      this.add.text(x, 363, sub, { fontFamily: FONT, fontSize: '13px', color: '#c9d3e6' }).setOrigin(0.5);
+    };
+    caption(modeX.staff, '교직원 모드', '민원 처리하고 정시 퇴근');
+    caption(modeX.student, '학생 모드', '반려된 졸업 서류 승인받기');
+    makeButton(this, cx, 418, 220, 42, touch ? '기록판' : '기록판 (B)', () => this.go('board'), 0x2f6fd1);
 
     this.add
       .text(cx, GAME_H - 34, '비공식 게임입니다. 프레지던트 캉을 제외한 인물과 부서는 모두 가상입니다.', {
@@ -98,11 +117,17 @@ export class TitleScene extends Phaser.Scene {
       p.bob = s * 1.5;
       r.update(dt, p);
     }
-    if (this.controls.consume('confirm')) this.go('select');
-    else if (this.controls.consume('board')) this.go('board');
+    const c = this.controls;
+    if (c.consume('confirm') || c.consume('pick1')) this.start('staff');
+    else if (c.consume('pick2')) this.start('student');
+    else if (c.consume('board')) this.go('board');
   }
 
-  private go(key: 'select' | 'board'): void {
+  private start(mode: GameMode): void {
+    this.go('select', { mode });
+  }
+
+  private go(key: 'select' | 'board', data?: object): void {
     if (this.started) return;
     this.started = true;
     if (key === 'select' && this.sys.game.device.input.touch) {
@@ -114,6 +139,6 @@ export class TitleScene extends Phaser.Scene {
         // 전체 화면을 지원하지 않는 브라우저(iPhone 등)는 그대로 진행한다
       }
     }
-    fadeTo(this, key);
+    fadeTo(this, key, data);
   }
 }

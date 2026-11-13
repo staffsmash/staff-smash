@@ -5,6 +5,7 @@ import { SelectScene } from './scenes/SelectScene';
 import { StageScene } from './scenes/StageScene';
 import { ResultScene } from './scenes/ResultScene';
 import { EndingScene } from './scenes/EndingScene';
+import { StudentEndingScene } from './scenes/StudentEndingScene';
 import { RecordScene } from './scenes/RecordScene';
 import { LeaderboardScene } from './scenes/LeaderboardScene';
 
@@ -20,7 +21,7 @@ const game = new Phaser.Game({
   },
   input: { activePointers: 4 },
   fps: { target: 60, forceSetTimeOut: FORCE_TIMER },
-  scene: [TitleScene, SelectScene, StageScene, ResultScene, EndingScene, RecordScene, LeaderboardScene],
+  scene: [TitleScene, SelectScene, StageScene, ResultScene, EndingScene, StudentEndingScene, RecordScene, LeaderboardScene],
 });
 
 // 디버그 모드에서는 콘솔에서 상태를 볼 수 있게 한다

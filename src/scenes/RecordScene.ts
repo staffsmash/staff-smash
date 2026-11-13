@@ -1,11 +1,15 @@
 import Phaser from 'phaser';
-import { FONT, GAME_H, GAME_W, OFF_HOURS, clockText } from '../config';
+import { FONT, GAME_H, GAME_W } from '../config';
 import { heroById } from '../data/heroes';
 import { skillById } from '../data/skills';
+import { spellById } from '../data/spells';
+import { studentHeroById } from '../data/students';
 import { Controls } from '../input/Controls';
+import { gpaText } from '../grade';
 import { VERSION, checkNickname, lastNickname, onlineConfigured, submitRecord, type RecordEntry } from '../records';
-import { gradesText, runClock, type RunState } from '../run';
+import { gradesText, outcomeText, runClock, type RunState } from '../run';
 import { fadeTo, makeButton } from '../ui/button';
+import { addSpellLine } from '../ui/spellText';
 
 // 기록 남기기 (PRD 13절): 게임이 끝나면(클리어·게임오버 모두) 닉네임을 쓰고 기록판에 올린다.
 // 건너뛰면 익명으로 1건만 남는다(순위에는 안 나온다). 실명·학번은 받지 않는다.
@@ -35,20 +39,26 @@ export class RecordScene extends Phaser.Scene {
     const clock = runClock(r);
 
     this.add.rectangle(cx, GAME_H / 2, GAME_W, GAME_H, 0x1d2433);
-    this.add.text(cx, 52, '오늘의 근무 기록', { fontFamily: FONT, fontSize: '28px', fontStyle: 'bold', color: '#ffffff' }).setOrigin(0.5);
+    const student = r.mode === 'student';
+    this.add
+      .text(cx, 52, student ? '오늘의 학사 기록' : '오늘의 근무 기록', { fontFamily: FONT, fontSize: '28px', fontStyle: 'bold', color: '#ffffff' })
+      .setOrigin(0.5);
 
-    const hero = heroById(r.hero);
-    const result = r.cleared
-      ? clock <= OFF_HOURS + 0.001
-        ? `정시 퇴근! (${clockText(Math.max(clock, OFF_HOURS))})`
-        : `퇴근 ${clockText(clock)} · ${Math.ceil(clock - OFF_HOURS)}분 초과근무`
-      : `${r.reached}스테이지에서 야근 확정 (${clockText(clock)})`;
-    const lines = [
-      `${hero.name} · 필살기 ${skillById(r.skill).name}`,
-      result,
-      `근무평정 ${r.stages.map((s) => `${s.stage}스테이지 ${s.grade}`).join(' · ') || '없음'}`,
-      `받은 민원 피해 ${r.damage} · 최대 연속 처리 ${r.maxCombo}회`,
-    ];
+    const result = outcomeText(r.mode, r.cleared, r.reached, clock, true);
+    const stageGrades = r.stages.map((s) => `${s.stage}스테이지 ${s.grade}`).join(' · ') || '없음';
+    const lines = student
+      ? [
+          '', // 첫 줄(주인공 · 외국어 주문)은 아래에서 따로 그린다
+          result,
+          `학점 ${stageGrades}${r.stages.length ? ` · GPA ${gpaText(r.stages.map((s) => s.grade))}` : ''}`,
+          `받은 피해 ${r.damage} · 최대 연속 공격 ${r.maxCombo}회`,
+        ]
+      : [
+          `${heroById(r.hero).name} · 필살기 ${skillById(r.skill).name}`,
+          result,
+          `근무평정 ${stageGrades}`,
+          `받은 민원 피해 ${r.damage} · 최대 연속 처리 ${r.maxCombo}회`,
+        ];
     lines.forEach((t, i) =>
       this.add
         .text(cx, 100 + i * 30, t, {
@@ -59,6 +69,15 @@ export class RecordScene extends Phaser.Scene {
         })
         .setOrigin(0.5),
     );
+    if (student) {
+      // "김러샤 · 필살기 아랍어 · يلا! (가자!)" — 아랍어 원문은 따로 오른쪽 → 왼쪽으로 그린다
+      const spell = spellById(r.skill);
+      const nameT = this.add.text(0, 100, `${studentHeroById(r.hero).name} · 필살기 `, { fontFamily: FONT, fontSize: '16px', color: '#e6ebf3' });
+      const line = addSpellLine(this, 0, 100, spell, { size: 16, color: '#e6ebf3', bold: false });
+      const x0 = cx - (nameT.width + line.width) / 2;
+      nameT.setOrigin(0, 0.5).setX(x0);
+      line.setX(x0 + nameT.width);
+    }
 
     this.add
       .text(cx, 248, '기록판에 남길 닉네임 (2~8자)', { fontFamily: FONT, fontSize: '16px', color: '#c9d3e6' })
@@ -153,7 +172,7 @@ export class RecordScene extends Phaser.Scene {
     this.sent = true;
     const r = this.run;
     const entry: RecordEntry = {
-      mode: 'staff',
+      mode: r.mode,
       nickname,
       stage: r.reached,
       cleared: r.cleared,
@@ -167,7 +186,7 @@ export class RecordScene extends Phaser.Scene {
     };
     this.removeInput();
     this.errorT.setColor('#c9d3e6').setText('기록을 보내는 중…');
-    void submitRecord(entry).then(() => fadeTo(this, 'board', { from: 'record' }));
+    void submitRecord(entry).then(() => fadeTo(this, 'board', { from: 'record', mode: r.mode }));
   }
 
   update(): void {

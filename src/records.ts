@@ -20,7 +20,7 @@ export interface RecordEntry {
   ts: number;
 }
 
-export const VERSION = 'M2';
+export const VERSION = 'M3';
 const URL = (server as { recordsUrl: string }).recordsUrl.trim();
 const LOCAL_KEY = 'staffsmash.records';
 const NICK_KEY = 'staffsmash.nickname';

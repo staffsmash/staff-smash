@@ -23,12 +23,20 @@ export class EndingScene extends Phaser.Scene {
   private heroPose: 'idle' | 'phone' | 'cheer' = 'idle';
   private t = 0;
   private leaving = false;
+  /** 학생 모드라서 studentEnding으로 넘긴 경우 */
+  private redirected = false;
 
   constructor() {
     super('ending');
   }
 
   create(data: { run: RunState }): void {
+    // 학생 모드 엔딩은 따로 있다 (StudentEndingScene). 스테이지는 두 모드 모두 'ending'으로 넘어온다.
+    this.redirected = data.run?.mode === 'student';
+    if (this.redirected) {
+      this.scene.start('studentEnding', data);
+      return;
+    }
     this.run = data.run;
     this.t = 0;
     this.leaving = false;
@@ -148,6 +156,7 @@ export class EndingScene extends Phaser.Scene {
   }
 
   update(_t: number, deltaMs: number): void {
+    if (this.redirected) return;
     const dt = Math.min(deltaMs, 50) / 1000;
     this.t += dt;
     // 프레지던트 캉 걷기
