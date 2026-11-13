@@ -4,7 +4,7 @@ import { HEROES, type StaffLook } from '../data/heroes';
 import { Rig } from './Rig';
 import type { WeaponId } from './weapons';
 
-// 캐릭터·소품 외형 모음. 모두 코드로 그린 블록형 도형이다 (외부 에셋 없음).
+// 캐릭터·소품 외형 모음. 모두 코드로 그린 블록형 도형이다 (프레지던트 캉 초상 배경의 학교 로고타입만 이미지).
 
 const INK = 0x1d1d22;
 const SKIN = 0xf1c7a0;
@@ -351,58 +351,119 @@ export function createChonghakRig(scene: Phaser.Scene, role: ChonghakRole): Rig 
   return rig;
 }
 
-/** 프레지던트 캉 (자리 표시용 블록형 외형 — 사진을 받으면 얼굴 조각만 바꾼다) */
+// 프레지던트 캉: 총장실이 준 사진을 보고 블록형으로 옮긴 외형 (원본 사진은 레포에 넣지 않는다).
+// 짙은 갈색 머리를 위로 넘긴 가르마, 짙은 눈썹, 눈웃음, 다문 미소, 안경 없음.
+// 남색 정장, 흰 셔츠, 남색 물방울 넥타이, 옷깃 배지.
+const PRES_SUIT = 0x1c2740;
+const PRES_HAIR = 0x2a211c;
+const PRES_SKIN = 0xefc29c;
+const PRES_TIE = 0x22396b;
+
 export function createPresidentRig(scene: Phaser.Scene): Rig {
-  const suit = 0x1f2a44;
   const rig = new Rig(scene, {
     legW: 15,
     legH: 38,
     legGap: 15,
-    legColor: suit,
+    legColor: PRES_SUIT,
     shoeColor: 0x111111,
     torsoW: 42,
     torsoH: 42,
-    torsoColor: suit,
+    torsoColor: PRES_SUIT,
     armW: 13,
     armH: 32,
-    armColor: suit,
-    handColor: SKIN,
+    armColor: PRES_SUIT,
+    handColor: PRES_SKIN,
     headW: 34,
     headH: 33,
-    headColor: SKIN,
+    headColor: PRES_SKIN,
     outline: INK,
   });
-  rig.torso.add(rig.part(0, -41, 14, 24, 0xffffff, 0.5, 0, false));
-  rig.torso.add(rig.part(0, -39, 7, 26, 0x8a1f2c, 0.5, 0, false));
-  rig.torso.add(rig.part(-12, -34, 6, 6, 0xd9b44a, 0.5, 0, false));
-  rig.head.add(rig.part(0, -36, 36, 9, 0x3a3a3a, 0.5, 0));
-  rig.head.add(rig.part(-15, -29, 6, 13, 0x8a8a8a, 0.5, 0, false));
-  rig.head.add(rig.part(4, -22, 10, 8, 0xcfe8f5, 0.5, 0));
-  rig.head.add(rig.part(15, -22, 8, 8, 0xcfe8f5, 0.5, 0));
-  rig.head.add(rig.part(4, -20, 3, 4, INK, 0.5, 0, false));
-  rig.head.add(rig.part(14, -20, 3, 4, INK, 0.5, 0, false));
-  rig.head.add(rig.part(9, -9, 10, 3, 0x8a3b2b, 0.5, 0, false));
+  // 셔츠·물방울 넥타이·옷깃 배지 (몸통 위쪽 끝 = -42)
+  rig.torso.add(rig.part(0, -41, 14, 22, 0xffffff, 0.5, 0, false));
+  rig.torso.add(rig.part(0, -40, 9, 5, PRES_TIE, 0.5, 0, false));
+  rig.torso.add(rig.part(0, -36, 7, 24, PRES_TIE, 0.5, 0, false));
+  for (const [dx, dy] of [[-1, -32], [2, -26], [-1, -20], [2, -15]]) {
+    rig.torso.add(rig.part(dx, dy, 2, 2, 0xcfe3ff, 0.5, 0, false));
+  }
+  rig.torso.add(rig.part(12, -33, 4, 4, 0xd9b44a, 0.5, 0, false));
+  // 은색 손목시계
+  rig.armB.add(rig.part(0, 28, 13, 4, 0xc9ced4, 0.5, 0, false));
+  // 머리: 위로 넘긴 앞머리 (얼굴은 +x 쪽)
+  rig.head.add(rig.part(-1, -38, 36, 10, PRES_HAIR, 0.5, 0));
+  rig.head.add(rig.part(8, -41, 20, 5, PRES_HAIR, 0.5, 0, false));
+  rig.head.add(rig.part(-14, -29, 7, 12, PRES_HAIR, 0.5, 0, false));
+  rig.head.add(rig.part(-3, -37, 3, 6, 0x4a3a30, 0.5, 0, false));
+  // 짙은 눈썹, 눈웃음, 다문 미소
+  rig.head.add(rig.part(4, -24, 7, 2, PRES_HAIR, 0.5, 0, false));
+  rig.head.add(rig.part(14, -24, 6, 2, PRES_HAIR, 0.5, 0, false));
+  rig.head.add(rig.part(4, -19, 5, 2, INK, 0.5, 0, false));
+  rig.head.add(rig.part(14, -19, 4, 2, INK, 0.5, 0, false));
+  rig.head.add(rig.part(16, -15, 3, 5, 0xdba982, 0.5, 0, false));
+  rig.head.add(rig.part(10, -9, 10, 2, 0x8a3b2b, 0.5, 0, false));
+  rig.head.add(rig.part(15, -10, 2, 2, 0x8a3b2b, 0.5, 0, false));
   rig.itemF.add(rig.part(0, 0, 12, 14, 0x8b5a2b, 0.5, 0));
   rig.itemF.add(rig.part(0, 14, 28, 12, 0xc8202f, 0.5, 0));
   return rig;
 }
 
-/** 엔딩용 큰 초상 (자리 표시용) */
+/** 엔딩용 큰 초상 (정면). 사진처럼 뒤 벽에 학교 로고타입, 아래는 흰 세로 판벽 */
 export function createPresidentPortrait(scene: Phaser.Scene, x: number, y: number): Phaser.GameObjects.Container {
   const c = scene.add.container(x, y);
+  const flat = (bx: number, by: number, w: number, h: number, col: number) => c.add(box(scene, bx, by, w, h, col, 0.5, 0.5, false));
   c.add(box(scene, 0, 0, 190, 230, 0xfbf8f0).setStrokeStyle(6, 0xd9b44a));
-  c.add(box(scene, 0, 70, 150, 60, 0x1f2a44, 0.5, 0.5, false));
-  c.add(box(scene, 0, 62, 24, 44, 0xffffff, 0.5, 0.5, false));
-  c.add(box(scene, 0, 66, 12, 44, 0x8a1f2c, 0.5, 0.5, false));
-  c.add(box(scene, 0, -10, 112, 108, SKIN));
-  c.add(box(scene, 0, -58, 116, 26, 0x3a3a3a));
-  c.add(box(scene, -52, -30, 14, 40, 0x8a8a8a, 0.5, 0.5, false));
-  c.add(box(scene, 52, -30, 14, 40, 0x8a8a8a, 0.5, 0.5, false));
-  c.add(box(scene, -24, -14, 36, 26, 0xcfe8f5));
-  c.add(box(scene, 24, -14, 36, 26, 0xcfe8f5));
-  c.add(box(scene, -24, -12, 8, 10, INK, 0.5, 0.5, false));
-  c.add(box(scene, 24, -12, 8, 10, INK, 0.5, 0.5, false));
-  c.add(box(scene, 0, 24, 40, 6, 0x8a3b2b, 0.5, 0.5, false));
+  // 배경: 위는 흰 벽 + 흐린 로고타입, 아래는 세로 판벽
+  flat(0, -46, 176, 130, 0xf6f4ee);
+  flat(0, 64, 176, 92, 0xececea);
+  for (let sx = -84; sx <= 84; sx += 10) flat(sx, 64, 2, 92, 0xd9d9d6);
+  if (scene.textures.exists('hufs-wordmark')) {
+    const wm = new Phaser.GameObjects.Image(scene, 0, -88, 'hufs-wordmark').setTint(0x5b4a3a).setAlpha(0.55);
+    wm.setScale(150 / wm.width);
+    c.add(wm);
+  }
+  // 정장 어깨와 옷깃
+  const g = new Phaser.GameObjects.Graphics(scene);
+  g.fillStyle(PRES_SUIT).fillRect(-86, 64, 172, 50);
+  g.fillStyle(PRES_SUIT).fillRect(-74, 56, 148, 10);
+  g.fillStyle(0xffffff).fillTriangle(-24, 54, 24, 54, 0, 104);
+  g.fillStyle(0x243256).fillTriangle(-24, 54, -6, 104, -40, 76).fillTriangle(24, 54, 6, 104, 40, 76);
+  g.lineStyle(2, 0x0f1626, 1).lineBetween(-24, 54, -6, 104).lineBetween(24, 54, 6, 104);
+  g.fillStyle(PRES_TIE).fillRect(-8, 58, 16, 11).fillRect(-6, 69, 12, 38);
+  g.fillStyle(0xcfe3ff);
+  for (const [dx, dy] of [[-3, 74], [3, 80], [-3, 87], [3, 93], [-3, 100]]) g.fillRect(dx - 1, dy, 3, 3);
+  g.fillStyle(0xd9b44a).fillRect(28, 70, 6, 6);
+  c.add(g);
+  // 목·얼굴 (턱은 계단식으로 둥글게)
+  flat(0, 48, 40, 14, 0xdcae88);
+  c.add(box(scene, 0, -12, 100, 104, PRES_SKIN));
+  flat(0, 42, 80, 10, PRES_SKIN);
+  flat(0, 49, 56, 6, PRES_SKIN);
+  c.add(box(scene, -55, -10, 10, 24, PRES_SKIN));
+  c.add(box(scene, 55, -10, 10, 24, PRES_SKIN));
+  // 머리: 짙은 갈색, 가르마에서 위로 넘겨 앞쪽이 볼록
+  c.add(box(scene, 0, -68, 110, 24, PRES_HAIR));
+  c.add(box(scene, 10, -84, 82, 12, PRES_HAIR));
+  flat(-30, -78, 4, 18, 0x4a3a30);
+  flat(-51, -50, 10, 30, PRES_HAIR);
+  flat(51, -50, 10, 30, PRES_HAIR);
+  // 짙은 눈썹 (바깥쪽이 살짝 내려감)
+  flat(-24, -28, 28, 7, PRES_HAIR);
+  flat(-40, -24, 8, 6, PRES_HAIR);
+  flat(24, -28, 28, 7, PRES_HAIR);
+  flat(40, -24, 8, 6, PRES_HAIR);
+  // 눈웃음: 위로 굽은 짧은 선
+  flat(-24, -12, 18, 4, INK);
+  flat(-24, -15, 8, 3, INK);
+  flat(24, -12, 18, 4, INK);
+  flat(24, -15, 8, 3, INK);
+  // 코와 웃음 주름
+  flat(0, 6, 12, 22, 0xe2b08a);
+  flat(0, 16, 20, 6, 0xd9a47e);
+  flat(-30, 22, 3, 14, 0xdba982);
+  flat(30, 22, 3, 14, 0xdba982);
+  // 다문 미소 (양 끝이 올라감)
+  flat(0, 32, 34, 4, 0x8a3b2b);
+  flat(-18, 29, 5, 4, 0x8a3b2b);
+  flat(18, 29, 5, 4, 0x8a3b2b);
   c.add(
     new Phaser.GameObjects.Text(scene, 0, 128, '프레지던트 캉', {
       fontFamily: FONT,

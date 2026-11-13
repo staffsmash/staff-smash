@@ -4,3 +4,7 @@ dist/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# 프레지던트 캉 원본 사진 (공개 레포 금지)
+president.*
+reference/

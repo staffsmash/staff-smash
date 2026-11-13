@@ -61,5 +61,5 @@ npm run preview  # 빌드 결과 확인
 - 주인공·스킬: `src/data/heroes.ts`, `skills.ts`
 - `main` 브랜치에 올리면 GitHub Actions가 빌드해서 GitHub Pages로 배포한다.
 - 자동 시험: `?debug&timer` — `window.__game`이 열리고, 창이 가려져도 게임 루프가 돈다.
-- 프레지던트 캉은 자리 표시용 블록 외형이다. 사진 기반 얼굴은 `src/entities/rigs.ts`의 `createPresidentRig`, `createPresidentPortrait`에서 얼굴 조각만 바꾼다 (원본 사진은 레포에 넣지 않는다).
+- 프레지던트 캉은 총장실이 준 사진을 보고 블록형으로 옮긴 외형이다(`src/entities/rigs.ts`의 `createPresidentRig`, `createPresidentPortrait`). 원본 사진은 레포에 넣지 않는다(`.gitignore`의 `president.*`).
 - 에셋 출처는 `assets/CREDITS.md`에 기록한다.
