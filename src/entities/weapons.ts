@@ -1,13 +1,15 @@
 import data from '../data/weapons.json';
 import type { AttackDef } from './Fighter';
 
-// 교직원 무기 4종(스테이플러·안내문 롤·결재판·사원증)과 던지기 전용 물건 2종(규정집·마감 서류 뭉치)
+// 교직원 무기 4종(스테이플러·안내문 롤·결재판·사원증)과 던지기 전용 물건 2종(규정집·마감 서류 뭉치).
+// 학생 모드는 성능이 같고 이름·모양만 다르다: 텀블러·장우산·전공책·학생증, 던지기 전용 마감 시계 (PRD 9절).
 
 export type WeaponId = 'stapler' | 'notice' | 'clipboard' | 'idcard' | 'rulebook' | 'bomb';
 export const WEAPON_IDS: WeaponId[] = ['stapler', 'notice', 'clipboard', 'idcard', 'rulebook', 'bomb'];
 
 interface RawWeapon {
   name: string;
+  studentName: string;
   durability: number;
   total: number;
   active: number[];
@@ -24,6 +26,8 @@ interface RawWeapon {
 export interface WeaponDef {
   id: WeaponId;
   name: string;
+  /** 학생 모드 이름 */
+  studentName: string;
   /** 휘두를 수 있는 횟수 (0 = 무한) */
   durability: number;
   throwDmg: number;
@@ -43,6 +47,7 @@ function build(id: WeaponId): WeaponDef {
   return {
     id,
     name: d.name,
+    studentName: d.studentName,
     durability: d.durability,
     throwDmg: d.throwDmg,
     guard: !!d.guard,
@@ -67,4 +72,9 @@ export const WEAPONS = Object.fromEntries(WEAPON_IDS.map((id) => [id, build(id)]
 
 export function isWeaponId(s: string): s is WeaponId {
   return (WEAPON_IDS as string[]).includes(s);
+}
+
+/** 모드에 맞는 무기 이름 */
+export function weaponName(def: WeaponDef, student: boolean): string {
+  return student ? def.studentName : def.name;
 }

@@ -1,12 +1,15 @@
+import Phaser from 'phaser';
 import stats from '../data/enemies.json';
+import { FONT } from '../config';
 import type { StageScene } from '../scenes/StageScene';
 import { Enemy } from './Enemy';
 import type { Player } from './Player';
 import { neutralPose, type Pose } from './Rig';
 import { createMailRig } from './rigs';
+import { createRejectDocRig } from './studentRigs';
 import * as fx from '../fx';
 
-// 잡몹 "새벽 3시 메일": "!"를 띄운 뒤 돌진한다. 맞으면 잠깐 느려진다.
+// 잡몹 "새벽 3시 메일"(학생 모드: "반려 서류"): "!"를 띄운 뒤 돌진한다. 맞으면 잠깐 느려진다.
 
 const S = stats.mail;
 
@@ -16,10 +19,36 @@ export class MailEnemy extends Enemy {
   readonly height = 58;
   private hitDone = false;
   private phase = Math.random() * 10;
+  /** 학생 모드: 서류에 찍힌 빨간 "반려" 도장 (글자가 뒤집히지 않게 리그 밖에 그린다) */
+  private readonly seal: Phaser.GameObjects.Container | null = null;
 
   constructor(scene: StageScene, x: number, y: number, enterTargetX: number) {
-    super(scene, x, y, createMailRig(scene), S.hp, 60, enterTargetX);
+    super(scene, x, y, scene.studentMode ? createRejectDocRig(scene) : createMailRig(scene), S.hp, 60, enterTargetX);
+    if (scene.studentMode) {
+      this.defeatText = '반려 철회!';
+      const g = scene.add.graphics();
+      g.lineStyle(2.5, 0xd0202f, 1).strokeCircle(0, 0, 14);
+      const t = scene.add
+        .text(0, 0, '반려', { fontFamily: FONT, fontSize: '11px', fontStyle: 'bold', color: '#d0202f' })
+        .setOrigin(0.5);
+      this.seal = scene.add.container(x, y, [g, t]).setRotation(-0.25);
+    }
     this.sync();
+  }
+
+  protected afterSync(): void {
+    super.afterSync();
+    if (!this.seal) return;
+    const lying = this.state === 'down' || this.state === 'dying' || this.state === 'getup';
+    this.seal
+      .setPosition(this.x - this.facing * 4, this.y - this.z - 50)
+      .setDepth(this.y + 0.6)
+      .setVisible(!lying && this.rig.root.visible);
+  }
+
+  destroy(): void {
+    this.seal?.destroy();
+    super.destroy();
   }
 
   protected think(dt: number, player: Player): void {

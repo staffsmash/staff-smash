@@ -14,5 +14,14 @@
   "deadlineBoss": { "hp": 40, "speedX": 110, "speedY": 80, "deadline": 60 },
   "decibel": { "hp": 16, "speedX": 90, "speedY": 70 },
   "protest": { "hp": 18, "speedX": 80, "speedY": 65 },
-  "sitin": { "hp": 20, "speedX": 85, "speedY": 65 }
+  "sitin": { "hp": 20, "speedX": 85, "speedY": 65 },
+  "haksa": { "hp": 18, "speedX": 100, "speedY": 72, "gimmickEvery": 10, "darkSec": 5.5 },
+  "sikdang": { "hp": 18, "speedX": 95, "speedY": 70, "gimmickEvery": 6.5, "puddleSec": 7 },
+  "jinchwi": { "hp": 18, "speedX": 100, "speedY": 72, "gimmickEvery": 8, "lineSec": 4.5 },
+  "gukje": { "hp": 18, "speedX": 95, "speedY": 70, "gimmickEvery": 4.5, "fan": 5 },
+  "hakjong": { "hp": 20, "speedX": 95, "speedY": 68, "gimmickEvery": 5.5, "chain": 4, "maxSlips": 6 },
+  "janghak": { "hp": 20, "speedX": 100, "speedY": 72, "gimmickEvery": 8, "coins": 6, "freezeSec": 1.2 },
+  "banryeoBoss": { "hp": 40, "speedX": 95, "speedY": 68, "towerHp": 10, "slamEvery": 2.4, "exposedSec": 7 },
+  "bansaBoss": { "hp": 40, "speedX": 110, "speedY": 78, "openSec": 1.6, "turnDelay": 0.55 },
+  "presidentBoss": { "hp": 60, "speedX": 95, "speedY": 70, "stormSec": 6, "stormEvery": 12 }
 }

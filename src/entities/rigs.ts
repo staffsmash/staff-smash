@@ -7,11 +7,11 @@ import type { WeaponId } from './weapons';
 
 // 캐릭터·소품 외형 모음. 모두 코드로 그린 블록형 도형이다 (프레지던트 캉 초상 배경의 학교 로고타입만 이미지).
 
-const INK = 0x1d1d22;
-const SKIN = 0xf1c7a0;
+export const INK = 0x1d1d22;
+export const SKIN = 0xf1c7a0;
 
 /** 리그 밖에서 쓰는 사각 조각 (아이콘·투사체용) */
-function box(
+export function box(
   scene: Phaser.Scene,
   x: number,
   y: number,
@@ -480,16 +480,88 @@ export function createPresidentPortrait(scene: Phaser.Scene, x: number, y: numbe
 
 // ---------- 학생 모드 주인공 ----------
 
-/** 학생 모드 주인공 (김러샤·이엘LT·박불어·최터키). 등에 멘 가방은 3타 "가방 휘두르기"에 쓴다. 기본 외형 — M3에서 다듬는다 */
+/** 색을 밝게(f > 1)·어둡게(f < 1) */
+export function tone(c: number, f: number): number {
+  const r = Math.min(255, Math.round(((c >> 16) & 255) * f));
+  const g = Math.min(255, Math.round(((c >> 8) & 255) * f));
+  const b = Math.min(255, Math.round((c & 255) * f));
+  return (r << 16) | (g << 8) | b;
+}
+
+/** 학생 주인공 등에 멘 가방의 이름 (3타 "가방 휘두르기" 때 등에서 내려 손에 든다) */
+export const BACKPACK_NAME = 'backpack';
+
+/** 학생 모드 주인공 (김러샤·이엘LT·박불어·최터키): 후드티 또는 열린 재킷, 청바지, 운동화, 백팩 */
 export function createStudentHeroRig(scene: Phaser.Scene, look: StudentHeroLook): Rig {
-  const rig = createStudentRig(scene, { jacket: look.jacket, hair: look.hair, longHair: look.longHair, earphones: look.earphones });
+  const shoes = look.shoes ?? 0xf4f4f4;
+  const rig = new Rig(scene, {
+    legW: 14,
+    legH: 36,
+    legGap: 14,
+    legColor: look.pants ?? 0x34507a,
+    shoeColor: shoes,
+    torsoW: 38,
+    torsoH: 38,
+    torsoColor: look.jacket,
+    armW: 12,
+    armH: 30,
+    armColor: look.jacket,
+    handColor: SKIN,
+    headW: 32,
+    headH: 31,
+    headColor: SKIN,
+    outline: INK,
+  });
+  const dark = tone(look.jacket, 0.78);
+
+  // 운동화: 흰 밑창 + 옆줄 (다리 컨테이너 원점 = 엉덩이, 신발 = 30~36)
+  for (const leg of [rig.legF, rig.legB]) {
+    leg.add(rig.part(2, 34, 18, 2, 0xffffff, 0.5, 0, false));
+    leg.add(rig.part(3, 31, 8, 2, look.shoeStripe ?? 0x2f6fd1, 0.5, 0, false));
+  }
+  // 소매 끝
+  for (const arm of [rig.armF, rig.armB]) arm.add(rig.part(0, 25, 12, 5, dark, 0.5, 0, false));
+
+  // 가방: 몸통 뒤로 삐져나온 백팩 (몸통 그림보다 먼저 그려 뒤에 있는 것처럼 보이게 한다)
+  const pack = new Phaser.GameObjects.Container(scene, 0, 0).setName(BACKPACK_NAME);
+  pack.add(rig.part(-22, -37, 14, 32, look.bag, 0.5, 0));
+  pack.add(rig.part(-27, -24, 6, 14, tone(look.bag, 0.8), 0.5, 0));
+  pack.add(rig.part(-22, -40, 10, 4, tone(look.bag, 0.75), 0.5, 0));
+  rig.torso.addAt(pack, 0);
+
+  if (look.hoodie) {
+    // 후드티: 목 뒤 모자, 끈 두 줄, 앞주머니
+    rig.torso.add(rig.part(-9, -43, 22, 9, dark, 0.5, 0));
+    rig.torso.add(rig.part(6, -37, 2, 12, 0xf4f4f4, 0.5, 0, false));
+    rig.torso.add(rig.part(12, -37, 2, 10, 0xf4f4f4, 0.5, 0, false));
+    rig.torso.add(rig.part(6, -17, 24, 10, dark, 0.5, 0));
+    rig.torso.add(rig.part(0, -5, 38, 4, dark, 0.5, 0, false));
+  } else {
+    // 열린 재킷 + 티셔츠, 깃
+    rig.torso.add(rig.part(8, -38, 14, 34, look.tee ?? 0xf4f4f4, 0.5, 0, false));
+    rig.torso.add(rig.part(2, -38, 4, 34, dark, 0.5, 0, false));
+    rig.torso.add(rig.part(14, -38, 4, 34, dark, 0.5, 0, false));
+    rig.torso.add(rig.part(-4, -40, 16, 6, dark, 0.5, 0));
+  }
+  // 가방끈 (어깨 앞으로)
+  rig.torso.add(rig.part(-4, -38, 4, 26, tone(look.bag, 0.75), 0.5, 0, false));
+
+  // 머리 (head 컨테이너 원점 = 목, 머리 위쪽 끝 = -31)
+  rig.head.add(rig.part(0, -33, 34, 11, look.hair, 0.5, 0));
+  if (look.longHair) rig.head.add(rig.part(-12, -26, 10, 30, look.hair, 0.5, 0));
+  else rig.head.add(rig.part(-14, -25, 6, 12, look.hair, 0.5, 0, false));
+  rig.head.add(rig.part(10, -26, 14, 4, look.hair, 0.5, 0, false)); // 앞머리
   if (look.glasses) {
     rig.head.add(rig.part(4, -21, 9, 8, 0xcfe8f5, 0.5, 0));
     rig.head.add(rig.part(13, -21, 8, 8, 0xcfe8f5, 0.5, 0));
   }
-  // 가방 (몸통 뒤쪽)
-  rig.torso.add(rig.part(-20, -34, 12, 28, look.bag, 0.5, 0));
-  rig.torso.add(rig.part(-8, -36, 3, 22, look.bag, 0.5, 0, false));
+  rig.head.add(rig.part(4, -19, 4, 6, INK, 0.5, 0, false));
+  rig.head.add(rig.part(12, -19, 4, 6, INK, 0.5, 0, false));
+  rig.head.add(rig.part(9, -8, 8, 2, 0x8a3b2b, 0.5, 0, false));
+  if (look.earphones) {
+    rig.head.add(rig.part(-16, -17, 6, 8, 0xffffff, 0.5, 0));
+    rig.head.add(rig.part(-16, -9, 2, 14, 0xffffff, 0.5, 0, false));
+  }
   return rig;
 }
 

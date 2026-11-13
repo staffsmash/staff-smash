@@ -6,9 +6,10 @@ import { Enemy } from './Enemy';
 import type { Player } from './Player';
 import { neutralPose, type Pose } from './Rig';
 import { createBubbleRig } from './rigs';
+import { createCancelBotRig } from './studentRigs';
 import * as fx from '../fx';
 
-// 잡몹 "교수님이 된다고 했는데요" 말풍선: 떠다니다가 같은 깊이에 맞춰
+// 잡몹 "교수님이 된다고 했는데요" 말풍선(학생 모드: "휴강 공지 봇"): 떠다니다가 같은 깊이에 맞춰
 // 부르르 떤 뒤 가로로 빠르게 들이받는다. 가벼워서 넘어지지 않고 "펑" 터진다.
 
 const S = stats.bubble;
@@ -25,10 +26,10 @@ export class BubbleEnemy extends Enemy {
   private readonly text: Phaser.GameObjects.Text;
 
   constructor(scene: StageScene, x: number, y: number, enterTargetX: number) {
-    super(scene, x, y, createBubbleRig(scene), S.hp, 72, enterTargetX);
+    super(scene, x, y, scene.studentMode ? createCancelBotRig(scene) : createBubbleRig(scene), S.hp, 72, enterTargetX);
     this.z = HOVER_Z;
     this.text = scene.add
-      .text(x, y, '교수님이\n된다고 했는데요', {
+      .text(x, y, scene.studentMode ? '[알림] 오늘\n휴강입니다?' : '교수님이\n된다고 했는데요', {
         fontFamily: FONT,
         fontSize: '12px',
         fontStyle: 'bold',

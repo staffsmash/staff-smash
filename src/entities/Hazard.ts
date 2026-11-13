@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 
-// 위에서 떨어지는 물체: 총장실 "지시 사항"(적 편), 필살기 "규정집 낙하"(플레이어 편).
+// 위에서 떨어지는 물체: 총장실 "지시 사항"·거대 도장·오류 창(적 편), 필살기 "규정집 낙하"·"ЗАЧЁТ!" 글자(플레이어 편).
 // 바닥의 빨간(또는 파란) 표시가 점점 커지다가 delay초에 떨어진다. 피해 판정은 StageScene이 한다.
 
 const START_Z = 420;
@@ -14,6 +14,10 @@ export interface HazardOpts {
   owner: 'player' | 'enemy';
   dmg: number;
   obj: Phaser.GameObjects.Container;
+  /** 맞으면 넘어진다 (거대 도장) */
+  knockdown?: boolean;
+  /** 떨어진 자리에 남는 도장 자국 글자 */
+  mark?: string;
 }
 
 export class Hazard {
@@ -22,6 +26,8 @@ export class Hazard {
   readonly radius: number;
   readonly owner: 'player' | 'enemy';
   readonly dmg: number;
+  readonly knockdown: boolean;
+  readonly mark: string | undefined;
   removed = false;
   /** 이번 프레임에 땅에 닿았다 */
   justLanded = false;
@@ -37,6 +43,8 @@ export class Hazard {
     this.radius = o.radius;
     this.owner = o.owner;
     this.dmg = o.dmg;
+    this.knockdown = !!o.knockdown;
+    this.mark = o.mark;
     this.delay = o.delay;
     this.obj = o.obj;
     const color = o.owner === 'enemy' ? 0xd0202f : 0x2f6fd1;

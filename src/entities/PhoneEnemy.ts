@@ -5,10 +5,11 @@ import { Enemy } from './Enemy';
 import type { Player } from './Player';
 import { neutralPose, type Pose } from './Rig';
 import { createPhoneRig } from './rigs';
+import { createAbsenceStampRig } from './studentRigs';
 import * as fx from '../fx';
 
-// 잡몹 "울리는 전화기": 바닥의 빨간 그림자 자리로 떨어진 뒤,
-// 주기적으로 울리며 주변을 친다. 울리기 직전에 부르르 떤다. 공격하면 "받는다".
+// 잡몹 "울리는 전화기"(학생 모드: "결석 도장"): 바닥의 빨간 그림자 자리로 떨어진 뒤,
+// 주기적으로 울리며(내리찍으며) 주변을 친다. 그러기 직전에 부르르 떤다. 공격하면 "받는다"(출석 인정).
 
 const S = stats.phone;
 const DROP_HOLD = 0.45;
@@ -23,7 +24,8 @@ export class PhoneEnemy extends Enemy {
   private warn: Phaser.GameObjects.Ellipse | null;
 
   constructor(scene: StageScene, x: number, y: number) {
-    super(scene, x, y, createPhoneRig(scene), S.hp, 56, x);
+    super(scene, x, y, scene.studentMode ? createAbsenceStampRig(scene) : createPhoneRig(scene), S.hp, 56, x);
+    if (scene.studentMode) this.defeatText = '출석 인정!';
     this.state = 'drop';
     this.resumeState = 'ring';
     this.z = 460;
@@ -49,7 +51,7 @@ export class PhoneEnemy extends Enemy {
     }
     this.set('ring');
     this.ringT = 1.4;
-    this.say('따르릉!', 0.8);
+    this.say(this.scene.studentMode ? '쾅! 결석!' : '따르릉!', 0.8);
   }
 
   protected think(dt: number, player: Player): void {
@@ -68,8 +70,9 @@ export class PhoneEnemy extends Enemy {
         this.vy = Math.abs(dy) > 6 ? Math.sign(dy) * 16 : 0;
         if (this.ringT <= 0) {
           this.ringT = S.ringEvery;
-          fx.ringWave(this.scene, this.x, this.y);
-          this.say('따르릉!', 0.6);
+          const st = this.scene.studentMode;
+          fx.ringWave(this.scene, this.x, this.y, st ? 0xd0202f : undefined);
+          this.say(st ? '결석!' : '따르릉!', 0.6);
           if (Math.abs(dx) < 78 && Math.abs(dy) < 28 && player.z < 30) {
             player.takeHit({ dmg: 1, dir: dx >= 0 ? 1 : -1, kb: 150, knockdown: false });
           }

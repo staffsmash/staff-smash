@@ -1,0 +1,46 @@
+{
+  "id": "student-2",
+  "title": "2스테이지 · 인문과학관 → 교수학습개발원",
+  "background": { "seed": "student-learning", "sky": "late" },
+  "zones": [
+    {
+      "left": 0,
+      "label": "인문과학관 앞",
+      "art": "humanitiesFront",
+      "maxAlive": 3,
+      "waves": ["mail", "docbomb", "bubble", "mail", "phone"],
+      "supervisors": []
+    },
+    {
+      "left": 960,
+      "label": "인문과학관 강의실 앞",
+      "art": "humanitiesHall",
+      "maxAlive": 3,
+      "waves": ["queue", "mail", "jinchwi", "docbomb", "mail"],
+      "supervisors": []
+    },
+    {
+      "left": 1920,
+      "label": "교수학습개발원 로비",
+      "art": "learningLobby",
+      "maxAlive": 3,
+      "waves": ["bubble", "docbomb", "gukje", "mail", "phone", "mail"],
+      "supervisors": []
+    },
+    {
+      "left": 2880,
+      "label": "교수학습개발원 앞",
+      "art": "learningFront",
+      "maxAlive": 3,
+      "waves": ["bansaBoss"],
+      "adds": { "type": "mail", "every": 10, "max": 1 },
+      "supervisors": []
+    }
+  ],
+  "weapons": [
+    { "id": "clipboard", "x": 620, "y": 460 },
+    { "id": "idcard", "x": 1500, "y": 380 },
+    { "id": "stapler", "x": 2300, "y": 470 }
+  ],
+  "foods": [{ "id": "gimbap", "x": 1800, "y": 450 }]
+}

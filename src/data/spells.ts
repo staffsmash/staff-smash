@@ -12,13 +12,17 @@ export interface SpellDef {
   /** 오른쪽에서 왼쪽으로 쓰는 글자 (아랍어) */
   rtl?: boolean;
   desc: string;
+  /** 연출: 맞힌 자리에 찍히는 도장 글자 (짧게) */
+  stamp: string;
+  /** 연출: 큰 글자 테두리·효과 색 */
+  color: number;
 }
 
 export const SPELLS: SpellDef[] = [
-  { id: 'notice', lang: '영어', text: 'DEADLINE EXTENDED!', meaning: '마감 연장!', desc: '화면 안 모든 행정을 넘어뜨린다' },
-  { id: 'batch', lang: '스페인어', text: '¡Olé!', meaning: '좋아!', desc: '앞으로 돌진하며 길 위의 행정을 한꺼번에 뚫는다' },
-  { id: 'rulebook', lang: '러시아어', text: 'ЗАЧЁТ!', meaning: '통과!', desc: '행정이 몰린 곳에 글자를 위에서 떨어뜨린다' },
-  { id: 'transfer', lang: '아랍어', text: 'يلا!', meaning: '가자!', rtl: true, desc: '같은 줄을 화면 끝까지 꿰뚫는다' },
+  { id: 'notice', lang: '영어', text: 'DEADLINE EXTENDED!', meaning: '마감 연장!', desc: '화면 안 모든 행정을 넘어뜨린다', stamp: '연장', color: 0x1d4ed8 },
+  { id: 'batch', lang: '스페인어', text: '¡Olé!', meaning: '좋아!', desc: '앞으로 돌진하며 길 위의 행정을 한꺼번에 뚫는다', stamp: '좋아', color: 0xc8202f },
+  { id: 'rulebook', lang: '러시아어', text: 'ЗАЧЁТ!', meaning: '통과!', desc: '행정이 몰린 곳에 글자를 위에서 떨어뜨린다', stamp: '통과', color: 0x7c3aed },
+  { id: 'transfer', lang: '아랍어', text: 'يلا!', meaning: '가자!', rtl: true, desc: '같은 줄을 화면 끝까지 꿰뚫는다', stamp: '가자', color: 0x0f766e },
 ];
 
 export function spellById(id: string): SpellDef {

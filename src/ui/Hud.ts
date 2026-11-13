@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { FONT, GAME_H, GAME_W, OFF_HOURS, clockText } from '../config';
 import type { Player } from '../entities/Player';
+import { weaponName } from '../entities/weapons';
 
 export interface BossInfo {
   name: string;
@@ -43,21 +44,24 @@ export class Hud {
   private readonly noticeT: Phaser.GameObjects.Text;
   private readonly alertT: Phaser.GameObjects.Text;
   private readonly touch: boolean;
+  /** 학생 모드: 시계는 본관 마감, 무기는 학생 이름 */
+  private readonly student: boolean;
   private readonly helpObjs: Phaser.GameObjects.Text[] = [];
   private helpBg: Phaser.GameObjects.Rectangle | null = null;
   private helpHint: Phaser.GameObjects.Text | null = null;
   private helpVisible = true;
   private lastCombo = 0;
 
-  constructor(scene: Phaser.Scene, touch: boolean, heroName = '주무관') {
+  constructor(scene: Phaser.Scene, touch: boolean, heroName = '주무관', student = false) {
     this.touch = touch;
+    this.student = student;
     const fix = <T extends Phaser.GameObjects.Text>(t: T): T => {
       t.setScrollFactor(0).setDepth(2001);
       return t;
     };
     const small = { fontFamily: FONT, fontSize: '13px', color: '#ffffff' };
     this.g = scene.add.graphics().setScrollFactor(0).setDepth(2000);
-    fix(scene.add.text(22, 15, `${heroName} · 교직원 모드`, small));
+    fix(scene.add.text(22, 15, `${heroName} · ${student ? '학생' : '교직원'} 모드`, small));
     this.alertT = fix(
       scene.add
         .text(GAME_W / 2, 98, '', {
@@ -118,7 +122,7 @@ export class Hud {
     }
     const lines = [
       '이동  방향키·WASD      대시  같은 방향 두 번',
-      '처리  J      점프  K      줍기·던지기  L',
+      `${this.student ? '공격' : '처리'}  J      점프  K      줍기·던지기  L`,
       '필살기  I      일시정지  Esc      숨기기  H',
     ];
     const w = 292;
@@ -201,37 +205,41 @@ export class Hud {
 
     // 무기
     const w = p.weapon;
+    const wn = w ? weaponName(w.def, this.student) : '';
     if (w && w.id === 'bomb') {
-      this.weaponT.setText(`던지세요!  ${w.def.name} ${Math.max(0, w.fuse).toFixed(1)}초`).setColor('#ff8a8a');
+      this.weaponT.setText(`던지세요!  ${wn} ${Math.max(0, w.fuse).toFixed(1)}초`).setColor('#ff8a8a');
     } else if (w && w.def.durability === 0) {
-      this.weaponT.setText(`무기  ${w.def.name}${w.inFlight ? ' (날아가는 중)' : ' (무한)'}`).setColor('#9fd3ff');
+      this.weaponT.setText(`무기  ${wn}${w.inFlight ? ' (날아가는 중)' : ' (무한)'}`).setColor('#9fd3ff');
     } else if (w) {
-      this.weaponT.setText(`무기  ${w.def.name}`).setColor('#9fd3ff');
+      this.weaponT.setText(`무기  ${wn}`).setColor('#9fd3ff');
       const r = Math.max(0, w.dur) / w.def.durability;
       g.fillStyle(0x2b2b3a, 1);
       g.fillRect(150, 66, 94, 6);
       g.fillStyle(0x9fd3ff, 1);
       g.fillRect(150, 66, 94 * r, 6);
     } else {
-      this.weaponT.setText(p.coffeeT > 0 ? '무기  맨손 · 아메리카노 효과 중' : '무기  맨손 (도장·결재판)').setColor('#9fd3ff');
+      const bare = this.student ? '무기  맨손 (잽·가방)' : '무기  맨손 (도장·결재판)';
+      this.weaponT.setText(p.coffeeT > 0 ? '무기  맨손 · 아메리카노 효과 중' : bare).setColor('#9fd3ff');
     }
     this.alertT.setText(info.notice).setVisible(info.notice !== '');
 
     this.livesT.setText(`목숨 ×${p.lives}`);
 
-    // 시계: 16:52에 시작, 17:00 퇴근
+    // 시계: 16:52에 시작, 17:00 퇴근(교직원) / 본관 업무 마감(학생)
     const left = Math.ceil(OFF_HOURS - info.clockMin);
     if (left > 0) {
-      this.clockT.setText(`${clockText(info.clockMin)}  ·  퇴근까지 ${left}분`).setColor('#ffffff');
+      const until = this.student ? '본관 마감까지' : '퇴근까지';
+      this.clockT.setText(`${clockText(info.clockMin)}  ·  ${until} ${left}분`).setColor('#ffffff');
     } else {
       const over = Math.floor(info.clockMin - OFF_HOURS);
-      this.clockT.setText(`${clockText(info.clockMin)}  ·  초과근무 ${over}분`).setColor('#ff8a8a');
+      const past = this.student ? '마감 지남' : '초과근무';
+      this.clockT.setText(`${clockText(info.clockMin)}  ·  ${past} ${over}분`).setColor('#ff8a8a');
     }
     const stageNo = info.stageTitle.split(' · ')[0];
     this.zoneT.setText(`${stageNo}  ·  ${info.zoneLabel}  ·  ${Math.min(info.zone + 1, info.zones)}/${info.zones}`);
 
     if (info.combo >= 2) {
-      this.comboT.setText(`${info.combo} 연속 처리!`).setVisible(true);
+      this.comboT.setText(`${info.combo} 연속 ${this.student ? '통과' : '처리'}!`).setVisible(true);
       if (info.combo !== this.lastCombo) this.comboT.setScale(1.35);
       this.comboT.setScale(Math.max(1, this.comboT.scale - 0.04));
     } else {

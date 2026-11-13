@@ -1,7 +1,8 @@
 import Phaser from 'phaser';
 import { FONT } from '../config';
-import { createFoodIcon, createPetitionIcon, createWeaponIcon, type FoodKind } from './rigs';
-import { WEAPONS, isWeaponId, type WeaponId } from './weapons';
+import { createFoodIcon, createPetitionIcon, type FoodKind } from './rigs';
+import { weaponIcon } from './studentRigs';
+import { WEAPONS, isWeaponId, weaponName, type WeaponId } from './weapons';
 
 // 바닥에 놓인 물건.
 // - 무기: 위에 서서 L(또는 맨손 공격)로 줍는다.
@@ -28,17 +29,17 @@ export class Pickup {
   private readonly shadow: Phaser.GameObjects.Ellipse;
   private readonly label: Phaser.GameObjects.Text;
 
-  /** ttl: 0이면 사라지지 않는다 */
-  constructor(scene: Phaser.Scene, kind: PickupKind, x: number, y: number, ttl = 0) {
+  /** ttl: 0이면 사라지지 않는다. student: 학생 모드 이름·모양 (텀블러·장우산·전공책·학생증) */
+  constructor(scene: Phaser.Scene, kind: PickupKind, x: number, y: number, ttl = 0, student = false) {
     this.kind = kind;
     this.x = x;
     this.y = y;
     this.ttl = ttl;
-    if (isWeaponId(kind)) this.obj = createWeaponIcon(scene, kind);
+    if (isWeaponId(kind)) this.obj = weaponIcon(scene, kind, student);
     else if (kind === 'petition') this.obj = createPetitionIcon(scene);
     else this.obj = createFoodIcon(scene, kind);
     this.shadow = scene.add.ellipse(x, y, 46, 10, 0x000000, 0.25).setDepth(-5);
-    const name = isWeaponId(kind) ? WEAPONS[kind].name : LABELS[kind];
+    const name = isWeaponId(kind) ? weaponName(WEAPONS[kind], student) : LABELS[kind];
     this.label = scene.add
       .text(x, y - 40, name, {
         fontFamily: FONT,
