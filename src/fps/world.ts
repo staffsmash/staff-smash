@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { box, frontBox, lamp, lambert, mergeStatic, plane, tree, type Rect } from './blocks';
+import { buildField } from './field';
 import { buildSocial } from './social';
 import {
   chevronTex,
@@ -8,14 +9,13 @@ import {
   friezeTex,
   lawnTex,
   pavingTex,
-  skyTex,
   stripeTex,
   tealBannerTex,
   towerSignTex,
   type Logos,
 } from './textures';
 
-// 1인칭 시험판의 무대: 해 질 무렵 서울캠퍼스 본관 앞 (블록형) → 오른쪽 길 → 사회과학관 앞.
+// 1인칭 시험판의 무대: 해 질 무렵 서울캠퍼스 본관 앞 (블록형) → 오른쪽 길 → 사회과학관 앞 → 남쪽 길 → 대운동장 (field.ts).
 // 단위는 m. 첫 구역에서 플레이어는 +z 쪽에서 -z(본관) 쪽을 본다. 본관 정면 벽은 z = -22.
 // 사회과학관은 동쪽(+x) 길 끝에 있고 정면이 서쪽(-x)을 본다 (social.ts).
 
@@ -33,12 +33,109 @@ export interface World {
   path: Rect;
   /** 사회과학관 앞 광장 */
   plaza: Rect;
+  /** 사회과학관 앞에서 대운동장으로 가는 길 */
+  path2: Rect;
+  /** 대운동장 */
+  field: Rect;
   /** 길을 막고 있다가 열리는 바리케이드 */
   barricade: THREE.Group;
+  barricade2: THREE.Group;
   /** 길 바닥의 안내 화살표 */
   arrows: THREE.Group;
+  arrows2: THREE.Group;
   arrowMat: THREE.MeshBasicMaterial;
   sun: THREE.DirectionalLight;
+  /** 그림자 범위 중심(플레이어)에서 해까지 (노을로 갈수록 낮아진다) */
+  sunOffset: THREE.Vector3;
+  /** 하늘 구 (카메라를 따라다닌다) */
+  sky: THREE.Mesh;
+  /** 0 = 늦은 오후, 1 = 노을 */
+  setDusk(k: number): void;
+}
+
+const SKY_VERT = /* glsl */ `
+varying vec3 vWorld;
+void main() {
+  vec4 w = modelMatrix * vec4(position, 1.0);
+  vWorld = w.xyz;
+  gl_Position = projectionMatrix * viewMatrix * w;
+}`;
+
+const SKY_FRAG = /* glsl */ `
+uniform vec3 uTop;
+uniform vec3 uMid;
+uniform vec3 uHor;
+uniform vec3 uLow;
+uniform vec3 uSunDir;
+uniform vec3 uSunCol;
+uniform float uSun;
+varying vec3 vWorld;
+void main() {
+  vec3 d = normalize(vWorld - cameraPosition);
+  float h = d.y;
+  vec3 c = mix(uLow, uHor, smoothstep(-0.12, 0.03, h));
+  c = mix(c, uMid, smoothstep(0.03, 0.3, h));
+  c = mix(c, uTop, smoothstep(0.3, 0.88, h));
+  float s = max(dot(d, uSunDir), 0.0);
+  c += uSunCol * (pow(s, 10.0) * 0.38 + pow(s, 90.0) * 0.55) * uSun;
+  c = mix(c, vec3(1.0, 0.95, 0.84), smoothstep(0.9989, 0.9993, s));
+  gl_FragColor = vec4(c, 1.0);
+  #include <colorspace_fragment>
+}`;
+
+/** 늦은 오후 → 노을 (하늘 네 층, 해, 빛, 안개) */
+const DAY = {
+  top: 0x6fa6dc,
+  mid: 0xa9cdec,
+  hor: 0xe9e2cf,
+  low: 0xf2d4ae,
+  sunCol: 0xfff2d0,
+  hemi: 0xe6f0ff,
+  ground: 0x8a7f6a,
+  light: 0xfff0d6,
+  fog: 0xe9e2cf,
+};
+const DUSK = {
+  top: 0x5a7cc0,
+  mid: 0xb3a3c9,
+  hor: 0xf2a877,
+  low: 0xe68a5c,
+  sunCol: 0xffa65a,
+  hemi: 0xffd4b0,
+  ground: 0x7f6650,
+  light: 0xffb27a,
+  fog: 0xeeb995,
+};
+const SUN_DAY = new THREE.Vector3(-0.53, 0.8, 0.4).normalize();
+const SUN_DUSK = new THREE.Vector3(-0.36, 0.2, 0.92).normalize();
+const LIGHT_DAY = new THREE.Vector3(-40, 60, 30);
+const LIGHT_DUSK = new THREE.Vector3(-30, 30, 66);
+
+/** 통행을 막는 노랑·검정 바리케이드. rotY = 0 이면 z 방향으로 길게 선다 */
+function makeBarricade(root: THREE.Object3D, x: number, z: number, rotY: number, stripeMat: THREE.Material, plain: THREE.Material): THREE.Group {
+  const g = new THREE.Group();
+  g.position.set(x, 0, z);
+  g.rotation.y = rotY;
+  root.add(g);
+  for (const y of [0.55, 1.15]) box(g, 0.12, 0.36, 7.4, 0, y, 0, [stripeMat, stripeMat, plain, plain, plain, plain]);
+  for (const bz of [-3.2, 3.2]) box(g, 0.5, 1.4, 0.12, 0, 0.7, bz, lambert(0x3a3a44));
+  g.userData.dynamic = true;
+  return g;
+}
+
+/** 바닥 안내 화살표 줄. rotZ = 0 이면 +x 쪽을 가리킨다 (-π/2 이면 +z) */
+function makeArrows(root: THREE.Object3D, pts: [number, number][], rotZ: number, mat: THREE.Material, geo: THREE.BufferGeometry): THREE.Group {
+  const g = new THREE.Group();
+  g.visible = false;
+  root.add(g);
+  for (const [x, z] of pts) {
+    const a = new THREE.Mesh(geo, mat);
+    a.rotation.set(-Math.PI / 2, 0, rotZ);
+    a.position.set(x, 0.06, z);
+    g.add(a);
+  }
+  g.userData.dynamic = true;
+  return g;
 }
 
 /** 계단식 박공 (복셀처럼 층층이 좁아진다) */
@@ -102,20 +199,33 @@ export function buildWorld(scene: THREE.Scene, logos: Logos): World {
   const root = new THREE.Group();
   scene.add(root);
 
-  // 하늘 (큰 구 안쪽에 그라데이션)
+  // 하늘 (큰 구 안쪽에 그라데이션 + 해). 시계가 17시에 가까워질수록 노을로 (setDusk)
+  const skyU = {
+    uTop: { value: new THREE.Color(DAY.top) },
+    uMid: { value: new THREE.Color(DAY.mid) },
+    uHor: { value: new THREE.Color(DAY.hor) },
+    uLow: { value: new THREE.Color(DAY.low) },
+    uSunDir: { value: SUN_DAY.clone() },
+    uSunCol: { value: new THREE.Color(DAY.sunCol) },
+    uSun: { value: 0.3 },
+  };
   const sky = new THREE.Mesh(
-    new THREE.SphereGeometry(400, 24, 12),
-    new THREE.MeshBasicMaterial({ map: skyTex(), side: THREE.BackSide, fog: false, depthWrite: false }),
+    new THREE.SphereGeometry(400, 32, 16),
+    new THREE.ShaderMaterial({ uniforms: skyU, vertexShader: SKY_VERT, fragmentShader: SKY_FRAG, side: THREE.BackSide, depthWrite: false }),
   );
-  sky.position.x = 50;
+  sky.frustumCulled = false;
+  sky.renderOrder = -1;
   scene.add(sky);
 
   // 빛: 늦은 오후 햇빛. 그림자 범위는 플레이어를 따라 옮긴다 (main.ts)
-  scene.add(new THREE.HemisphereLight(0xe6f0ff, 0x8a7f6a, 1.6));
-  const sun = new THREE.DirectionalLight(0xfff0d6, 2.2);
+  const hemi = new THREE.HemisphereLight(DAY.hemi, DAY.ground, 1.6);
+  scene.add(hemi);
+  const sun = new THREE.DirectionalLight(DAY.light, 2.2);
   sun.position.set(-40, 60, 30);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
+  sun.shadow.bias = -0.0004;
+  sun.shadow.normalBias = 0.03;
   const sc = sun.shadow.camera;
   sc.left = -60;
   sc.right = 60;
@@ -124,7 +234,8 @@ export function buildWorld(scene: THREE.Scene, logos: Logos): World {
   sc.far = 200;
   scene.add(sun);
   scene.add(sun.target);
-  scene.fog = new THREE.Fog(0xe9e2cf, 90, 260);
+  const fog = new THREE.Fog(DAY.fog, 90, 260);
+  scene.fog = fog;
 
   // 바닥: 화강암 광장 (사회과학관 쪽까지 이어진다)
   const pave = pavingTex();
@@ -237,47 +348,74 @@ export function buildWorld(scene: THREE.Scene, logos: Logos): World {
     lamp(root, lx, 5.4, logos, -Math.PI / 2);
   }
 
-  // 길을 막는 바리케이드 (마당을 다 정리하면 땅으로 내려간다)
-  const barricade = new THREE.Group();
-  barricade.position.set(26.6, 0, 1);
-  root.add(barricade);
+  // 길을 막는 바리케이드 (구역을 다 정리하면 땅으로 내려간다)
   const stripe = stripeTex();
   stripe.repeat.set(5, 1);
   const stripeMat = new THREE.MeshLambertMaterial({ map: stripe });
   const plain = lambert(0xf5c542);
-  for (const y of [0.55, 1.15]) box(barricade, 0.12, 0.36, 7.4, 0, y, 0, [stripeMat, stripeMat, plain, plain, plain, plain]);
-  for (const z of [-3.2, 3.2]) {
-    box(barricade, 0.5, 1.4, 0.12, 0, 0.7, z, lambert(0x3a3a44));
-  }
+  const barricade = makeBarricade(root, 26.6, 1, 0, stripeMat, plain);
+  // 사회과학관 앞 → 대운동장 (광장 남쪽 가장자리)
+  const barricade2 = makeBarricade(root, 95, 18.6, Math.PI / 2, stripeMat, plain);
 
   // 바닥 안내 화살표
-  const arrows = new THREE.Group();
-  arrows.visible = false;
-  root.add(arrows);
-  const arrowMat = new THREE.MeshBasicMaterial({ map: chevronTex(), transparent: true, depthWrite: false });
+  const arrowMat = new THREE.MeshBasicMaterial({
+    map: chevronTex(),
+    transparent: true,
+    depthWrite: false,
+    polygonOffset: true,
+    polygonOffsetFactor: -8,
+    polygonOffsetUnits: -16,
+  });
   const arrowGeo = new THREE.PlaneGeometry(2.2, 2.2);
-  for (let x = 22; x <= 76; x += 6) {
-    const a = new THREE.Mesh(arrowGeo, arrowMat);
-    a.rotation.x = -Math.PI / 2;
-    a.position.set(x, 0.04, 1);
-    arrows.add(a);
-  }
+  const pts1: [number, number][] = [];
+  for (let x = 22; x <= 76; x += 6) pts1.push([x, 1]);
+  const arrows = makeArrows(root, pts1, 0, arrowMat, arrowGeo);
+  const pts2: [number, number][] = [];
+  for (let z = 22; z <= 58; z += 6) pts2.push([95, z]);
+  const arrows2 = makeArrows(root, pts2, -Math.PI / 2, arrowMat, arrowGeo);
 
   obstacles.push(...buildSocial(root, logos));
+  const fieldInfo = buildField(root, logos);
+  obstacles.push(...fieldInfo.obstacles);
 
   // 움직이는 것(바리케이드·화살표)만 빼고 재질별로 합친다
-  barricade.userData.dynamic = true;
-  arrows.userData.dynamic = true;
   mergeStatic(root);
+
+  const sunOffset = LIGHT_DAY.clone();
+  const tmp = new THREE.Color();
+  const lerpHex = (out: THREE.Color, a: number, b: number, k: number) => out.set(a).lerp(tmp.set(b), k);
+  const setDusk = (k: number) => {
+    lerpHex(skyU.uTop.value, DAY.top, DUSK.top, k);
+    lerpHex(skyU.uMid.value, DAY.mid, DUSK.mid, k);
+    lerpHex(skyU.uHor.value, DAY.hor, DUSK.hor, k);
+    lerpHex(skyU.uLow.value, DAY.low, DUSK.low, k);
+    lerpHex(skyU.uSunCol.value, DAY.sunCol, DUSK.sunCol, k);
+    skyU.uSunDir.value.copy(SUN_DAY).lerp(SUN_DUSK, k).normalize();
+    skyU.uSun.value = 0.3 + 0.7 * k;
+    lerpHex(hemi.color, DAY.hemi, DUSK.hemi, k);
+    lerpHex(hemi.groundColor, DAY.ground, DUSK.ground, k);
+    hemi.intensity = 1.6 - 0.25 * k;
+    lerpHex(sun.color, DAY.light, DUSK.light, k);
+    sun.intensity = 2.2 - 0.35 * k;
+    sunOffset.copy(LIGHT_DAY).lerp(LIGHT_DUSK, k);
+    lerpHex(fog.color, DAY.fog, DUSK.fog, k);
+  };
 
   return {
     obstacles,
     yard: { minX: -26, maxX: 26, minZ: -15.5, maxZ: 16 },
     path: { minX: 20, maxX: 74, minZ: -1.8, maxZ: 3.8 },
     plaza: { minX: 70, maxX: 119, minZ: -18, maxZ: 18 },
+    path2: fieldInfo.path2,
+    field: fieldInfo.field,
     barricade,
+    barricade2,
     arrows,
+    arrows2,
     arrowMat,
     sun,
+    sunOffset,
+    sky,
+    setDusk,
   };
 }

@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
     <meta name="theme-color" content="#0b2a4a" />
-    <meta name="description" content="Staff Smash: HUFS — 1인칭 시험판 (본관 앞 → 사회과학관 앞)" />
+    <meta name="description" content="Staff Smash: HUFS — 1인칭 시험판 (본관 앞 → 사회과학관 앞 → 대운동장)" />
     <title>Staff Smash: HUFS 1인칭 시험판 (비공식)</title>
     <style>
       html,
@@ -116,7 +116,8 @@
         left: 50%;
         top: 62px;
         transform: translateX(-50%);
-        width: min(60vw, 520px);
+        width: min(60vw, 520px, 100vw - 470px);
+        min-width: 300px;
         text-align: center;
         display: none;
       }
@@ -128,11 +129,24 @@
         font-weight: 700;
         color: #ffd6d6;
       }
+      #bossbox .bweak {
+        display: none;
+        margin-left: 8px;
+        font-size: 12px;
+        color: #ffe066;
+      }
+      #bossbox.weak .bweak {
+        display: inline;
+      }
       #bosshp {
         margin-top: 3px;
         height: 12px;
         background: #3a1f24;
         border: 1px solid rgba(255, 255, 255, 0.6);
+      }
+      #bossbox.weak #bosshp {
+        border-color: #ffe066;
+        box-shadow: 0 0 10px #ffd84a;
       }
       #bossbar {
         height: 100%;
@@ -250,6 +264,152 @@
         transition: opacity 0.2s;
         white-space: nowrap;
       }
+      #jumpcue {
+        left: 50%;
+        top: calc(50% + 34px);
+        transform: translateX(-50%);
+        padding: 3px 14px 4px;
+        border: 2px solid #ffd84a;
+        border-radius: 999px;
+        background: rgba(17, 19, 24, 0.78);
+        font-size: 20px;
+        font-weight: 800;
+        color: #ffd84a;
+        white-space: nowrap;
+        text-shadow: none;
+        opacity: 0;
+      }
+      #jumpcue small {
+        margin-left: 6px;
+        font-size: 13px;
+        color: #fff;
+      }
+      body.touch #jumpcue small {
+        display: none;
+      }
+      #jumpcue.on {
+        opacity: 1;
+        animation: blink 0.24s steps(2) infinite;
+      }
+      @keyframes blink {
+        50% {
+          opacity: 0.6;
+        }
+      }
+      #areacard {
+        left: 50%;
+        top: max(64px, 12%);
+        transform: translate(-50%, -10px);
+        width: min(92vw, 460px);
+        box-sizing: border-box;
+        background: rgba(0, 44, 82, 0.9);
+        border: 2px solid #e0bb62;
+        border-radius: 8px;
+        padding: 10px 14px 12px;
+        text-align: center;
+        text-shadow: none;
+        opacity: 0;
+        transition:
+          opacity 0.3s,
+          transform 0.3s;
+      }
+      #areacard.on {
+        opacity: 1;
+        transform: translate(-50%, 0);
+      }
+      #areacard small {
+        display: block;
+        font-size: 12px;
+        font-weight: 700;
+        color: #e0bb62;
+        letter-spacing: 1px;
+      }
+      #areacard b {
+        display: block;
+        font-size: 22px;
+        margin: 2px 0 6px;
+      }
+      #areacard .stats {
+        display: flex;
+        justify-content: center;
+        flex-wrap: wrap;
+        gap: 4px 14px;
+        font-size: 13px;
+        color: #dfe6f2;
+      }
+      #areacard em,
+      .result .areas em {
+        font-style: normal;
+        font-weight: 700;
+        color: #f5c542;
+      }
+      #areacard .next {
+        margin-top: 6px;
+        font-size: 13px;
+        font-weight: 700;
+        color: #9fd3ff;
+      }
+      #offwork {
+        left: 50%;
+        top: 46%;
+        width: 0;
+        height: 0;
+        opacity: 0;
+        z-index: 3;
+      }
+      #offwork .ring {
+        position: absolute;
+        --s: min(46vh, 300px);
+        width: var(--s);
+        height: var(--s);
+        left: calc(var(--s) / -2);
+        top: calc(var(--s) / -2);
+        box-sizing: border-box;
+        border: 10px solid #d0202f;
+        border-radius: 50%;
+        background: rgba(255, 250, 238, 0.88);
+        color: #d0202f;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        transform: rotate(-12deg);
+        text-shadow: none;
+      }
+      #offwork .ring::after {
+        content: '';
+        position: absolute;
+        inset: 10px;
+        border: 4px solid #d0202f;
+        border-radius: 50%;
+      }
+      #offwork b {
+        font-size: min(14vh, 92px);
+        line-height: 1;
+        font-weight: 900;
+      }
+      #offwork small {
+        margin-top: 6px;
+        font-size: min(4.5vh, 22px);
+        font-weight: 700;
+      }
+      #offwork.on {
+        opacity: 1;
+        animation: slam 0.42s cubic-bezier(0.2, 1.4, 0.4, 1) both;
+      }
+      @keyframes slam {
+        0% {
+          transform: scale(2.6);
+          opacity: 0;
+        }
+        60% {
+          opacity: 1;
+        }
+        100% {
+          transform: scale(1);
+          opacity: 1;
+        }
+      }
       #vignette {
         inset: 0;
         box-shadow: inset 0 0 160px 40px rgba(208, 32, 47, 0.75);
@@ -341,6 +501,122 @@
       .panel a.btn {
         background: #2f6fd1;
       }
+      .panel button.ghost {
+        background: #4a5568;
+      }
+      .panel .ctl {
+        font-size: 13px;
+        color: #c9d3e3;
+      }
+      .panel .foot {
+        font-size: 12px;
+        color: #8b95a8;
+      }
+      .panel .best {
+        font-size: 13px;
+        color: #c9d3e3;
+      }
+      .panel .best span {
+        display: inline-block;
+        margin: 0 6px;
+      }
+      .panel .best span.cur {
+        color: #f5c542;
+      }
+      .panel .best b {
+        color: #fff;
+      }
+      .panel .newbest {
+        display: inline-block;
+        padding: 1px 8px;
+        border-radius: 4px;
+        background: #d0202f;
+        color: #fff;
+        font-weight: 700;
+      }
+      .settings {
+        max-width: 470px;
+        margin: 6px auto 4px;
+        text-align: left;
+      }
+      .srow {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 4px 10px;
+        margin: 8px 0;
+      }
+      .srow.center {
+        justify-content: center;
+      }
+      .slabel {
+        min-width: 160px;
+        font-weight: 700;
+        font-size: 15px;
+      }
+      .srow.center .slabel {
+        min-width: 0;
+      }
+      .srow input[type='range'] {
+        flex: 1;
+        min-width: 140px;
+        height: 30px;
+        accent-color: #f5c542;
+      }
+      .srow output {
+        min-width: 48px;
+        text-align: right;
+        font-weight: 700;
+        color: #f5c542;
+      }
+      .srow input[type='checkbox'] {
+        width: 26px;
+        height: 26px;
+        margin: 0;
+        accent-color: #f5c542;
+      }
+      .shint,
+      .snote {
+        font-size: 12px;
+        color: #9fb0c8;
+      }
+      .shint {
+        flex-basis: 100%;
+      }
+      .snote {
+        margin: -4px 0 6px;
+      }
+      .seg {
+        display: inline-flex;
+        border: 2px solid #111318;
+        border-radius: 6px;
+        overflow: hidden;
+      }
+      .panel .seg button {
+        margin: 0;
+        padding: 9px 16px;
+        border: 0;
+        border-radius: 0;
+        background: #33465e;
+        color: #dfe6f2;
+        font: 700 15px 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif;
+      }
+      .panel .seg button + button {
+        border-left: 2px solid #111318;
+      }
+      .panel .seg button.on {
+        background: #f5c542;
+        color: #111318;
+      }
+      .result .areas span {
+        display: inline-block;
+        margin: 0 8px;
+        font-size: 14px;
+      }
+      .panel img.emblem.inline {
+        width: 40px;
+        vertical-align: -8px;
+      }
       .result .sheet {
         display: flex;
         gap: 18px;
@@ -403,8 +679,8 @@
       }
       #stick {
         position: fixed;
-        left: 40px;
-        bottom: 40px;
+        left: calc(40px + env(safe-area-inset-left));
+        bottom: calc(40px + env(safe-area-inset-bottom));
         width: 120px;
         height: 120px;
         border-radius: 50%;
@@ -421,22 +697,44 @@
         border-radius: 50%;
         background: rgba(255, 255, 255, 0.45);
       }
+      #touch button {
+        touch-action: none;
+        -webkit-user-select: none;
+        user-select: none;
+      }
       #fire {
         position: fixed;
-        right: 36px;
-        bottom: 44px;
-        width: 92px;
-        height: 92px;
+        right: calc(26px + env(safe-area-inset-right));
+        bottom: calc(30px + env(safe-area-inset-bottom));
+        width: 98px;
+        height: 98px;
         border-radius: 50%;
         border: 3px solid #111318;
         background: #d0202f;
         color: #fff;
         font: 700 20px 'Malgun Gothic', sans-serif;
       }
+      #jumpBtn {
+        position: fixed;
+        right: calc(140px + env(safe-area-inset-right));
+        bottom: calc(22px + env(safe-area-inset-bottom));
+        width: 76px;
+        height: 76px;
+        border-radius: 50%;
+        border: 3px solid #111318;
+        background: #2f6fd1;
+        color: #fff;
+        font: 700 16px 'Malgun Gothic', sans-serif;
+      }
+      #jumpBtn.alert {
+        background: #ffd84a;
+        color: #111318;
+        box-shadow: 0 0 16px #ffd84a;
+      }
       #spBtn {
         position: fixed;
-        right: 146px;
-        bottom: 36px;
+        right: calc(42px + env(safe-area-inset-right));
+        bottom: calc(142px + env(safe-area-inset-bottom));
         width: 66px;
         height: 66px;
         border-radius: 50%;
@@ -452,7 +750,7 @@
       }
       .mini {
         position: fixed;
-        top: 12px;
+        top: calc(12px + env(safe-area-inset-top));
         height: 38px;
         min-width: 44px;
         padding: 0 10px;
@@ -463,10 +761,11 @@
         font: 700 13px 'Malgun Gothic', sans-serif;
       }
       #pauseBtn {
-        right: 12px;
+        right: calc(12px + env(safe-area-inset-right));
+        min-width: 48px;
       }
       #muteBtn {
-        right: 66px;
+        right: calc(70px + env(safe-area-inset-right));
       }
       #rotate {
         display: none;
@@ -533,6 +832,51 @@
           min-width: 190px;
           padding: 6px 10px 8px;
         }
+        .srow {
+          margin: 5px 0;
+        }
+        .panel .seg button {
+          padding: 7px 14px;
+        }
+        .panel .ctl,
+        .panel .best {
+          font-size: 12px;
+        }
+        .panel .foot {
+          font-size: 11px;
+        }
+        .result .sheet {
+          margin: 4px 0;
+        }
+        .result .areas span {
+          font-size: 12px;
+        }
+        #areacard {
+          padding: 6px 12px 8px;
+        }
+        #areacard b {
+          font-size: 18px;
+          margin: 0 0 4px;
+        }
+        #fire {
+          width: 88px;
+          height: 88px;
+          bottom: calc(22px + env(safe-area-inset-bottom));
+        }
+        #jumpBtn {
+          right: calc(128px + env(safe-area-inset-right));
+          bottom: calc(14px + env(safe-area-inset-bottom));
+          width: 70px;
+          height: 70px;
+        }
+        #spBtn {
+          bottom: calc(124px + env(safe-area-inset-bottom));
+          width: 60px;
+          height: 60px;
+        }
+        #stick {
+          bottom: calc(26px + env(safe-area-inset-bottom));
+        }
       }
     </style>
   </head>
@@ -547,7 +891,7 @@
     </div>
     <div class="hud" id="clock"></div>
     <div class="hud" id="bossbox">
-      <div class="bname">단체 회신 메일 폭풍</div>
+      <div class="bname"><span id="bossname">단체 회신 메일 폭풍</span><span class="bweak">약점 열림!</span></div>
       <div id="bosshp"><div id="bossbar"></div></div>
     </div>
     <div class="hud" id="cross"></div>
@@ -559,17 +903,21 @@
     <div class="hud dir" id="guide"><b></b></div>
     <div class="hud" id="banner"></div>
     <div class="hud" id="note"></div>
+    <div class="hud" id="jumpcue">점프!<small>Space</small></div>
+    <div class="hud" id="areacard"></div>
+    <div class="hud" id="offwork"><div class="ring"><b>퇴근!</b><small>오늘 업무 끝</small></div></div>
     <div class="hud" id="vignette"></div>
     <div class="hud" id="flash"></div>
     <div class="hud" id="help">
       <b>조작법</b><br />
-      이동 WASD · 달리기 Shift · 시점 마우스<br />
-      도장 던지기 클릭 · 필살기 Q<br />
+      이동 WASD · 달리기 Shift · 점프 Space<br />
+      시점 마우스 · 도장 던지기 클릭 · 필살기 Q<br />
       소리 M (<span id="muteState">켜짐</span>) · 일시정지 Esc
     </div>
     <div id="touch">
       <div id="stick"><div id="knob"></div></div>
       <button id="spBtn" type="button">필살기</button>
+      <button id="jumpBtn" type="button">점프</button>
       <button id="fire" type="button">도장</button>
       <button id="muteBtn" class="mini" type="button">소리 켬</button>
       <button id="pauseBtn" class="mini" type="button">II</button>

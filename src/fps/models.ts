@@ -6,11 +6,15 @@ import {
   bubbleTex,
   bulkTex,
   drawTimer,
+  flyerTex,
+  glowMapTex,
   glowTex,
+  grilleTex,
   labelTex,
   mailTex,
   paperTex,
   phoneFaceTex,
+  soundWaveTex,
   warnTex,
 } from './textures';
 
@@ -65,6 +69,20 @@ export class Models {
   // 보스 탄막 종이
   readonly sheetGeo = new THREE.PlaneGeometry(0.62, 0.78);
   readonly sheetMat = new THREE.MeshLambertMaterial({ map: paperTex(), side: THREE.DoubleSide });
+  // 확성기가 뿌리는 대자보
+  readonly flyerGeo = new THREE.PlaneGeometry(1.0, 1.38);
+  readonly flyerMat = new THREE.MeshLambertMaterial({ map: flyerTex(), side: THREE.DoubleSide });
+  // 음파 고리 (반지름 1, 높이 1, 바닥이 y = 0 인 열린 원통을 키워서 쓴다)
+  readonly waveGeo = new THREE.CylinderGeometry(1, 1, 1, 80, 1, true).translate(0, 0.5, 0);
+  private waveTex = soundWaveTex();
+  // 확성기
+  private megaWhite = lam(0xf1ede2);
+  private megaRed = lam(0xc8202f);
+  private megaDark = lam(0x3a3d46);
+  private megaMetal = lam(0x9aa1a8);
+  // 그림은 하나만 만들어 둔다 (타이틀 뒤 미리 그리기에서 올려 두면 운동장에서 끊기지 않는다)
+  private grille = grilleTex();
+  private glowMap = glowMapTex();
   // 줍는 물건
   private glow = new THREE.MeshBasicMaterial({ map: glowTex('255,224,102'), transparent: true, depthWrite: false });
   private glowGeo = new THREE.PlaneGeometry(1.6, 1.6);
@@ -182,6 +200,108 @@ export class Models {
   sheet(): THREE.Mesh {
     const m = new THREE.Mesh(this.sheetGeo, this.sheetMat);
     return m;
+  }
+
+  flyer(): THREE.Mesh {
+    const m = new THREE.Mesh(this.flyerGeo, this.flyerMat);
+    m.castShadow = true;
+    return m;
+  }
+
+  /** 음파 고리 한 개 (투명도는 고리마다 따로) */
+  wave(): { mesh: THREE.Mesh; mat: THREE.MeshBasicMaterial } {
+    this.waveTex.repeat.set(40, 1);
+    const mat = new THREE.MeshBasicMaterial({ map: this.waveTex, transparent: true, depthWrite: false, side: THREE.DoubleSide });
+    const mesh = new THREE.Mesh(this.waveGeo, mat);
+    mesh.frustumCulled = false;
+    mesh.visible = false;
+    return { mesh, mat };
+  }
+
+  /**
+   * 요구안 방송 확성기: 앞(+z)이 나팔. 손잡이 관 + 빨간 뒷마개 + 넓은 나팔 + 빨간 테 + 스피커 망(화난 눈).
+   * 기를 모으면 스피커 망 가운데가 빛난다(disc.emissiveIntensity). target은 약점 표시 고리.
+   */
+  megaphone(): { obj: THREE.Group; head: THREE.Group; disc: THREE.MeshLambertMaterial; target: THREE.Mesh; targetMat: THREE.MeshBasicMaterial } {
+    // 모양과 재질은 처음 한 번만 만들고 판마다 함께 쓴다 (확성기는 한 번에 하나뿐)
+    const s = (this.megaParts ??= {
+      body: new THREE.CylinderGeometry(0.8, 0.9, 2.6, 22).rotateX(Math.PI / 2),
+      cap: new THREE.CylinderGeometry(1.0, 1.0, 0.45, 22).rotateX(Math.PI / 2),
+      band: new THREE.CylinderGeometry(0.87, 0.87, 0.36, 22).rotateX(Math.PI / 2),
+      bell: new THREE.CylinderGeometry(2.5, 0.85, 2.9, 36, 1, true).rotateX(Math.PI / 2),
+      rim: new THREE.TorusGeometry(2.5, 0.16, 8, 44),
+      discGeo: new THREE.CircleGeometry(2.42, 44),
+      grip: new THREE.BoxGeometry(0.55, 1.6, 0.75),
+      trigger: new THREE.BoxGeometry(0.2, 0.45, 0.32),
+      ring: new THREE.RingGeometry(1.2, 1.45, 44),
+      bellMat: new THREE.MeshLambertMaterial({ color: 0xf1ede2, side: THREE.DoubleSide }),
+      disc: new THREE.MeshLambertMaterial({ map: this.grille, emissive: 0xffc23a, emissiveMap: this.glowMap, emissiveIntensity: 0 }),
+      targetMat: new THREE.MeshBasicMaterial({ color: 0xfff1a0, transparent: true, depthWrite: false, side: THREE.DoubleSide }),
+    });
+    const obj = new THREE.Group();
+    const head = new THREE.Group();
+    obj.add(head);
+    const part = (geo: THREE.BufferGeometry, mat: THREE.Material, z: number, y = 0) => {
+      const m = new THREE.Mesh(geo, mat);
+      m.position.set(0, y, z);
+      m.castShadow = true;
+      head.add(m);
+      return m;
+    };
+    part(s.body, this.megaWhite, -1.5);
+    part(s.cap, this.megaRed, -2.95);
+    part(s.band, this.megaRed, -0.9);
+    part(s.bell, s.bellMat, 1.25);
+    part(s.rim, this.megaRed, 2.7);
+    part(s.discGeo, s.disc, 2.6);
+    // 손잡이와 방아쇠
+    part(s.grip, this.megaDark, -1.75, -1.25).rotation.x = 0.28;
+    part(s.trigger, this.megaRed, -1.2, -0.95);
+    // 약점 표시 고리 (기를 모을 때만)
+    const target = new THREE.Mesh(s.ring, s.targetMat);
+    target.position.z = 2.75;
+    target.visible = false;
+    head.add(target);
+    s.disc.emissiveIntensity = 0;
+    return { obj, head, disc: s.disc, target, targetMat: s.targetMat };
+  }
+
+  private megaParts:
+    | {
+        body: THREE.BufferGeometry;
+        cap: THREE.BufferGeometry;
+        band: THREE.BufferGeometry;
+        bell: THREE.BufferGeometry;
+        rim: THREE.BufferGeometry;
+        discGeo: THREE.BufferGeometry;
+        grip: THREE.BufferGeometry;
+        trigger: THREE.BufferGeometry;
+        ring: THREE.BufferGeometry;
+        bellMat: THREE.MeshLambertMaterial;
+        disc: THREE.MeshLambertMaterial;
+        targetMat: THREE.MeshBasicMaterial;
+      }
+    | undefined;
+
+  /** 확성기를 받치는 기둥 (받침, 기둥, 양갈래 걸쇠, 작은 나팔 스피커 둘) */
+  mast(): THREE.Group {
+    const g = new THREE.Group();
+    const add2 = (geo: THREE.BufferGeometry, mat: THREE.Material, x: number, y: number, z: number) => {
+      const m = new THREE.Mesh(geo, mat);
+      m.position.set(x, y, z);
+      m.castShadow = true;
+      m.receiveShadow = true;
+      g.add(m);
+      return m;
+    };
+    add2(new THREE.BoxGeometry(2.2, 0.6, 2.2), lam(0xb7b3ab), 0, 0.3, 0);
+    add2(new THREE.CylinderGeometry(0.3, 0.38, 8.0, 14), this.megaMetal, 0, 4.4, 0);
+    add2(new THREE.BoxGeometry(2.5, 0.3, 0.4), this.megaMetal, 0, 8.25, 0);
+    for (const s of [-1, 1]) add2(new THREE.BoxGeometry(0.28, 1.3, 0.5), this.megaMetal, s * 1.12, 8.9, 0);
+    const hornMat = new THREE.MeshLambertMaterial({ color: 0xf1ede2, side: THREE.DoubleSide });
+    const hornGeo = new THREE.CylinderGeometry(0.55, 0.16, 0.9, 14, 1, true);
+    for (const s of [-1, 1]) add2(hornGeo, hornMat, s * 0.7, 6.0, 0).rotation.z = (-s * Math.PI) / 2;
+    return g;
   }
 
   label(text: string, color = '#ffffff'): THREE.Sprite {

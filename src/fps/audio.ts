@@ -15,12 +15,23 @@ export type SfxName =
   | 'pop'
   | 'volley'
   | 'tick'
-  | 'open';
+  | 'open'
+  | 'jump'
+  | 'charge'
+  | 'wave'
+  | 'weak'
+  | 'squeal'
+  | 'clear'
+  | 'offwork';
 
 const MUTE_KEY = 'staffsmash.fps.muted';
 
+const GAIN = 0.4;
+
 export class Sfx {
   muted = false;
+  /** 소리 크기 0~1 (설정) */
+  volume = 0.8;
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
   private noise: AudioBuffer | null = null;
@@ -45,7 +56,7 @@ export class Sfx {
         return;
       }
       this.master = this.ctx.createGain();
-      this.master.gain.value = this.muted ? 0 : 0.32;
+      this.master.gain.value = this.level;
       this.master.connect(this.ctx.destination);
       const len = Math.floor(this.ctx.sampleRate * 0.6);
       this.noise = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
@@ -55,9 +66,23 @@ export class Sfx {
     if (this.ctx.state === 'suspended') void this.ctx.resume();
   }
 
+  private get level(): number {
+    return this.muted ? 0 : GAIN * this.volume;
+  }
+
+  setVolume(v: number): void {
+    this.volume = Math.max(0, Math.min(1, v));
+    if (this.master && this.ctx) this.master.gain.setTargetAtTime(this.level, this.ctx.currentTime, 0.02);
+  }
+
+  /** 탭이 가려졌을 때 잠깐 멈춘다 */
+  suspend(): void {
+    if (this.ctx && this.ctx.state === 'running') void this.ctx.suspend();
+  }
+
   toggleMute(): boolean {
     this.muted = !this.muted;
-    if (this.master && this.ctx) this.master.gain.setTargetAtTime(this.muted ? 0 : 0.32, this.ctx.currentTime, 0.02);
+    if (this.master && this.ctx) this.master.gain.setTargetAtTime(this.level, this.ctx.currentTime, 0.02);
     try {
       localStorage.setItem(MUTE_KEY, this.muted ? '1' : '0');
     } catch {
@@ -70,10 +95,10 @@ export class Sfx {
   play(name: SfxName, vol = 1): void {
     const ctx = this.ctx;
     const out = this.master;
-    if (!ctx || !out || this.muted || vol <= 0.02) return;
+    if (!ctx || !out || this.muted || this.volume <= 0.001 || vol <= 0.02) return;
     // 같은 소리가 한 프레임에 겹쳐 커지지 않게
     const now = ctx.currentTime;
-    const gap = name === 'hit' || name === 'throw' ? 0.045 : name === 'tick' ? 0.2 : 0.03;
+    const gap = name === 'hit' || name === 'throw' ? 0.045 : name === 'tick' ? 0.2 : name === 'wave' ? 0.25 : 0.03;
     if (now - (this.last.get(name) ?? -1) < gap) return;
     this.last.set(name, now);
     const t = now + 0.005;
@@ -127,6 +152,40 @@ export class Sfx {
         break;
       case 'open':
         [392, 523, 659, 784].forEach((f, i) => this.tone(t + i * 0.09, 'triangle', f, 0, 0.22, 0.3 * vol));
+        break;
+      case 'jump':
+        this.tone(t, 'triangle', 300, 520, 0.12, 0.16 * vol);
+        this.noiseBurst(t, 0.12, 'bandpass', 900, 1800, 0.12 * vol, 1.2);
+        break;
+      case 'charge':
+        // 확성기가 힘을 모으는 소리 (점점 높아지는 웅웅거림)
+        this.tone(t, 'sawtooth', 140, 560, 1.7, 0.12 * vol);
+        this.tone(t, 'sine', 900, 2200, 1.7, 0.07 * vol);
+        break;
+      case 'wave':
+        // 음파: 낮고 굵은 "부와앙"
+        this.tone(t, 'sawtooth', 120, 70, 0.9, 0.4 * vol);
+        this.tone(t, 'square', 180, 110, 0.7, 0.16 * vol);
+        this.noiseBurst(t, 0.8, 'lowpass', 900, 120, 0.5 * vol);
+        break;
+      case 'weak':
+        this.tone(t, 'triangle', 1320, 1980, 0.14, 0.32 * vol);
+        this.tone(t + 0.05, 'sine', 2640, 0, 0.12, 0.18 * vol);
+        break;
+      case 'squeal':
+        // 마이크 하울링
+        this.tone(t, 'sine', 2300, 3400, 0.7, 0.07 * vol);
+        this.tone(t, 'sine', 2350, 3300, 0.7, 0.05 * vol);
+        break;
+      case 'clear':
+        [523, 659, 784, 1047].forEach((f, i) => this.tone(t + i * 0.1, 'triangle', f, 0, 0.3, 0.3 * vol));
+        this.tone(t + 0.42, 'triangle', 1319, 0, 0.5, 0.22 * vol);
+        break;
+      case 'offwork':
+        // 딩·동·댕·동 + 화음
+        [784, 659, 698, 523].forEach((f, i) => this.tone(t + i * 0.26, 'triangle', f, 0, 0.7, 0.32 * vol));
+        [523, 659, 784, 1047].forEach((f) => this.tone(t + 1.15, 'triangle', f, 0, 1.3, 0.2 * vol));
+        this.noiseBurst(t + 1.15, 0.8, 'bandpass', 2500, 900, 0.25 * vol, 1.2);
         break;
     }
   }

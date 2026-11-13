@@ -701,15 +701,233 @@ export function brickTex(): THREE.CanvasTexture {
   return t;
 }
 
-/** 하늘: 위 파랑 → 아래 늦은 오후 빛 */
-export function skyTex(): THREE.CanvasTexture {
-  return canvasTex(8, 256, (g) => {
-    const gr = g.createLinearGradient(0, 0, 0, 256);
-    gr.addColorStop(0, '#6fa6dc');
-    gr.addColorStop(0.45, '#a9cdec');
-    gr.addColorStop(0.62, '#e9e2cf');
-    gr.addColorStop(1, '#f2d4ae');
+// ---------- 대운동장 ----------
+
+/** 잔디 줄무늬: 밝은 줄·어두운 줄 한 쌍 (가로 반복) */
+export function turfTex(): THREE.CanvasTexture {
+  const t = canvasTex(256, 128, (g) => {
+    g.fillStyle = '#47a552';
+    g.fillRect(0, 0, 128, 128);
+    g.fillStyle = '#3d9548';
+    g.fillRect(128, 0, 128, 128);
+    for (let i = 0; i < 900; i++) {
+      g.fillStyle = i % 3 ? 'rgba(30,80,35,0.18)' : 'rgba(170,220,140,0.16)';
+      g.fillRect(Math.random() * 256, Math.random() * 128, 2, 3);
+    }
+  });
+  t.wrapS = THREE.RepeatWrapping;
+  t.wrapT = THREE.RepeatWrapping;
+  return t;
+}
+
+/** 운동장 철망: 옅은 초록 바탕 + 마름모 그물 (반투명) */
+export function fenceNetTex(): THREE.CanvasTexture {
+  const t = canvasTex(64, 64, (g) => {
+    g.fillStyle = 'rgba(38,84,58,0.16)';
+    g.fillRect(0, 0, 64, 64);
+    g.strokeStyle = 'rgba(30,64,44,0.75)';
+    g.lineWidth = 2.5;
+    g.beginPath();
+    g.moveTo(0, 32);
+    g.lineTo(32, 0);
+    g.lineTo(64, 32);
+    g.lineTo(32, 64);
+    g.closePath();
+    g.stroke();
+  });
+  t.wrapS = THREE.RepeatWrapping;
+  t.wrapT = THREE.RepeatWrapping;
+  return t;
+}
+
+/** 골대 그물: 흰 격자 */
+export function goalNetTex(): THREE.CanvasTexture {
+  const t = canvasTex(32, 32, (g) => {
+    g.clearRect(0, 0, 32, 32);
+    g.strokeStyle = 'rgba(255,255,255,0.85)';
+    g.lineWidth = 2;
+    g.strokeRect(1, 1, 30, 30);
+  });
+  t.wrapS = THREE.RepeatWrapping;
+  t.wrapT = THREE.RepeatWrapping;
+  return t;
+}
+
+/** 울타리 남색 현수막: 흰 심벌 + HUFS + 한국외국어대학교 */
+export function fieldBannerTex(logos: Logos): THREE.CanvasTexture {
+  return canvasTex(2048, 256, (g) => {
+    g.fillStyle = NAVY;
+    g.fillRect(0, 0, 2048, 256);
+    g.fillStyle = GOLD;
+    g.fillRect(0, 10, 2048, 6);
+    g.fillRect(0, 240, 2048, 6);
+    drawTinted(g, logos.line, 190, 128, 170, '#ffffff');
+    drawTinted(g, logos.type, 520, 128, 330, '#ffffff');
+    g.fillStyle = '#ffffff';
+    g.textAlign = 'left';
+    g.textBaseline = 'middle';
+    g.font = `bold 92px ${FONT}`;
+    g.fillText('한국외국어대학교', 740, 104);
+    g.font = `italic 44px ${SERIF}`;
+    g.fillText('Hankuk University of Foreign Studies', 744, 188);
+  });
+}
+
+/** 끝쪽 울타리 현수막: COME TO HUFS · MEET THE WORLD */
+export function sloganBannerTex(logos: Logos): THREE.CanvasTexture {
+  return canvasTex(1024, 160, (g) => {
+    g.fillStyle = NAVY;
+    g.fillRect(0, 0, 1024, 160);
+    drawTinted(g, logos.line, 90, 80, 104, GOLD);
+    g.fillStyle = GOLD;
+    g.font = `bold 58px ${SERIF}`;
+    g.textAlign = 'left';
+    g.textBaseline = 'middle';
+    g.fillText('COME TO HUFS · MEET THE WORLD', 170, 84);
+  });
+}
+
+/** 운동장 너머 아파트: 크림색 벽, 층마다 창 띠, 불 켜진 창 몇 개 */
+export function apartmentTex(): THREE.CanvasTexture {
+  return canvasTex(256, 512, (g) => {
+    g.fillStyle = '#d8cdc3';
+    g.fillRect(0, 0, 256, 512);
+    g.fillStyle = '#bfb2a6';
+    g.fillRect(222, 0, 34, 512);
+    let seed = 11;
+    const rnd = () => {
+      seed = (seed * 16807) % 2147483647;
+      return seed / 2147483647;
+    };
+    for (let y = 18; y < 500; y += 24) {
+      g.fillStyle = '#8c8077';
+      g.fillRect(14, y, 196, 9);
+      for (let x = 14; x < 210; x += 28) {
+        if (rnd() < 0.22) {
+          g.fillStyle = '#ffd98a';
+          g.fillRect(x, y, 22, 9);
+        }
+      }
+    }
+  });
+}
+
+/** 사회과학관 앞 길 표지: 대운동장 */
+export function fieldSignTex(): THREE.CanvasTexture {
+  return canvasTex(512, 160, (g) => {
+    g.fillStyle = '#2f8f4e';
+    g.fillRect(0, 0, 512, 160);
+    g.strokeStyle = '#ffffff';
+    g.lineWidth = 8;
+    g.strokeRect(10, 10, 492, 140);
+    g.fillStyle = '#ffffff';
+    g.font = `bold 76px ${FONT}`;
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText('대운동장', 256, 84);
+  });
+}
+
+// ---------- 요구안 방송 확성기 ----------
+
+/** 확성기 나팔 안쪽: 어두운 스피커 망 + 화난 눈 */
+export function grilleTex(): THREE.CanvasTexture {
+  return canvasTex(256, 256, (g) => {
+    g.fillStyle = '#2a2d36';
+    g.fillRect(0, 0, 256, 256);
+    g.strokeStyle = '#4a4f5c';
+    g.lineWidth = 5;
+    for (let r = 26; r < 128; r += 18) {
+      g.beginPath();
+      g.arc(128, 128, r, 0, Math.PI * 2);
+      g.stroke();
+    }
+    g.fillStyle = '#5a606e';
+    for (let y = 8; y < 256; y += 14) {
+      for (let x = 8; x < 256; x += 14) {
+        if ((x - 128) ** 2 + (y - 128) ** 2 < 120 * 120) g.fillRect(x, y, 4, 4);
+      }
+    }
+    // 화난 눈 (흰 테두리로 어두운 망 위에서도 보이게)
+    for (const s of [-1, 1]) {
+      g.fillStyle = '#ffffff';
+      g.fillRect(128 + s * 44 - 17, 98, 34, 34);
+      g.fillStyle = '#1d1d22';
+      g.fillRect(128 + s * 44 - 12, 103, 24, 24);
+      g.save();
+      g.translate(128 + s * 44, 86);
+      g.rotate(-s * 0.4);
+      g.fillStyle = '#ffffff';
+      g.fillRect(-26, -7, 52, 14);
+      g.restore();
+    }
+    g.strokeStyle = '#1d1d22';
+    g.lineWidth = 8;
+    g.beginPath();
+    g.arc(128, 128, 124, 0, Math.PI * 2);
+    g.stroke();
+  });
+}
+
+/** 빛나는 자리(가운데 밝고 가장자리 어두움) — 확성기 약점의 emissiveMap */
+export function glowMapTex(): THREE.CanvasTexture {
+  return canvasTex(128, 128, (g) => {
+    g.fillStyle = '#000000';
+    g.fillRect(0, 0, 128, 128);
+    const gr = g.createRadialGradient(64, 64, 4, 64, 64, 62);
+    gr.addColorStop(0, '#ffffff');
+    gr.addColorStop(0.45, '#d8d8d8');
+    gr.addColorStop(0.7, '#3a3a3a');
+    gr.addColorStop(1, '#000000');
     g.fillStyle = gr;
-    g.fillRect(0, 0, 8, 256);
+    g.fillRect(0, 0, 128, 128);
+  });
+}
+
+/** 바닥을 따라 퍼지는 음파 고리의 벽: 아래는 진하고 위로 옅어지며, 맨 위에 밝은 테 */
+export function soundWaveTex(): THREE.CanvasTexture {
+  const t = canvasTex(64, 64, (g) => {
+    const gr = g.createLinearGradient(0, 64, 0, 0);
+    gr.addColorStop(0, 'rgba(255,214,74,0.9)');
+    gr.addColorStop(0.8, 'rgba(255,170,60,0.35)');
+    gr.addColorStop(0.86, 'rgba(255,240,180,1)');
+    gr.addColorStop(1, 'rgba(255,240,180,1)');
+    g.fillStyle = gr;
+    g.fillRect(0, 0, 64, 64);
+    // 소리 줄무늬
+    g.fillStyle = 'rgba(255,255,255,0.35)';
+    for (let x = 0; x < 64; x += 16) g.fillRect(x, 12, 5, 46);
+  });
+  t.wrapS = THREE.RepeatWrapping;
+  return t;
+}
+
+/** 확성기가 뿌리는 대자보 */
+export function flyerTex(): THREE.CanvasTexture {
+  return canvasTex(128, 176, (g) => {
+    g.fillStyle = '#fbf6e8';
+    g.fillRect(0, 0, 128, 176);
+    g.fillStyle = '#d0202f';
+    g.font = `bold 34px ${FONT}`;
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText('요구안', 64, 30);
+    g.fillRect(14, 50, 100, 5);
+    g.fillStyle = '#1d1d22';
+    let seed = 5;
+    const rnd = () => {
+      seed = (seed * 16807) % 2147483647;
+      return seed / 2147483647;
+    };
+    for (let i = 0; i < 7; i++) {
+      const y = 66 + i * 14;
+      g.fillRect(14, y, 70 + rnd() * 30, 6);
+    }
+    g.fillStyle = '#d0202f';
+    g.font = `bold 26px ${FONT}`;
+    g.fillText('!!', 104, 158);
+    g.strokeStyle = '#1d1d22';
+    g.lineWidth = 4;
+    g.strokeRect(2, 2, 124, 172);
   });
 }

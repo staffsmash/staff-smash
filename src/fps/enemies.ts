@@ -11,8 +11,11 @@ import { drawTimer } from './textures';
 // - "교수님이 된다고 했는데요" 말풍선: 부르르 떤 뒤 곧장 돌진한다. 옆으로 피한다.
 // - 마감 1분 전 서류 뭉치: 째깍거리며 다가온다. 도장으로 맞히면 그 자리에서 터져 주변 민원까지 처리.
 // - 단체 회신 메일 폭풍(보스): 광장 위를 돌며 메일을 낳고 종이를 퍼붓는다.
+// - 요구안 방송 확성기(마지막 보스): 대운동장. megaphone.ts
 
-export type Kind = 'mail' | 'bulk' | 'phone' | 'bubble' | 'bomb' | 'boss';
+export type Kind = 'mail' | 'bulk' | 'phone' | 'bubble' | 'bomb' | 'boss' | 'mega';
+/** 다친 까닭 (적 종류 + 바닥 음파) */
+export type HurtKind = Kind | 'wave';
 
 export interface Ctx {
   readonly scene: THREE.Scene;
@@ -20,15 +23,20 @@ export interface Ctx {
   readonly fx: Fx;
   /** 적이 노리는 점 (플레이어 눈보다 조금 아래) */
   readonly eye: THREE.Vector3;
+  /** 플레이어 발이 땅에서 뜬 높이 (점프) */
+  readonly feet: number;
   /** 지금 움직일 수 있는 구역 (말풍선 돌진이 멈추는 경계) */
   readonly area: Rect;
-  hurt(dmg: number, from: THREE.Vector3, kind?: Kind): void;
+  hurt(dmg: number, from: THREE.Vector3, kind?: HurtKind): void;
   sound(name: SfxName, at?: THREE.Vector3, vol?: number): void;
+  /** 화면 흔들림 (설정에서 줄이면 무시) */
+  quake(amount: number, at?: THREE.Vector3): void;
   detonate(b: Bomb, byPlayer: boolean): void;
-  spawnAt(kind: 'mail' | 'bomb', at: THREE.Vector3): void;
+  spawnAt(kind: 'mail' | 'bomb' | 'bubble', at: THREE.Vector3): void;
   spawnPhone(): void;
-  sheet(from: THREE.Vector3, vel: THREE.Vector3): void;
-  bossPhase2(): void;
+  /** 날아오는 종이. big = 확성기의 대자보 */
+  sheet(from: THREE.Vector3, vel: THREE.Vector3, big?: boolean): void;
+  bossPhase2(kind: 'boss' | 'mega'): void;
   /** 보스를 뺀 살아 있는 적 수 */
   minions(): number;
 }
@@ -521,7 +529,8 @@ export class Bomb extends Enemy {
 
 // ---------- 단체 회신 메일 폭풍 (보스) ----------
 
-const BOSS_HP = 60;
+// v3: 대운동장이 붙어 판이 길어졌으므로 60 → 52
+const BOSS_HP = 52;
 const _m4 = new THREE.Matrix4();
 const _q = new THREE.Quaternion();
 const _e = new THREE.Euler();
@@ -657,7 +666,7 @@ export class Boss extends Enemy {
       if (!this.phase2 && this.hp <= this.maxHp / 2) {
         this.phase2 = true;
         this.bombT = 1.5;
-        c.bossPhase2();
+        c.bossPhase2('boss');
       }
     }
     o.lookAt(c.eye);
