@@ -1,20 +1,18 @@
 import * as THREE from 'three';
+import type { SheetKind } from './enemies';
 import {
   bombFaceTex,
   bombSideTex,
-  bossTex,
   bubbleTex,
   bulkTex,
+  docTex,
   drawTimer,
-  flyerTex,
-  glowMapTex,
   glowTex,
-  grilleTex,
   labelTex,
   mailTex,
   paperTex,
   phoneFaceTex,
-  soundWaveTex,
+  serverTex,
   warnTex,
 } from './textures';
 
@@ -69,20 +67,14 @@ export class Models {
   // 보스 탄막 종이
   readonly sheetGeo = new THREE.PlaneGeometry(0.62, 0.78);
   readonly sheetMat = new THREE.MeshLambertMaterial({ map: paperTex(), side: THREE.DoubleSide });
-  // 확성기가 뿌리는 대자보
-  readonly flyerGeo = new THREE.PlaneGeometry(1.0, 1.38);
-  readonly flyerMat = new THREE.MeshLambertMaterial({ map: flyerTex(), side: THREE.DoubleSide });
-  // 음파 고리 (반지름 1, 높이 1, 바닥이 y = 0 인 열린 원통을 키워서 쓴다)
-  readonly waveGeo = new THREE.CylinderGeometry(1, 1, 1, 80, 1, true).translate(0, 0.5, 0);
-  private waveTex = soundWaveTex();
-  // 확성기
-  private megaWhite = lam(0xf1ede2);
-  private megaRed = lam(0xc8202f);
-  private megaDark = lam(0x3a3d46);
-  private megaMetal = lam(0x9aa1a8);
-  // 그림은 하나만 만들어 둔다 (타이틀 뒤 미리 그리기에서 올려 두면 운동장에서 끊기지 않는다)
-  private grille = grilleTex();
-  private glowMap = glowMapTex();
+  // 보스가 날리는 서류 (최장학의 장학 서류, 부총장의 회의 자료)와 수강신청 패킷
+  // 얇은 상자 앞뒤에 같은 그림: 뒤에서 봐도 글씨가 뒤집히지 않는다
+  readonly docGeo = new THREE.BoxGeometry(1.0, 1.38, 0.02);
+  private docEdge = lam(0xf1ece0);
+  private scholarMat = new THREE.MeshLambertMaterial({ map: docTex('장학 서류', '#b7791f') });
+  private meetingMat = new THREE.MeshLambertMaterial({ map: docTex('회의 자료', '#6d28d9') });
+  private packetGeo = new THREE.BoxGeometry(0.42, 0.42, 0.42);
+  private packetMat = new THREE.MeshBasicMaterial({ color: 0x5ee0ff });
   // 줍는 물건
   private glow = new THREE.MeshBasicMaterial({ map: glowTex('255,224,102'), transparent: true, depthWrite: false });
   private glowGeo = new THREE.PlaneGeometry(1.6, 1.6);
@@ -175,132 +167,26 @@ export class Models {
     return { obj, timer, canvas, tex };
   }
 
-  /** 단체 회신 메일 폭풍: 큰 봉투 + 날개 + 주위를 도는 종이 */
-  boss(): { obj: THREE.Group; body: THREE.Mesh; wings: THREE.Mesh[]; faceMat: THREE.MeshLambertMaterial; storm: THREE.InstancedMesh } {
-    const obj = new THREE.Group();
-    const faceMat = new THREE.MeshLambertMaterial({ map: bossTex(), emissive: 0x000000 });
-    const s = lam(0xe8dfc9);
-    const body = new THREE.Mesh(new THREE.BoxGeometry(5.6, 3.85, 0.5), [s, s, s, s, faceMat, faceMat]);
-    body.castShadow = true;
-    obj.add(body);
-    const wings: THREE.Mesh[] = [];
-    const wg = new THREE.BoxGeometry(2.4, 0.14, 1.6);
-    for (const k of [-1, 1]) {
-      const w = new THREE.Mesh(wg, this.wingMat);
-      w.position.set(k * 3.9, 0.6, 0);
-      obj.add(w);
-      wings.push(w);
-    }
-    const storm = new THREE.InstancedMesh(this.sheetGeo, this.sheetMat, 36);
-    storm.frustumCulled = false;
-    obj.add(storm);
-    return { obj, body, wings, faceMat, storm };
-  }
-
-  sheet(): THREE.Mesh {
-    const m = new THREE.Mesh(this.sheetGeo, this.sheetMat);
-    return m;
-  }
-
-  flyer(): THREE.Mesh {
-    const m = new THREE.Mesh(this.flyerGeo, this.flyerMat);
+  /** 날아오는 종이·패킷 하나 */
+  sheet(kind: SheetKind = 'paper'): THREE.Mesh {
+    if (kind === 'paper') return new THREE.Mesh(this.sheetGeo, this.sheetMat);
+    if (kind === 'packet') return new THREE.Mesh(this.packetGeo, this.packetMat);
+    const f = kind === 'scholar' ? this.scholarMat : this.meetingMat;
+    const e = this.docEdge;
+    const m = new THREE.Mesh(this.docGeo, [e, e, e, e, f, f]);
     m.castShadow = true;
     return m;
   }
 
-  /** 음파 고리 한 개 (투명도는 고리마다 따로) */
-  wave(): { mesh: THREE.Mesh; mat: THREE.MeshBasicMaterial } {
-    this.waveTex.repeat.set(40, 1);
-    const mat = new THREE.MeshBasicMaterial({ map: this.waveTex, transparent: true, depthWrite: false, side: THREE.DoubleSide });
-    const mesh = new THREE.Mesh(this.waveGeo, mat);
-    mesh.frustumCulled = false;
-    mesh.visible = false;
-    return { mesh, mat };
-  }
-
-  /**
-   * 요구안 방송 확성기: 앞(+z)이 나팔. 손잡이 관 + 빨간 뒷마개 + 넓은 나팔 + 빨간 테 + 스피커 망(화난 눈).
-   * 기를 모으면 스피커 망 가운데가 빛난다(disc.emissiveIntensity). target은 약점 표시 고리.
-   */
-  megaphone(): { obj: THREE.Group; head: THREE.Group; disc: THREE.MeshLambertMaterial; target: THREE.Mesh; targetMat: THREE.MeshBasicMaterial } {
-    // 모양과 재질은 처음 한 번만 만들고 판마다 함께 쓴다 (확성기는 한 번에 하나뿐)
-    const s = (this.megaParts ??= {
-      body: new THREE.CylinderGeometry(0.8, 0.9, 2.6, 22).rotateX(Math.PI / 2),
-      cap: new THREE.CylinderGeometry(1.0, 1.0, 0.45, 22).rotateX(Math.PI / 2),
-      band: new THREE.CylinderGeometry(0.87, 0.87, 0.36, 22).rotateX(Math.PI / 2),
-      bell: new THREE.CylinderGeometry(2.5, 0.85, 2.9, 36, 1, true).rotateX(Math.PI / 2),
-      rim: new THREE.TorusGeometry(2.5, 0.16, 8, 44),
-      discGeo: new THREE.CircleGeometry(2.42, 44),
-      grip: new THREE.BoxGeometry(0.55, 1.6, 0.75),
-      trigger: new THREE.BoxGeometry(0.2, 0.45, 0.32),
-      ring: new THREE.RingGeometry(1.2, 1.45, 44),
-      bellMat: new THREE.MeshLambertMaterial({ color: 0xf1ede2, side: THREE.DoubleSide }),
-      disc: new THREE.MeshLambertMaterial({ map: this.grille, emissive: 0xffc23a, emissiveMap: this.glowMap, emissiveIntensity: 0 }),
-      targetMat: new THREE.MeshBasicMaterial({ color: 0xfff1a0, transparent: true, depthWrite: false, side: THREE.DoubleSide }),
-    });
-    const obj = new THREE.Group();
-    const head = new THREE.Group();
-    obj.add(head);
-    const part = (geo: THREE.BufferGeometry, mat: THREE.Material, z: number, y = 0) => {
-      const m = new THREE.Mesh(geo, mat);
-      m.position.set(0, y, z);
-      m.castShadow = true;
-      head.add(m);
-      return m;
-    };
-    part(s.body, this.megaWhite, -1.5);
-    part(s.cap, this.megaRed, -2.95);
-    part(s.band, this.megaRed, -0.9);
-    part(s.bell, s.bellMat, 1.25);
-    part(s.rim, this.megaRed, 2.7);
-    part(s.discGeo, s.disc, 2.6);
-    // 손잡이와 방아쇠
-    part(s.grip, this.megaDark, -1.75, -1.25).rotation.x = 0.28;
-    part(s.trigger, this.megaRed, -1.2, -0.95);
-    // 약점 표시 고리 (기를 모을 때만)
-    const target = new THREE.Mesh(s.ring, s.targetMat);
-    target.position.z = 2.75;
-    target.visible = false;
-    head.add(target);
-    s.disc.emissiveIntensity = 0;
-    return { obj, head, disc: s.disc, target, targetMat: s.targetMat };
-  }
-
-  private megaParts:
-    | {
-        body: THREE.BufferGeometry;
-        cap: THREE.BufferGeometry;
-        band: THREE.BufferGeometry;
-        bell: THREE.BufferGeometry;
-        rim: THREE.BufferGeometry;
-        discGeo: THREE.BufferGeometry;
-        grip: THREE.BufferGeometry;
-        trigger: THREE.BufferGeometry;
-        ring: THREE.BufferGeometry;
-        bellMat: THREE.MeshLambertMaterial;
-        disc: THREE.MeshLambertMaterial;
-        targetMat: THREE.MeshBasicMaterial;
-      }
-    | undefined;
-
-  /** 확성기를 받치는 기둥 (받침, 기둥, 양갈래 걸쇠, 작은 나팔 스피커 둘) */
-  mast(): THREE.Group {
+  /** 수강신청 서버 랙 (총장 2단계) */
+  serverRack(): THREE.Group {
     const g = new THREE.Group();
-    const add2 = (geo: THREE.BufferGeometry, mat: THREE.Material, x: number, y: number, z: number) => {
-      const m = new THREE.Mesh(geo, mat);
-      m.position.set(x, y, z);
-      m.castShadow = true;
-      m.receiveShadow = true;
-      g.add(m);
-      return m;
-    };
-    add2(new THREE.BoxGeometry(2.2, 0.6, 2.2), lam(0xb7b3ab), 0, 0.3, 0);
-    add2(new THREE.CylinderGeometry(0.3, 0.38, 8.0, 14), this.megaMetal, 0, 4.4, 0);
-    add2(new THREE.BoxGeometry(2.5, 0.3, 0.4), this.megaMetal, 0, 8.25, 0);
-    for (const s of [-1, 1]) add2(new THREE.BoxGeometry(0.28, 1.3, 0.5), this.megaMetal, s * 1.12, 8.9, 0);
-    const hornMat = new THREE.MeshLambertMaterial({ color: 0xf1ede2, side: THREE.DoubleSide });
-    const hornGeo = new THREE.CylinderGeometry(0.55, 0.16, 0.9, 14, 1, true);
-    for (const s of [-1, 1]) add2(hornGeo, hornMat, s * 0.7, 6.0, 0).rotation.z = (-s * Math.PI) / 2;
+    const side = lam(0x2b2e36);
+    const front = new THREE.MeshLambertMaterial({ map: serverTex() });
+    const rack = new THREE.Mesh(new THREE.BoxGeometry(1.3, 2.4, 0.9), [side, side, side, side, front, side]);
+    rack.position.y = 1.2;
+    rack.castShadow = true;
+    g.add(rack);
     return g;
   }
 

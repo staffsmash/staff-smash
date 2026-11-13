@@ -8,6 +8,7 @@ import {
   fieldBannerTex,
   fieldSignTex,
   goalNetTex,
+  lecternTex,
   sloganBannerTex,
   turfTex,
   type Logos,
@@ -20,8 +21,8 @@ import {
 
 /** 운동장 한가운데 */
 export const FC = new THREE.Vector3(95, 0, 85);
-/** 확성기 기둥이 서는 자리 (남쪽 현수막 앞) */
-export const MAST = new THREE.Vector3(95, 0, 104.5);
+/** 회의소집 부총장이 서는 단상 (남쪽 현수막 앞) */
+export const PODIUM = new THREE.Vector3(95, 0, 101.5);
 /** 길이 운동장에 닿는 곳 (여기를 넘으면 대운동장 구역) */
 export const FIELD_ENTER_Z = 57;
 
@@ -310,8 +311,14 @@ export function buildField(root: THREE.Object3D, logos: Logos): FieldInfo {
   box(root, 0.16, 3.2, 0.16, 100.6, 1.6, 18.7, lambert(0x555a60));
   plane(root, 2.6, 0.82, 100.6, 3.0, 18.6, fieldSignTex(), { rotY: Math.PI });
 
-  // 기둥·골대 장애물
-  obstacles.push({ minX: MAST.x - 0.9, maxX: MAST.x + 0.9, minZ: MAST.z - 0.9, maxZ: MAST.z + 0.9 });
+  // ---------- 단상 (회의소집 부총장) ----------
+  const P = PODIUM;
+  box(root, 6.2, 1.1, 3.6, P.x, 0.55, P.z + 0.4, lambert(0xb7b3ab));
+  box(root, 6.3, 0.08, 3.7, P.x, 1.12, P.z + 0.4, lambert(0x7a1f2c), false);
+  box(root, 3.2, 0.55, 0.8, P.x, 0.275, P.z - 1.75, lambert(0xa9a59d));
+  box(root, 1.1, 1.15, 0.6, P.x, 1.1 + 0.575, P.z - 0.55, lambert(0x6b4a2f));
+  plane(root, 0.9, 0.9, P.x, 1.75, P.z - 0.86, lecternTex(logos), { rotY: Math.PI });
+  obstacles.push({ minX: P.x - 3.1, maxX: P.x + 3.1, minZ: P.z - 2.2, maxZ: P.z + 2.3 });
 
   return {
     obstacles,

@@ -2,25 +2,28 @@ import * as THREE from 'three';
 import type { SfxName } from './audio';
 import type { Rect } from './blocks';
 import type { Fx } from './fx';
+import type { Hazards } from './hazards';
 import type { Models } from './models';
 import { drawTimer } from './textures';
 
-// 1인칭 시험판의 적. 모두 사물이다 (본편 2D 잡몹과 같은 이름).
+// 1인칭 시험판의 잡몹. 모두 사물이다 (본편 2D 잡몹과 같은 이름).
 // - 새벽 3시 메일 / 단체 메일: 좌우로 흔들리며 날아와 부딪친다.
 // - 울리는 전화기: 플레이어 자리에 빨간 그림자 → 하늘에서 떨어져 바닥에서 울린다.
 // - "교수님이 된다고 했는데요" 말풍선: 부르르 떤 뒤 곧장 돌진한다. 옆으로 피한다.
 // - 마감 1분 전 서류 뭉치: 째깍거리며 다가온다. 도장으로 맞히면 그 자리에서 터져 주변 민원까지 처리.
-// - 단체 회신 메일 폭풍(보스): 광장 위를 돌며 메일을 낳고 종이를 퍼붓는다.
-// - 요구안 방송 확성기(마지막 보스): 대운동장. megaphone.ts
+// 보스(사람)는 bosses.ts.
 
-export type Kind = 'mail' | 'bulk' | 'phone' | 'bubble' | 'bomb' | 'boss' | 'mega';
-/** 다친 까닭 (적 종류 + 바닥 음파) */
-export type HurtKind = Kind | 'wave';
+export type Kind = 'mail' | 'bulk' | 'phone' | 'bubble' | 'bomb' | 'boss';
+/** 다친 까닭 (잡몹 + 보스가 쓰는 것) */
+export type HurtKind = Kind | 'wave' | 'paper' | 'scholar' | 'meeting' | 'packet' | 'bigstamp' | 'error';
+/** 날아오는 종이·물건 (도장으로 맞혀 없앨 수 있다) */
+export type SheetKind = 'paper' | 'scholar' | 'meeting' | 'packet';
 
 export interface Ctx {
   readonly scene: THREE.Scene;
   readonly models: Models;
   readonly fx: Fx;
+  readonly hz: Hazards;
   /** 적이 노리는 점 (플레이어 눈보다 조금 아래) */
   readonly eye: THREE.Vector3;
   /** 플레이어 발이 땅에서 뜬 높이 (점프) */
@@ -28,22 +31,22 @@ export interface Ctx {
   /** 지금 움직일 수 있는 구역 (말풍선 돌진이 멈추는 경계) */
   readonly area: Rect;
   hurt(dmg: number, from: THREE.Vector3, kind?: HurtKind): void;
+  /** 잠깐 멈춤 (동전·"보고해!"). 이미 멈춰 있으면 false */
+  freeze(sec: number, text: string): boolean;
   sound(name: SfxName, at?: THREE.Vector3, vol?: number): void;
   /** 화면 흔들림 (설정에서 줄이면 무시) */
   quake(amount: number, at?: THREE.Vector3): void;
+  banner(title: string, sub?: string): void;
   detonate(b: Bomb, byPlayer: boolean): void;
   spawnAt(kind: 'mail' | 'bomb' | 'bubble', at: THREE.Vector3): void;
   spawnPhone(): void;
-  /** 날아오는 종이. big = 확성기의 대자보 */
-  sheet(from: THREE.Vector3, vel: THREE.Vector3, big?: boolean): void;
-  bossPhase2(kind: 'boss' | 'mega'): void;
+  sheet(from: THREE.Vector3, vel: THREE.Vector3, kind?: SheetKind): void;
   /** 보스를 뺀 살아 있는 적 수 */
   minions(): number;
 }
 
 const _a = new THREE.Vector3();
 const _b = new THREE.Vector3();
-const UP = new THREE.Vector3(0, 1, 0);
 
 export abstract class Enemy {
   abstract readonly kind: Kind;
@@ -524,214 +527,5 @@ export class Bomb extends Enemy {
 
   dispose(): void {
     this.tex.dispose();
-  }
-}
-
-// ---------- 단체 회신 메일 폭풍 (보스) ----------
-
-// v3: 대운동장이 붙어 판이 길어졌으므로 60 → 52
-const BOSS_HP = 52;
-const _m4 = new THREE.Matrix4();
-const _q = new THREE.Quaternion();
-const _e = new THREE.Euler();
-const _s = new THREE.Vector3();
-const _p = new THREE.Vector3();
-
-export class Boss extends Enemy {
-  readonly kind = 'boss' as const;
-  phase2 = false;
-  private body: THREE.Mesh;
-  private wings: THREE.Mesh[];
-  private faceMat: THREE.MeshLambertMaterial;
-  private storm: THREE.InstancedMesh;
-  private state: 'enter' | 'fight' | 'windup' = 'enter';
-  private stateT = 0;
-  private ang = 0;
-  private orbitC: THREE.Vector3;
-  private knockR = 0;
-  private volleyT = 3.2;
-  private spawnT = 2.5;
-  private bombT = 6;
-  private phoneT = 9;
-  private from = new THREE.Vector3();
-  private target = new THREE.Vector3();
-  private contactCd = 0;
-  private dieT = 0;
-  private burstT = 0;
-  /** 마지막 폭발까지 끝났는지 */
-  finished = false;
-
-  constructor(c: Ctx, from: THREE.Vector3, orbitC: THREE.Vector3) {
-    super();
-    const m = c.models.boss();
-    this.body = m.body;
-    this.wings = m.wings;
-    this.faceMat = m.faceMat;
-    this.storm = m.storm;
-    this.obj.add(m.obj);
-    this.obj.position.copy(from);
-    this.from.copy(from);
-    this.orbitC = orbitC.clone();
-    this.hp = this.maxHp = BOSS_HP;
-    this.radius = 3.0;
-    this.center.copy(from);
-    c.scene.add(this.obj);
-  }
-
-  private orbitPoint(out: THREE.Vector3): THREE.Vector3 {
-    const r = 12 + this.knockR;
-    return out.set(
-      this.orbitC.x + Math.cos(this.ang) * r,
-      8.2 + Math.sin(this.t * 1.3) * 1.0,
-      this.orbitC.z + Math.sin(this.ang) * r,
-    );
-  }
-
-  update(dt: number, c: Ctx): void {
-    this.t += dt;
-    this.stateT += dt;
-    const o = this.obj;
-    this.popScale(dt);
-    this.animate();
-    if (this.dead) {
-      this.dieT += dt;
-      this.burstT -= dt;
-      o.rotation.z += dt * 2.5;
-      o.position.y = Math.max(2.2, o.position.y - dt * 2.4);
-      if (this.burstT <= 0 && this.dieT < 1.9) {
-        this.burstT = 0.13;
-        _a.set((Math.random() - 0.5) * 5, (Math.random() - 0.5) * 3.5, (Math.random() - 0.5) * 2).add(o.position);
-        c.fx.blast(_a, 1.6, 0xfff1c9);
-        c.fx.confetti(_a, 10, 5);
-        c.sound('pop', _a, 0.8);
-      }
-      if (this.dieT >= 1.9 && !this.finished) {
-        this.finished = true;
-        c.fx.blast(o.position, 7, 0xffb347);
-        c.fx.confetti(o.position, 140, 11, 0xffffff, 4, 1.4);
-        c.sound('boom', o.position, 1);
-        o.visible = false;
-        this.gone = true;
-      }
-      return;
-    }
-    this.contactCd -= dt;
-    this.knockR *= Math.pow(0.35, dt);
-    const flash = this.pop > 0 || (this.state === 'windup' && Math.sin(this.t * 30) > 0);
-    this.faceMat.emissive.setHex(flash ? 0x7a1010 : 0x000000);
-
-    if (this.state === 'enter') {
-      const k = Math.min(1, this.stateT / 2.6);
-      const e = k * k * (3 - 2 * k);
-      this.orbitPoint(this.target);
-      o.position.lerpVectors(this.from, this.target, e);
-      if (k >= 1) {
-        this.state = 'fight';
-        this.stateT = 0;
-      }
-    } else {
-      this.ang += (this.phase2 ? 0.46 : 0.33) * dt;
-      this.orbitPoint(this.target);
-      o.position.lerp(this.target, Math.min(1, dt * 2.5));
-      if (this.state === 'windup') {
-        o.position.x += Math.sin(this.t * 70) * 0.06;
-        if (this.stateT >= 0.65) this.volley(c);
-      } else {
-        this.volleyT -= dt;
-        if (this.volleyT <= 0) {
-          this.state = 'windup';
-          this.stateT = 0;
-        }
-      }
-      this.spawnT -= dt;
-      if (this.spawnT <= 0) {
-        this.spawnT = this.phase2 ? 5.5 : 7;
-        if (c.minions() < 6) {
-          for (const s of [-1, 1]) c.spawnAt('mail', _a.set(s * 2.4, -0.5, 0).applyQuaternion(o.quaternion).add(o.position));
-          c.sound('volley', o.position, 0.6);
-        }
-      }
-      this.phoneT -= dt;
-      if (this.phoneT <= 0) {
-        this.phoneT = this.phase2 ? 9 : 12;
-        c.spawnPhone();
-      }
-      if (this.phase2) {
-        this.bombT -= dt;
-        if (this.bombT <= 0) {
-          this.bombT = 8.5;
-          c.spawnAt('bomb', _a.set(0, -2.4, 0.6).applyQuaternion(o.quaternion).add(o.position));
-        }
-      }
-      if (!this.phase2 && this.hp <= this.maxHp / 2) {
-        this.phase2 = true;
-        this.bombT = 1.5;
-        c.bossPhase2('boss');
-      }
-    }
-    o.lookAt(c.eye);
-    this.center.copy(o.position);
-    if (this.contactCd <= 0 && o.position.distanceTo(c.eye) < this.radius + 0.7) {
-      this.contactCd = 1;
-      c.hurt(2, o.position, this.kind);
-    }
-  }
-
-  /** 종이 탄막: 플레이어 쪽으로 부채꼴 */
-  private volley(c: Ctx): void {
-    this.state = 'fight';
-    this.stateT = 0;
-    this.volleyT = this.phase2 ? 3.1 : 4.2;
-    const n = this.phase2 ? 7 : 5;
-    const o = this.obj.position;
-    const base = Math.atan2(c.eye.x - o.x, c.eye.z - o.z);
-    const flat = Math.hypot(c.eye.x - o.x, c.eye.z - o.z);
-    const pitch = Math.atan2(c.eye.y - o.y, flat);
-    for (let i = 0; i < n; i++) {
-      const a = base + (i - (n - 1) / 2) * 0.13;
-      const sp = 11.5;
-      _b.set(Math.sin(a) * Math.cos(pitch), Math.sin(pitch), Math.cos(a) * Math.cos(pitch)).multiplyScalar(sp);
-      _a.copy(o).addScaledVector(_b, 0.22);
-      c.sheet(_a, _b);
-    }
-    c.sound('volley', o, 1);
-  }
-
-  private animate(): void {
-    const flap = Math.sin(this.t * 7) * 0.5;
-    this.wings[0].rotation.z = flap;
-    this.wings[1].rotation.z = -flap;
-    this.body.rotation.z = Math.sin(this.t * 1.7) * 0.06;
-    // 주위를 도는 종이 폭풍
-    const n = this.storm.count;
-    for (let i = 0; i < n; i++) {
-      const ring = i % 3;
-      const a = (i / n) * Math.PI * 2 + this.t * (1.4 + ring * 0.35) * (ring === 1 ? -1 : 1);
-      const r = 4.2 + ring * 0.9;
-      _p.set(Math.cos(a) * r, Math.sin(this.t * 2 + i) * 1.8, Math.sin(a) * r * 0.55);
-      _e.set(this.t * 3 + i, a, this.t * 2 + i * 0.5);
-      _q.setFromEuler(_e);
-      _s.setScalar(0.9 + (i % 4) * 0.12);
-      _m4.compose(_p, _q, _s);
-      this.storm.setMatrixAt(i, _m4);
-    }
-    this.storm.instanceMatrix.needsUpdate = true;
-  }
-
-  knock(dir: THREE.Vector3): void {
-    this.knockR = Math.min(10, this.knockR + 0.35);
-    this.obj.position.addScaledVector(dir, 0.25);
-  }
-
-  /** 전체 공지 발송: 멀리 밀려난다 */
-  shove(dir: THREE.Vector3): void {
-    this.knockR = Math.min(10, this.knockR + 7);
-    this.obj.position.addScaledVector(dir, 4).addScaledVector(UP, 1.5);
-  }
-
-  die(): void {
-    this.dieT = 0;
-    this.burstT = 0;
-    this.faceMat.emissive.setHex(0x000000);
   }
 }
