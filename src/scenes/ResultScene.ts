@@ -1,14 +1,32 @@
 import Phaser from 'phaser';
 import { FONT, GAME_H, GAME_W, OFF_HOURS, clockText } from '../config';
+import { studentHeroById } from '../data/students';
 import { Controls } from '../input/Controls';
 import { gradeStage, type StageStats } from '../grade';
-import type { RunState } from '../run';
+import { lateMin, onTime, runGpa, type RunState } from '../run';
 import { fadeTo, makeButton } from '../ui/button';
 import { HUFS_KEYS, HUFS_NAVY, hufsImage } from '../hufs';
 
-// 스테이지 결과: 근무평정표 (S~D)와 현재 시각. 다음 스테이지로 이어진다.
+// 스테이지 결과와 현재 시각. 다음 스테이지로 이어진다.
+// - 교직원 모드: 근무평정표 (S~D)
+// - 학생 모드: 성적표 (A+~F)와 누적 평점(GPA, 4.5 만점)
 
-const GRADE_COLOR: Record<string, string> = { S: '#d0202f', A: '#d0202f', B: '#c2410c', C: '#475569', D: '#475569' };
+const GRADE_COLOR: Record<string, string> = {
+  S: '#d0202f',
+  A: '#d0202f',
+  B: '#c2410c',
+  C: '#475569',
+  D: '#475569',
+  'A+': '#d0202f',
+  A0: '#d0202f',
+  'B+': '#c2410c',
+  B0: '#c2410c',
+  'C+': '#475569',
+  C0: '#475569',
+  'D+': '#475569',
+  D0: '#475569',
+  F: '#7f1d1d',
+};
 
 export interface ResultData {
   run: RunState;
@@ -33,7 +51,8 @@ export class ResultScene extends Phaser.Scene {
     this.cameras.main.fadeIn(250, 0, 0, 0);
     const touch = this.sys.game.device.input.touch;
     const stats = data.stats;
-    const { rows, total, grade } = gradeStage(stats);
+    const student = data.run.mode === 'student';
+    const { rows, total, grade } = gradeStage({ ...stats, mode: data.run.mode });
     const cx = GAME_W / 2;
 
     this.add.rectangle(cx, GAME_H / 2, GAME_W, GAME_H, 0x1d2433);
@@ -44,9 +63,18 @@ export class ResultScene extends Phaser.Scene {
     hufsImage(this, HUFS_KEYS.emblem, cx, 300, { h: 300, alpha: 0.05 });
     hufsImage(this, HUFS_KEYS.emblem, cx - 270, 80, { h: 44 });
     hufsImage(this, HUFS_KEYS.wordmark, cx - 240, 80, { w: 92, tint: HUFS_NAVY, originX: 0 });
-    this.add.text(cx, 74, '근 무 평 정 표', { fontFamily: FONT, fontSize: '30px', fontStyle: 'bold', color: ink }).setOrigin(0.5);
+    if (student) {
+      // 성적표: 남색 겹줄 테두리 (학교 증명서 느낌)
+      const frame = this.add.graphics();
+      frame.lineStyle(3, HUFS_NAVY, 1).strokeRect(cx - 312, 52, 624, 436);
+      frame.lineStyle(1, HUFS_NAVY, 1).strokeRect(cx - 306, 58, 612, 424);
+    }
     this.add
-      .text(cx, 110, `${stats.stageTitle}  ·  주무관`, { fontFamily: FONT, fontSize: '15px', color: '#4b5563' })
+      .text(cx, 74, student ? '성 적 표' : '근 무 평 정 표', { fontFamily: FONT, fontSize: '30px', fontStyle: 'bold', color: ink })
+      .setOrigin(0.5);
+    const who = student ? `3학년 ${studentHeroById(data.run.hero).name}` : '주무관';
+    this.add
+      .text(cx, 110, `${stats.stageTitle}  ·  ${who}`, { fontFamily: FONT, fontSize: '15px', color: '#4b5563' })
       .setOrigin(0.5);
 
     const x0 = cx - 280;
@@ -55,13 +83,17 @@ export class ResultScene extends Phaser.Scene {
     g.lineStyle(1.5, 0x2b2b2b, 1);
     const top = 136;
     const rowH = 38;
+    if (student) {
+      // 성적표 머리줄은 옅은 남색 바탕
+      this.add.rectangle(x0 - 10, top, 480, rowH, HUFS_NAVY, 0.1).setOrigin(0, 0);
+    }
     for (let i = 0; i <= rows.length + 2; i++) g.lineBetween(x0 - 10, top + i * rowH, x0 + 470, top + i * rowH);
     for (const x of [x0 - 10, colX[1] - 10, colX[2] - 10, x0 + 470]) g.lineBetween(x, top, x, top + (rows.length + 2) * rowH);
     const cell = (x: number, row: number, text: string, bold = false) =>
       this.add
         .text(x, top + row * rowH + rowH / 2, text, { fontFamily: FONT, fontSize: '17px', fontStyle: bold ? 'bold' : 'normal', color: ink })
         .setOrigin(0, 0.5);
-    cell(colX[0], 0, '항목', true);
+    cell(colX[0], 0, student ? '평가 항목' : '항목', true);
     cell(colX[1], 0, '기록', true);
     cell(colX[2], 0, '점수', true);
     rows.forEach((r, i) => {
@@ -80,8 +112,9 @@ export class ResultScene extends Phaser.Scene {
     sg.lineStyle(2, color, 1);
     sg.strokeCircle(0, 0, 46);
     stamp.add(sg);
-    stamp.add(this.add.text(0, -2, grade, { fontFamily: FONT, fontSize: '58px', fontStyle: 'bold', color: GRADE_COLOR[grade] }).setOrigin(0.5));
-    stamp.add(this.add.text(0, 34, '평정', { fontFamily: FONT, fontSize: '13px', color: GRADE_COLOR[grade] }).setOrigin(0.5));
+    const letterSize = grade.length > 1 ? '50px' : '58px';
+    stamp.add(this.add.text(0, -2, grade, { fontFamily: FONT, fontSize: letterSize, fontStyle: 'bold', color: GRADE_COLOR[grade] }).setOrigin(0.5));
+    stamp.add(this.add.text(0, 34, student ? '학점' : '평정', { fontFamily: FONT, fontSize: '13px', color: GRADE_COLOR[grade] }).setOrigin(0.5));
     stamp.setRotation(-0.18).setScale(2.4).setAlpha(0);
     this.tweens.add({
       targets: stamp,
@@ -93,13 +126,32 @@ export class ResultScene extends Phaser.Scene {
       onComplete: () => this.cameras.main.shake(120, 0.008),
     });
 
+    if (student) {
+      // 도장 아래: 누적 평점
+      const gpa = runGpa(data.run);
+      this.add.text(cx + 250, 296, '누적 GPA', { fontFamily: FONT, fontSize: '13px', color: '#4b5563' }).setOrigin(0.5);
+      this.add
+        .text(cx + 250, 318, `${gpa === null ? '-' : gpa.toFixed(2)} / 4.5`, { fontFamily: FONT, fontSize: '20px', fontStyle: 'bold', color: '#1d4ed8' })
+        .setOrigin(0.5);
+    }
+
     const left = Math.ceil(OFF_HOURS - stats.clockMin);
-    const clockLine =
-      left > 0
-        ? `현재 시각 ${clockText(stats.clockMin)}  ·  퇴근까지 ${left}분`
-        : `현재 시각 ${clockText(stats.clockMin)}  ·  ${Math.floor(stats.clockMin - OFF_HOURS)}분 초과근무`;
+    let clockLine: string;
+    let early: boolean;
+    if (student) {
+      early = onTime(stats.clockMin);
+      clockLine = early
+        ? `현재 시각 ${clockText(stats.clockMin)}  ·  본관 마감까지 ${Math.max(0, left)}분`
+        : `현재 시각 ${clockText(stats.clockMin)}  ·  마감 지남 ${lateMin(stats.clockMin)}분`;
+    } else {
+      early = left > 0;
+      clockLine =
+        left > 0
+          ? `현재 시각 ${clockText(stats.clockMin)}  ·  퇴근까지 ${left}분`
+          : `현재 시각 ${clockText(stats.clockMin)}  ·  ${Math.floor(stats.clockMin - OFF_HOURS)}분 초과근무`;
+    }
     this.add
-      .text(cx, 340, clockLine, { fontFamily: FONT, fontSize: '19px', fontStyle: 'bold', color: left > 0 ? '#1d4ed8' : '#b91c1c' })
+      .text(cx, 340, clockLine, { fontFamily: FONT, fontSize: '19px', fontStyle: 'bold', color: early ? '#1d4ed8' : '#b91c1c' })
       .setOrigin(0.5);
     const grades = data.run.stages.map((s) => `${s.stage}스테이지 ${s.grade}`).join('  ·  ');
     this.add
