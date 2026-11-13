@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { lateMin } from '../run';
 import { FONT, GAME_H, GAME_W, OFF_HOURS, clockText } from '../config';
 import type { Player } from '../entities/Player';
 import { weaponName } from '../entities/weapons';
@@ -231,7 +232,7 @@ export class Hud {
       const until = this.student ? '본관 마감까지' : '퇴근까지';
       this.clockT.setText(`${clockText(info.clockMin)}  ·  ${until} ${left}분`).setColor('#ffffff');
     } else {
-      const over = Math.floor(info.clockMin - OFF_HOURS);
+      const over = lateMin(info.clockMin);
       const past = this.student ? '마감 지남' : '초과근무';
       this.clockT.setText(`${clockText(info.clockMin)}  ·  ${past} ${over}분`).setColor('#ff8a8a');
     }

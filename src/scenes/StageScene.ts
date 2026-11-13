@@ -308,7 +308,7 @@ export class StageScene extends Phaser.Scene {
         return;
       }
       if (c.consume('restart')) {
-        this.scene.start('select');
+        this.scene.start('select', { mode: this.run.mode });
         return;
       }
     } else if (!this.finishing) {

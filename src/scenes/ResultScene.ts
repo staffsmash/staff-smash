@@ -148,7 +148,7 @@ export class ResultScene extends Phaser.Scene {
       clockLine =
         left > 0
           ? `현재 시각 ${clockText(stats.clockMin)}  ·  퇴근까지 ${left}분`
-          : `현재 시각 ${clockText(stats.clockMin)}  ·  ${Math.floor(stats.clockMin - OFF_HOURS)}분 초과근무`;
+          : `현재 시각 ${clockText(stats.clockMin)}  ·  ${lateMin(stats.clockMin)}분 초과근무`;
     }
     this.add
       .text(cx, 340, clockLine, { fontFamily: FONT, fontSize: '19px', fontStyle: 'bold', color: early ? '#1d4ed8' : '#b91c1c' })

@@ -8,7 +8,7 @@ import { gpaText } from '../grade';
 import { HUFS_KEYS, HUFS_NAVY, hufsImage } from '../hufs';
 import { lateMin, onTime, runClock, type RunState } from '../run';
 import { fadeTo } from '../ui/button';
-import { drawEndingBackdrop } from './background';
+import { drawPresidentOfficeBackdrop } from './background';
 
 // 학생 모드 엔딩 (PRD 2절): 본관 앞에서 프레지던트 캉이 졸업장에 "승인" 도장을 쾅 찍어 준다.
 // 주인공이 환호하는 순간 알람이 울리고 화면이 흔들린다 — 꿈이었다. 오늘은 수강신청 날이다.
@@ -56,7 +56,7 @@ export class StudentEndingScene extends Phaser.Scene {
     const look = studentHeroById(this.run.hero).look;
 
     // 해 질 녘 본관 앞 (프레지던트 캉이 본관에서 내려온다)
-    drawEndingBackdrop(this);
+    drawPresidentOfficeBackdrop(this);
 
     this.hero = createStudentHeroRig(this, look);
     this.hero.root.setPosition(330, 440).setScale(1.3).setDepth(440);

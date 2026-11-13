@@ -70,7 +70,7 @@ export function onTime(clockMin: number): boolean {
   return clockMin <= OFF_HOURS + 0.001;
 }
 
-/** 학생 모드: 본관 마감(17:00)을 몇 분 넘겼나. 화면 시계(분 버림)와 맞추고, 조금이라도 넘겼으면 1분 이상 */
+/** 17:00(교직원 퇴근·학생 본관 마감)을 몇 분 넘겼나. 두 모드 공통. 화면 시계(분 버림)와 맞추고, 조금이라도 넘겼으면 1분 이상 */
 export function lateMin(clockMin: number): number {
   return Math.max(1, Math.floor(clockMin - OFF_HOURS));
 }
@@ -81,7 +81,6 @@ export function lateMin(clockMin: number): number {
  * - short(기록판 칸): "정시 퇴근", "퇴근 · 3분 초과", "졸업 승인", "승인 · 마감 3분 지남", "2스테이지에서 학사경고" …
  */
 export function outcomeText(mode: GameMode, cleared: boolean, reached: number, clockMin: number, long: boolean): string {
-  const over = Math.ceil(clockMin - OFF_HOURS);
   if (mode === 'student') {
     if (!cleared) return long ? `${reached}스테이지에서 학사경고 (${clockText(clockMin)})` : `${reached}스테이지에서 학사경고`;
     if (onTime(clockMin)) return long ? `졸업 승인! (${clockText(clockMin)})` : '졸업 승인';
@@ -90,5 +89,6 @@ export function outcomeText(mode: GameMode, cleared: boolean, reached: number, c
   }
   if (!cleared) return long ? `${reached}스테이지에서 야근 확정 (${clockText(clockMin)})` : `${reached}스테이지에서 야근`;
   if (onTime(clockMin)) return long ? `정시 퇴근! (${clockText(Math.max(clockMin, OFF_HOURS))})` : '정시 퇴근';
+  const over = lateMin(clockMin);
   return long ? `퇴근 ${clockText(clockMin)} · ${over}분 초과근무` : `퇴근 · ${over}분 초과`;
 }

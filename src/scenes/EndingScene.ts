@@ -4,7 +4,7 @@ import { heroById } from '../data/heroes';
 import { Controls } from '../input/Controls';
 import { neutralPose, type Pose, type Rig } from '../entities/Rig';
 import { createPresidentPortrait, createPresidentRig, createStaffRig } from '../entities/rigs';
-import { runClock, type RunState } from '../run';
+import { runClock, type RunState, lateMin } from '../run';
 import { fadeTo } from '../ui/button';
 import * as fx from '../fx';
 import { drawEndingBackdrop } from './background';
@@ -121,7 +121,7 @@ export class EndingScene extends Phaser.Scene {
   private summary(): void {
     const clock = runClock(this.run);
     const onTime = clock <= OFF_HOURS + 0.001;
-    const over = Math.ceil(clock - OFF_HOURS);
+    const over = lateMin(clock);
     const dim = this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0x000000, 0.88).setDepth(1200).setAlpha(0);
     this.tweens.add({ targets: dim, alpha: 1, duration: 400 });
     const grades = this.run.stages.map((s) => s.grade).join(' · ');
