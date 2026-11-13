@@ -34,6 +34,7 @@ export class PresidentBoss extends Enemy implements BossLike {
   private cycle = 0;
   private stormT = 0;
   private walkPhase = 0;
+  private greeted = false;
 
   constructor(scene: StageScene, x: number, y: number, enterTargetX: number) {
     super(scene, x, y, createPresidentRig(scene), S.hp, 66, enterTargetX);
@@ -69,7 +70,10 @@ export class PresidentBoss extends Enemy implements BossLike {
         this.vx = 0;
         this.vy = 0;
         this.facing = player.x >= this.x ? 1 : -1;
-        if (this.stateT < 0.05) this.say('졸업 서류요? 한번 검토해 봅시다.', 2.2);
+        if (!this.greeted) {
+          this.greeted = true;
+          this.say('졸업 서류요? 한번 검토해 봅시다.', 2.2);
+        }
         if (this.stateT >= 1.4) {
           this.resumeState = 'approach';
           this.set('approach');
@@ -124,11 +128,11 @@ export class PresidentBoss extends Enemy implements BossLike {
         if (this.stateT >= 0.6) this.recover();
         break;
       case 'stamps': {
-        // 거대 도장: 플레이어를 따라 차례로 떨어진다 (2페이즈는 네 개, 더 빠르게)
+        // 거대 도장: 플레이어를 따라 차례로 세 개가 떨어진다 (2페이즈는 더 빠르게)
         this.vx = 0;
         this.vy = 0;
-        const n = this.phase === 1 ? 3 : 4;
-        const gap = this.phase === 1 ? 0.5 : 0.38;
+        const n = 3;
+        const gap = this.phase === 1 ? 0.5 : 0.42;
         const k = Math.floor((this.stateT - 0.4) / gap);
         if (this.stateT >= 0.4 && k >= this.drops && this.drops < n) {
           this.drops++;

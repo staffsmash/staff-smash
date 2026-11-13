@@ -105,6 +105,8 @@ export class BanryeoBoss extends Enemy implements BossLike {
   private thresholds = [S.hp * (2 / 3), S.hp / 3];
   private spotX = 0;
   private slammed = false;
+  /** 'build'에 들어오면 한 번 탑을 세운다 */
+  private needTower = true;
   private stars: Phaser.GameObjects.Container | null = null;
 
   constructor(scene: StageScene, x: number, y: number, enterTargetX: number) {
@@ -150,7 +152,8 @@ export class BanryeoBoss extends Enemy implements BossLike {
         // 탑 쌓기: 자리를 잡고 눈앞에 서류 탑을 세운다
         this.vx = 0;
         this.vy = 0;
-        if (this.stateT < 0.05 && !this.towerUp) {
+        if (this.needTower && !this.towerUp) {
+          this.needTower = false;
           this.say('이 서류는 반려입니다!', 1.4);
           const tx = Phaser.Math.Clamp(this.x, this.camLeft + 90, this.camLeft + GAME_W - 90);
           const ty = Phaser.Math.Clamp(this.y + BEHIND, FLOOR_TOP + BEHIND + 4, FLOOR_BOTTOM);
@@ -266,6 +269,7 @@ export class BanryeoBoss extends Enemy implements BossLike {
     const left = this.camLeft;
     this.spotX = player.x - left < GAME_W / 2 ? left + GAME_W - 150 : left + 150;
     this.say('잠깐, 서류 다시 쌓겠습니다.', 1.4);
+    this.needTower = true;
     this.set('retreat');
   }
 

@@ -314,6 +314,10 @@ export class StageScene extends Phaser.Scene {
     } else if (!this.finishing) {
       if (c.consume('pause')) this.setPaused(!this.paused);
       if (!this.paused) this.step(dt);
+    } else if (this.studentMode) {
+      // 마무리 연출: 승인하는 프레지던트 캉, 퇴근하는 처장이 멈춰 버리지 않게 움직임만 이어 간다
+      for (const e of this.enemies) e.update(dt, this.player);
+      this.enemies = this.enemies.filter((e) => !e.removed);
     }
 
     this.updateCamera(dt);
@@ -1350,8 +1354,8 @@ export class StageScene extends Phaser.Scene {
     const p = this.player;
     s.dropT -= dt;
     if (s.dropT <= 0) {
-      s.dropT = 0.36;
-      const aim = Math.random() < 0.45;
+      s.dropT = 0.44;
+      const aim = Math.random() < 0.35;
       const x = aim ? p.x + Phaser.Math.Between(-50, 50) : left + Phaser.Math.Between(60, GAME_W - 60);
       const y = aim ? p.y + Phaser.Math.Between(-16, 16) : Phaser.Math.Between(FLOOR_TOP + 8, FLOOR_BOTTOM - 8);
       this.hazards.push(
@@ -1359,7 +1363,7 @@ export class StageScene extends Phaser.Scene {
           x: Phaser.Math.Clamp(x, left + 40, left + GAME_W - 40),
           y: Phaser.Math.Clamp(y, FLOOR_TOP + 6, FLOOR_BOTTOM - 6),
           delay: 0.95,
-          radius: 38,
+          radius: 34,
           owner: 'enemy',
           dmg: 1,
           obj: createErrorWindow(this),
@@ -1368,8 +1372,9 @@ export class StageScene extends Phaser.Scene {
     }
     s.packetT -= dt;
     if (s.packetT <= 0) {
-      s.packetT = 1.15;
+      s.packetT = 1.4;
       const fromRight = Math.random() < 0.5;
+      // 한 줄은 플레이어 깊이, 한 줄은 아무 데나 (점프하거나 위아래로 비켜서 피한다)
       for (const ly of [p.y, Phaser.Math.Between(FLOOR_TOP + 10, FLOOR_BOTTOM - 10)]) {
         this.projectiles.push(
           new Projectile(this, {

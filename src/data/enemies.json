@@ -23,5 +23,5 @@
   "janghak": { "hp": 20, "speedX": 100, "speedY": 72, "gimmickEvery": 8, "coins": 6, "freezeSec": 1.2 },
   "banryeoBoss": { "hp": 40, "speedX": 95, "speedY": 68, "towerHp": 10, "slamEvery": 2.4, "exposedSec": 7 },
   "bansaBoss": { "hp": 40, "speedX": 110, "speedY": 78, "openSec": 1.6, "turnDelay": 0.55 },
-  "presidentBoss": { "hp": 56, "speedX": 95, "speedY": 70, "stormSec": 6, "stormEvery": 12 }
+  "presidentBoss": { "hp": 60, "speedX": 95, "speedY": 70, "stormSec": 6, "stormEvery": 12 }
 }

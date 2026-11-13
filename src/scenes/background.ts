@@ -1054,7 +1054,7 @@ function presidentOffice(c: Ctx, ox: number): void {
 
   // 창: 해 질 녘 캠퍼스 (먼 산, 건물, 대운동장)
   const wx = ox + 206;
-  const wy = 76;
+  const wy = 92; // HUD(왼쪽 위 12~256 × 10~82)에 걸리지 않게 조금 내린다
   const ww = 226;
   const wh = 156;
   const bh = Math.ceil((wh * 0.62) / SKY_DUSK.length);
