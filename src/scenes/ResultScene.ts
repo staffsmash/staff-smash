@@ -4,6 +4,7 @@ import { Controls } from '../input/Controls';
 import { gradeStage, type StageStats } from '../grade';
 import type { RunState } from '../run';
 import { fadeTo, makeButton } from '../ui/button';
+import { HUFS_KEYS, HUFS_NAVY, hufsImage } from '../hufs';
 
 // 스테이지 결과: 근무평정표 (S~D)와 현재 시각. 다음 스테이지로 이어진다.
 
@@ -39,6 +40,10 @@ export class ResultScene extends Phaser.Scene {
     this.add.rectangle(cx + 4, 274, 640, 452, 0x000000, 0.3);
     this.add.rectangle(cx, 270, 640, 452, 0xfbf8f0).setStrokeStyle(2, 0x2b2b2b);
     const ink = '#1d1d22';
+    // 학교 서식처럼: 왼쪽 위 심벌, 가운데 옅은 심벌 무늬
+    hufsImage(this, HUFS_KEYS.emblem, cx, 300, { h: 300, alpha: 0.05 });
+    hufsImage(this, HUFS_KEYS.emblem, cx - 270, 80, { h: 44 });
+    hufsImage(this, HUFS_KEYS.wordmark, cx - 240, 80, { w: 92, tint: HUFS_NAVY, originX: 0 });
     this.add.text(cx, 74, '근 무 평 정 표', { fontFamily: FONT, fontSize: '30px', fontStyle: 'bold', color: ink }).setOrigin(0.5);
     this.add
       .text(cx, 110, `${stats.stageTitle}  ·  주무관`, { fontFamily: FONT, fontSize: '15px', color: '#4b5563' })

@@ -177,10 +177,15 @@ export class StageScene extends Phaser.Scene {
     return this.zones[this.zones.length - 1].left + GAME_W;
   }
 
+  /** 지금 서 있는 구역 이름 (HUD·게임오버 문구) */
+  private get zoneLabel(): string {
+    return this.zones[Math.min(this.zoneIndex, this.zones.length - 1)].label;
+  }
+
   create(): void {
     this.cameras.main.setBounds(0, 0, this.stageW, GAME_H);
     this.cameras.main.fadeIn(250, 0, 0, 0);
-    drawBackground(this, this.stage.background, this.stageW);
+    drawBackground(this, this.stage.background);
 
     this.controls = new Controls();
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.controls.destroy());
@@ -261,6 +266,7 @@ export class StageScene extends Phaser.Scene {
     const b = this.boss && !this.boss.bossGone ? this.boss : null;
     this.hud.update(this.player, {
       stageTitle: this.stage.title,
+      zoneLabel: this.zoneLabel,
       zone: this.zoneIndex,
       zones: this.zones.length,
       combo: this.combo,
@@ -585,7 +591,7 @@ export class StageScene extends Phaser.Scene {
         })
         .setOrigin(0.5),
       this.add
-        .text(GAME_W / 2, GAME_H / 2 + 14, `${this.stage.title}에서 민원에 밀려 퇴근하지 못했습니다`, {
+        .text(GAME_W / 2, GAME_H / 2 + 14, `${this.zoneLabel}에서 민원에 밀려 퇴근하지 못했습니다`, {
           fontFamily: FONT,
           fontSize: '18px',
           color: '#ffffff',

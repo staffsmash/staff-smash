@@ -13,7 +13,8 @@ export interface ZoneDef {
   approval?: boolean;
 }
 
-export type BackgroundId = 'office' | 'library' | 'gate';
+/** main: 본관 → 사회과학관, learning: 교수학습개발원 → 인문과학관, field: 국제학사 → 운동장 */
+export type BackgroundId = 'main' | 'learning' | 'field';
 
 export interface StageDef {
   id: string;

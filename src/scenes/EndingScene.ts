@@ -7,6 +7,7 @@ import { createPresidentPortrait, createPresidentRig, createStaffRig } from '../
 import { runClock, type RunState } from '../run';
 import { fadeTo } from '../ui/button';
 import * as fx from '../fx';
+import { drawEndingBackdrop } from './background';
 
 // 교직원 모드 엔딩 (PRD 5절): 총학 집행부의 면담 요청에 프레지던트 캉이 내려와
 // "퇴근 승인"과 "월급 인상" 도장을 찍어 준다. 그리고 전화가 울린다. 내일 아침 9시 회의다.
@@ -39,15 +40,8 @@ export class EndingScene extends Phaser.Scene {
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.controls.destroy());
     this.cameras.main.fadeIn(400, 0, 0, 0);
 
-    // 해 질 녘 정문
-    const g = this.add.graphics();
-    [0x9cc4e4, 0xc9cfe0, 0xf0c9a0, 0xf6a96b, 0xe0855a].forEach((c, i) => g.fillStyle(c).fillRect(0, i * 60, GAME_W, 62));
-    g.fillStyle(0xfff1c1, 0.95).fillCircle(700, 250, 46);
-    g.fillStyle(0x9a8f80).fillRect(120, 90, 90, 210).fillRect(750, 90, 90, 210);
-    g.fillStyle(0x6f6658).fillRect(120, 72, 720, 24);
-    g.fillStyle(0xc8c2b6).fillRect(0, 300, GAME_W, 240);
-    g.lineStyle(2, 0xb3ac9f, 1);
-    for (const y of [330, 366, 412, 468, 532]) g.lineBetween(0, y, GAME_W, y);
+    // 해 질 녘 본관 앞 (프레지던트 캉이 본관에서 내려온다)
+    drawEndingBackdrop(this);
 
     this.hero = createStaffRig(this, heroById(this.run.hero).look);
     this.hero.root.setPosition(330, 440).setScale(1.3).setDepth(440);
@@ -130,7 +124,7 @@ export class EndingScene extends Phaser.Scene {
       ['', '10px', '#ffffff'],
       ['Staff Smash: HUFS (비공식 게임)', '14px', '#c9d3e6'],
       ['프레지던트 캉을 제외한 인물과 부서는 모두 가상입니다', '13px', '#c9d3e6'],
-      ['캐릭터·배경은 코드로 그린 블록 도형입니다 (외부 에셋 없음)', '13px', '#c9d3e6'],
+      ['배경은 서울캠퍼스 실제 건물을 블록으로 그렸습니다 · 로고: 한국외국어대학교 UI', '13px', '#c9d3e6'],
       ['', '10px', '#ffffff'],
       ['Enter 또는 화면을 눌러 기록 남기기', '18px', '#f5c542'],
     ];

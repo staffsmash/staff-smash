@@ -13,6 +13,8 @@ export interface BossInfo {
 
 export interface HudInfo {
   stageTitle: string;
+  /** 지금 구역 이름 (본관 민원 창구 등) */
+  zoneLabel: string;
   zone: number;
   zones: number;
   combo: number;
@@ -225,7 +227,8 @@ export class Hud {
       const over = Math.floor(info.clockMin - OFF_HOURS);
       this.clockT.setText(`${clockText(info.clockMin)}  ·  초과근무 ${over}분`).setColor('#ff8a8a');
     }
-    this.zoneT.setText(`${info.stageTitle}  ·  구역 ${Math.min(info.zone + 1, info.zones)}/${info.zones}`);
+    const stageNo = info.stageTitle.split(' · ')[0];
+    this.zoneT.setText(`${stageNo}  ·  ${info.zoneLabel}  ·  ${Math.min(info.zone + 1, info.zones)}/${info.zones}`);
 
     if (info.combo >= 2) {
       this.comboT.setText(`${info.combo} 연속 처리!`).setVisible(true);

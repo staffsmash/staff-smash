@@ -5,6 +5,7 @@ import { neutralPose } from '../entities/Rig';
 import type { Rig } from '../entities/Rig';
 import { createMailRig, createStaffRig } from '../entities/rigs';
 import { fadeTo, makeButton } from '../ui/button';
+import { HUFS_KEYS, HUFS_NAVY, hufsImage, loadHufsAssets } from '../hufs';
 
 export class TitleScene extends Phaser.Scene {
   private controls!: Controls;
@@ -15,6 +16,10 @@ export class TitleScene extends Phaser.Scene {
     super('title');
   }
 
+  preload(): void {
+    loadHufsAssets(this);
+  }
+
   create(): void {
     this.started = false;
     this.controls = new Controls();
@@ -23,23 +28,29 @@ export class TitleScene extends Phaser.Scene {
     const cx = GAME_W / 2;
     const touch = this.sys.game.device.input.touch;
 
-    this.add.rectangle(cx, GAME_H / 2, GAME_W, GAME_H, 0x1d2433);
-    this.add.rectangle(cx, 470, GAME_W, 140, 0x2a3346);
+    this.add.rectangle(cx, GAME_H / 2, GAME_W, GAME_H, HUFS_NAVY);
+    this.add.rectangle(cx, 470, GAME_W, 140, 0x163a63);
+    hufsImage(this, HUFS_KEYS.emblem, cx, 470, { h: 300, alpha: 0.07 });
 
     this.add
-      .text(cx, 86, 'STAFF SMASH', {
+      .text(cx, 84, 'STAFF SMASH', {
         fontFamily: FONT,
         fontSize: '72px',
         fontStyle: 'bold',
         color: '#ffffff',
-        stroke: '#2f6fd1',
+        stroke: '#13707a',
         strokeThickness: 10,
       })
       .setOrigin(0.5);
-    this.add.text(cx, 152, ': HUFS', { fontFamily: FONT, fontSize: '34px', fontStyle: 'bold', color: '#f5c542' }).setOrigin(0.5);
-    this.add.rectangle(cx + 150, 152, 70, 28, 0xd0202f).setAngle(-6);
+    // 학교 약명 시그니처 (심벌 + HUFS, 어두운 바탕용 흰 글자)
+    hufsImage(this, HUFS_KEYS.emblem, cx - 110, 152, { h: 60 });
+    const type = hufsImage(this, HUFS_KEYS.type, cx - 9, 152, { h: 40, tint: 0xffffff });
+    if (!type) {
+      this.add.text(cx - 9, 152, 'HUFS', { fontFamily: FONT, fontSize: '34px', fontStyle: 'bold', color: '#ffffff' }).setOrigin(0.5);
+    }
+    this.add.rectangle(cx + 104, 152, 70, 28, 0xd0202f).setAngle(-6);
     this.add
-      .text(cx + 150, 152, '비공식', { fontFamily: FONT, fontSize: '16px', fontStyle: 'bold', color: '#ffffff' })
+      .text(cx + 104, 152, '비공식', { fontFamily: FONT, fontSize: '16px', fontStyle: 'bold', color: '#ffffff' })
       .setOrigin(0.5)
       .setAngle(-6);
     this.add

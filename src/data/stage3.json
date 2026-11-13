@@ -1,25 +1,25 @@
 {
   "id": "staff-3",
-  "title": "3스테이지 · 정문",
-  "background": "gate",
+  "title": "3스테이지 · 국제학사 → 운동장",
+  "background": "field",
   "zones": [
     {
       "left": 0,
-      "label": "캠퍼스 길",
+      "label": "국제학사 앞",
       "maxAlive": 3,
       "waves": ["queue", "mail", "phone", "bubble", "mail"],
       "supervisors": ["hoho"]
     },
     {
       "left": 960,
-      "label": "학생회관 앞",
+      "label": "운동장 스탠드",
       "maxAlive": 3,
       "waves": ["presidentMail", "mail", "docbomb", "bubble", "phone"],
       "supervisors": ["molla", "bogo"]
     },
     {
       "left": 1920,
-      "label": "정문 광장",
+      "label": "운동장 트랙",
       "maxAlive": 3,
       "waves": ["queue", "minwon", "mail", "docbomb", "phone"],
       "supervisors": ["gumto"],
@@ -27,7 +27,7 @@
     },
     {
       "left": 2880,
-      "label": "정문",
+      "label": "대운동장",
       "maxAlive": 4,
       "waves": ["chonghak"],
       "adds": { "type": "mail", "every": 12, "max": 1 },

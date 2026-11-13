@@ -1,32 +1,32 @@
 {
   "id": "staff-1",
-  "title": "1스테이지 · 본관 사무실",
-  "background": "office",
+  "title": "1스테이지 · 본관 → 사회과학관",
+  "background": "main",
   "zones": [
     {
       "left": 0,
-      "label": "민원 창구",
+      "label": "본관 민원 창구",
       "maxAlive": 3,
       "waves": ["mail", "mail", "phone", "mail"],
       "supervisors": ["bogo"]
     },
     {
       "left": 960,
-      "label": "본관 복도",
+      "label": "본관 로비",
       "maxAlive": 3,
       "waves": ["bubble", "mail", "wrongNumber", "mail", "bubble"],
       "supervisors": ["gumto"]
     },
     {
       "left": 1920,
-      "label": "행정실",
+      "label": "본관 앞",
       "maxAlive": 3,
       "waves": ["phone", "mail", "bubble", "lateDoc", "mail", "phone"],
       "supervisors": ["bogo", "gumto"]
     },
     {
       "left": 2880,
-      "label": "학생 상담실",
+      "label": "사회과학관 앞",
       "maxAlive": 2,
       "waves": ["noticeBoss"],
       "adds": { "type": "mail", "every": 9, "max": 1 },
