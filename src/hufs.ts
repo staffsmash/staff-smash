@@ -1,14 +1,15 @@
 import Phaser from 'phaser';
 
-// 한국외국어대학교 UI (심벌·로고타입). 원본은 학교 UI 파일이고 public/hufs/에 게임용으로 옮겨 두었다.
-// 단색 파일(emblem-line, wordmark-ko, hufs-type)은 흰색이라 setTint로 원하는 색(금색·남색·흰색)을 입힌다.
+// 한국외국어대학교 UI (심벌·로고타입). 새 UI(남색 단색 심벌 + 굵은 고딕 HUFS)를 public/hufs/에 게임용으로 옮겨 두었다.
+// emblem은 남색 그대로, 흰색 파일(emblem-mono, wordmark-ko, hufs-type)은 setTint로 원하는 색(흰색·금색·남색)을 입힌다.
+// 어두운 바탕에는 emblem 대신 line(흰색)에 흰색을 입혀 쓴다.
 
 export const HUFS_KEYS = {
-  /** 컬러 심벌 (청록 원형 엠블럼) */
+  /** 심벌 (남색 단색) — 밝은 바탕용 */
   emblem: 'hufs-emblem',
-  /** 단색 심벌 (가로등 배너의 금색 선화처럼 쓴다) */
-  line: 'hufs-emblem-line',
-  /** 영문 약칭 로고타입 "HUFS" */
+  /** 같은 심벌의 흰색 판 — 어두운 바탕(흰색), 배너(금색) */
+  line: 'hufs-emblem-mono',
+  /** 영문 약칭 로고타입 "HUFS" (굵은 고딕) */
   type: 'hufs-type',
   /** 국문 로고타입 "한국외국어대학교" */
   wordmark: 'hufs-wordmark',
@@ -17,7 +18,7 @@ export const HUFS_KEYS = {
 export type HufsKey = (typeof HUFS_KEYS)[keyof typeof HUFS_KEYS];
 
 /** UI 색 */
-export const HUFS_NAVY = 0x0b2a4a;
+export const HUFS_NAVY = 0x002c52;
 export const HUFS_TEAL = 0x13707a;
 export const HUFS_GOLD = 0xe0bb62;
 
@@ -25,7 +26,7 @@ export function loadHufsAssets(scene: Phaser.Scene): void {
   if (scene.textures.exists(HUFS_KEYS.emblem)) return;
   scene.load.image(HUFS_KEYS.emblem, 'hufs/emblem.png');
   scene.load.image(HUFS_KEYS.type, 'hufs/hufs-type.png');
-  scene.load.svg(HUFS_KEYS.line, 'hufs/emblem-line.svg', { width: 256, height: 256 });
+  scene.load.image(HUFS_KEYS.line, 'hufs/emblem-mono.png');
   scene.load.svg(HUFS_KEYS.wordmark, 'hufs/wordmark-ko.svg', { width: 720, height: 95 });
 }
 

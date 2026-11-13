@@ -583,7 +583,7 @@ function socialScience(c: Ctx, ox: number): void {
   for (let i = 0; i <= 5; i++) g.fillRect(ex + i * 30 - 1, 250, 3, 42);
   g.fillStyle(0x6d7278).fillRect(ex - 14, 240, 178, 9);
   g.fillStyle(0x5a2a86).fillRect(ex + 2, 220, 146, 20);
-  logo(c, HUFS_KEYS.emblem, ex + 18, 230, { h: 16 });
+  logo(c, HUFS_KEYS.line, ex + 18, 230, { h: 16, tint: 0xffffff });
   text(c, ex + 84, 230, '사회과학관', 12, '#ffffff');
   g.fillStyle(0xf2a7c6).fillRect(ox + 186, 256, 104, 22);
   text(c, ox + 238, 267, '학생 상담 주간', 10, '#7a1d48');
@@ -667,7 +667,7 @@ function learningLobby(c: Ctx, ox: number): void {
 
   // 벽 간판
   logo(c, HUFS_KEYS.emblem, ox + 302, 92, { h: 60 });
-  text(c, ox + 344, 80, '교수학습개발원', 26, '#0b2a4a', { originX: 0 });
+  text(c, ox + 344, 80, '교수학습개발원', 26, '#002c52', { originX: 0 });
   text(c, ox + 346, 106, 'Institute of Teaching and Learning Development', 11, '#4b5563', { originX: 0, bold: false });
   g.fillStyle(0x13707a).fillRect(ox + 344, 120, 380, 3);
 
@@ -925,7 +925,7 @@ function fieldCenter(c: Ctx, ox: number, exit: boolean): void {
   // 대형 현수막
   g.fillStyle(HUFS_NAVY).fillRect(ox + 230, 140, 470, 56);
   g.fillStyle(HUFS_GOLD).fillRect(ox + 230, 140, 470, 2).fillRect(ox + 230, 194, 470, 2);
-  logo(c, HUFS_KEYS.emblem, ox + 264, 168, { h: 46 });
+  logo(c, HUFS_KEYS.line, ox + 264, 168, { h: 46, tint: 0xffffff });
   logo(c, HUFS_KEYS.type, ox + 340, 168, { w: 84, tint: 0xffffff });
   text(c, ox + 396, 159, 'Hankuk University of Foreign Studies', 12, '#ffffff', { serif: true, originX: 0 });
   text(c, ox + 396, 178, '한국외국어대학교', 13, '#ffffff', { originX: 0 });

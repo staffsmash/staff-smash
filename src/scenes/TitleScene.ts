@@ -30,7 +30,7 @@ export class TitleScene extends Phaser.Scene {
 
     this.add.rectangle(cx, GAME_H / 2, GAME_W, GAME_H, HUFS_NAVY);
     this.add.rectangle(cx, 470, GAME_W, 140, 0x163a63);
-    hufsImage(this, HUFS_KEYS.emblem, cx, 470, { h: 300, alpha: 0.07 });
+    hufsImage(this, HUFS_KEYS.line, cx, 470, { h: 300, alpha: 0.07, tint: 0xffffff });
 
     this.add
       .text(cx, 84, 'STAFF SMASH', {
@@ -38,12 +38,12 @@ export class TitleScene extends Phaser.Scene {
         fontSize: '72px',
         fontStyle: 'bold',
         color: '#ffffff',
-        stroke: '#13707a',
+        stroke: '#2f6fd1',
         strokeThickness: 10,
       })
       .setOrigin(0.5);
-    // 학교 약명 시그니처 (심벌 + HUFS, 어두운 바탕용 흰 글자)
-    hufsImage(this, HUFS_KEYS.emblem, cx - 110, 152, { h: 60 });
+    // 학교 약명 시그니처 (심벌 + HUFS, 어두운 바탕이라 흰색)
+    hufsImage(this, HUFS_KEYS.line, cx - 112, 152, { h: 60, tint: 0xffffff });
     const type = hufsImage(this, HUFS_KEYS.type, cx - 9, 152, { h: 40, tint: 0xffffff });
     if (!type) {
       this.add.text(cx - 9, 152, 'HUFS', { fontFamily: FONT, fontSize: '34px', fontStyle: 'bold', color: '#ffffff' }).setOrigin(0.5);
