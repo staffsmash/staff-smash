@@ -77,13 +77,14 @@ export function lateMin(clockMin: number): number {
 
 /**
  * 한 판의 결과 문구.
- * - long(기록 화면): "정시 퇴근! (17:00)", "졸업 승인! (16:58)", "2스테이지에서 학사경고 (16:57)" …
- * - short(기록판 칸): "정시 퇴근", "퇴근 · 3분 초과", "졸업 승인", "승인 · 마감 3분 지남", "2스테이지에서 학사경고" …
+ * - long(기록 화면): "정시 퇴근! (17:00)", "교직원 퇴근 전 승인! (16:58)", "2스테이지에서 문서반려 (16:57)" …
+ * - short(기록판 칸): "정시 퇴근", "퇴근 · 3분 초과", "문서 제출완료", "승인 · 마감 3분 지남", "2스테이지에서 서류반려" …
+ * 학생 문구는 사용자가 2026-11-13 확정했다.
  */
 export function outcomeText(mode: GameMode, cleared: boolean, reached: number, clockMin: number, long: boolean): string {
   if (mode === 'student') {
-    if (!cleared) return long ? `${reached}스테이지에서 학사경고 (${clockText(clockMin)})` : `${reached}스테이지에서 학사경고`;
-    if (onTime(clockMin)) return long ? `졸업 승인! (${clockText(clockMin)})` : '졸업 승인';
+    if (!cleared) return long ? `${reached}스테이지에서 문서반려 (${clockText(clockMin)})` : `${reached}스테이지에서 서류반려`;
+    if (onTime(clockMin)) return long ? `교직원 퇴근 전 승인! (${clockText(clockMin)})` : '문서 제출완료';
     const late = lateMin(clockMin);
     return long ? `승인 ${clockText(clockMin)} · 마감 ${late}분 지남` : `승인 · 마감 ${late}분 지남`;
   }

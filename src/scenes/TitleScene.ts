@@ -59,7 +59,7 @@ export class TitleScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setAngle(-6);
     this.add
-      .text(cx, 198, '오후 4시 52분, 마감 8분 전 · 교직원은 정시 퇴근을, 학생은 졸업 승인을 노린다', {
+      .text(cx, 198, '오후 4시 52분, 마감 8분 전 · 교직원은 정시 퇴근을, 학생은 서류 제출 승인을 노린다', {
         fontFamily: FONT,
         fontSize: '17px',
         color: '#c9d3e6',
@@ -88,7 +88,7 @@ export class TitleScene extends Phaser.Scene {
       this.add.text(x, 363, sub, { fontFamily: FONT, fontSize: '13px', color: '#c9d3e6' }).setOrigin(0.5);
     };
     caption(modeX.staff, '교직원 모드', '민원 처리하고 정시 퇴근');
-    caption(modeX.student, '학생 모드', '반려된 졸업 서류 승인받기');
+    caption(modeX.student, '학생 모드', '반려된 서류 승인받기');
     makeButton(this, cx, 418, 220, 42, touch ? '기록판' : '기록판 (B)', () => this.go('board'), 0x2f6fd1);
 
     this.add

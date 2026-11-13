@@ -63,14 +63,14 @@ export class StudentEndingScene extends Phaser.Scene {
     this.pres = createPresidentRig(this);
     this.pres.root.setPosition(this.presX, 440).setScale(-1.4, 1.4).setDepth(441);
 
-    this.line(300, `${name}: "졸업 서류, 승인해 주세요!"`);
+    this.line(300, `${name}: "서류 제출했습니다, 졸업 승인해 주세요!"`);
     this.time.delayedCall(2000, () => {
       this.presTarget = 600;
       const portrait = createPresidentPortrait(this, 830, 200).setDepth(900).setAlpha(0).setScale(0.6);
       this.tweens.add({ targets: portrait, alpha: 1, duration: 300 });
       this.time.delayedCall(5400, () => this.tweens.add({ targets: portrait, alpha: 0, duration: 300 }));
     });
-    this.line(2600, '프레지던트 캉: "서류, 이제 다 갖췄네요. 졸업 축하해요."');
+    this.line(2600, '프레지던트 캉: "졸업 서류, 이제 다 갖췄네요. 졸업 승인합니다."');
     this.time.delayedCall(4400, () => this.showDiploma(name));
     this.time.delayedCall(5700, () => this.stamp());
     this.time.delayedCall(6200, () => (this.heroPose = 'cheer'));

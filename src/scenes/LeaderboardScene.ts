@@ -13,7 +13,7 @@ import { fadeTo, makeButton, makeTabs } from '../ui/button';
 
 const MODES: GameMode[] = ['staff', 'student'];
 
-/** 탭별 칸 위치와 머리글. 학생 결과 문구("3스테이지에서 학사경고")가 길어서 칸을 조금 넓힌다 */
+/** 탭별 칸 위치와 머리글. 학생 결과 문구("3스테이지에서 서류반려")가 길어서 칸을 조금 넓힌다 */
 const COLUMNS: Record<GameMode, { x: number[]; heads: string[] }> = {
   staff: { x: [70, 120, 330, 470, 590, 720], heads: ['순위', '닉네임', '결과', '완료 시각', '평정', '주인공'] },
   student: { x: [70, 120, 270, 460, 580, 690], heads: ['순위', '닉네임', '결과', '완료 시각', 'GPA', '주인공'] },
