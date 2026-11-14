@@ -376,7 +376,6 @@ export class StudentEndingScene extends Phaser.Scene {
       [`학점 ${grades.join(' · ') || '-'}`, '18px', '#ffffff'],
       ['', '10px', '#ffffff'],
       ['Staff Smash: HUFS (비공식 게임)', '14px', '#c9d3e6'],
-      ['프레지던트 캉을 제외한 인물과 부서는 모두 가상입니다', '13px', '#c9d3e6'],
       ['배경은 서울캠퍼스 실제 건물을 블록으로 그렸습니다 · 로고: 한국외국어대학교 UI', '13px', '#c9d3e6'],
       ['', '10px', '#ffffff'],
       ['Enter 또는 화면을 눌러 기록 남기기', '18px', '#f5c542'],

@@ -1143,7 +1143,7 @@ export class StudentMode implements StuCtx {
         </div>
         <p class="counts">${this.countsHtml()}</p>
         <p class="best">난이도 ${g.diff.label} · ${bestTxt}</p>
-        <p class="foot">비공식 게임 · 프레지던트 캉을 제외한 인물과 부서는 모두 가상입니다</p>
+        <p class="foot">비공식 게임</p>
         <button id="againBtn" type="button">다시 하기</button>
         <button id="titleBtn" class="ghost" type="button">처음 화면</button>
         <a class="btn" href="./">본편(2D)으로</a>

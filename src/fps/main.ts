@@ -783,7 +783,7 @@ class Game implements Ctx {
         ${this.stu.modeButtons()}
         <button id="setBtn" class="ghost" type="button">설정</button>
         <a class="btn" href="./">본편(2D)으로</a>
-        <p class="foot">비공식 게임 · 프레지던트 캉을 제외한 인물과 부서는 모두 가상입니다 · 기록은 이 브라우저에만 저장됩니다</p>
+        <p class="foot">비공식 게임 · 기록은 이 브라우저에만 저장됩니다</p>
       </div>`);
     bindSettings(o, this.settings, (key) => this.applySetting(key));
     this.stu.bindTitle();
@@ -1869,7 +1869,7 @@ class Game implements Ctx {
         <p class="areas">${areas}</p>
         <p class="counts">${this.countsHtml()}</p>
         <p class="best">난이도 ${this.diff.label} · ${bestTxt}</p>
-        <p class="foot">비공식 게임 · 프레지던트 캉을 제외한 인물과 부서는 모두 가상입니다</p>
+        <p class="foot">비공식 게임</p>
         <button id="againBtn" type="button">다시 하기</button>
         <button id="titleBtn" class="ghost" type="button">처음 화면</button>
         <a class="btn" href="./">본편(2D)으로</a>

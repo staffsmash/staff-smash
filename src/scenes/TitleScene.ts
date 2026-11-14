@@ -92,7 +92,7 @@ export class TitleScene extends Phaser.Scene {
     makeButton(this, cx, 418, 220, 42, touch ? '기록판' : '기록판 (B)', () => this.go('board'), 0x2f6fd1);
 
     this.add
-      .text(cx, GAME_H - 34, '비공식 게임입니다. 프레지던트 캉을 제외한 인물과 부서는 모두 가상입니다.', {
+      .text(cx, GAME_H - 34, '비공식 게임입니다.', {
         fontFamily: FONT,
         fontSize: '13px',
         color: '#8b95a8',
