@@ -312,6 +312,8 @@ export class Player extends Fighter {
       return;
     }
     if (c.consume('pickup')) {
+      // 사원증(학생증)은 던져도 손으로 돌아오므로, 발밑에 다른 물건이 있으면 내려놓고 바꿔 든다
+      if (this.weapon?.def.boomerang && this.scene.swapCard(this)) return;
       if (this.weapon && !this.weapon.inFlight) {
         this.startThrow();
         return;

@@ -336,7 +336,12 @@ export class StageScene extends Phaser.Scene {
         ? { name: b.bossName, type: b.bossType, hp: b.bossHp, maxHp: b.bossMaxHp, extra: b.bossExtra() }
         : null,
     });
-    this.pad?.draw(this.player.sp >= 100, this.player.weapon !== null && !this.player.weapon.inFlight);
+    if (this.pad) {
+      const hw = this.player.weapon;
+      // 사원증을 든 채 다른 물건 위에 서 있으면 버튼은 "줍기"(바꿔 들기)
+      const holding = hw !== null && !hw.inFlight && !(hw.def.boomerang && this.pickableAt(this.player));
+      this.pad.draw(this.player.sp >= 100, holding);
+    }
     this.drawDebug(dt);
   }
 
@@ -820,7 +825,9 @@ export class StageScene extends Phaser.Scene {
       if (pr.returnTo) {
         const caught = pr.returning && Math.abs(pr.x - p.x) < 28;
         if (caught || pr.expired) {
-          p.catchCard();
+          // 날아가 있는 동안 다른 물건으로 바꿔 들었으면 사원증은 발밑에 떨어진다
+          if (p.weapon?.def.boomerang) p.catchCard();
+          else this.dropCard(pr.x, p.y);
           pr.destroy();
           continue;
         }
@@ -1019,6 +1026,35 @@ export class StageScene extends Phaser.Scene {
     it.destroy();
     fx.floatText(this, p.x, p.y - 124, `${weaponName(WEAPONS[it.kind], this.studentMode)} 장착!`, '#9fd3ff', 18);
     return true;
+  }
+
+  /** 발밑에 주울 것이 있는지 (무기·넘어진 서류 뭉치) — 터치 버튼 이름과 사원증 바꿔 들기에 쓴다 */
+  pickableAt(p: Player): boolean {
+    return (
+      this.enemies.some((e) => e instanceof DocBomb && e.pickable && Math.abs(e.x - p.x) < 54 && Math.abs(e.y - p.y) < 26) ||
+      this.pickups.some((i) => i.isWeapon && !i.removed && Math.abs(i.x - p.x) < 44 && Math.abs(i.y - p.y) < 24)
+    );
+  }
+
+  /** 사원증(학생증)을 든 채 다른 물건 위에서 줍기: 사원증을 발밑에 내려놓고 그 물건을 든다.
+   *  사원증이 날아가 있는 중이면 돌아올 때 바닥에 떨어진다 (updateProjectiles). */
+  swapCard(p: Player): boolean {
+    const card = p.weapon;
+    if (!card?.def.boomerang || !this.pickableAt(p)) return false;
+    p.weapon = null;
+    if (!this.tryPickup(p)) {
+      p.weapon = card;
+      return false;
+    }
+    if (!card.inFlight) this.dropCard(p.x - p.facing * 34, p.y);
+    return true;
+  }
+
+  private dropCard(x: number, y: number): void {
+    const left = this.cameras.main.scrollX;
+    const cx = Phaser.Math.Clamp(x, left + 40, left + GAME_W - 40);
+    const cy = Phaser.Math.Clamp(y, FLOOR_TOP + 6, FLOOR_BOTTOM - 6);
+    this.pickups.push(new Pickup(this, 'idcard', cx, cy, 0, this.studentMode));
   }
 
   throwWeapon(p: Player): void {
