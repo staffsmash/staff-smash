@@ -619,11 +619,13 @@ export class Bansa extends StudentBoss {
 
 export class StudentPresident extends President {
   readonly barWord = '결재 진행';
-  readonly hintText = '빨간 그림자에 떨어지는 거대 도장을 피하며 결재받으세요';
+  // 2D 학생 모드 문구 그대로 (StageScene·PresidentBoss)
+  readonly hintText = '졸업 서류 최종 결재 — 거대 도장 그림자를 피하며 설득하세요';
   private greeted = false;
 
   constructor(c: Ctx, person: Person) {
     super(c, person);
+    this.stormHint = '쏟아지는 오류 창(빨간 표시)과 패킷을 피하며 설득하세요';
     this.approveLine = '좋아요, 검토 끝났습니다.';
     this.doneText = '검토 완료!';
   }

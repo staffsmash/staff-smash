@@ -668,6 +668,8 @@ export class President extends PersonBoss {
   private side = 1;
   private sideT = 0;
   private reviewSay = 0;
+  /** 2단계(수강신청 서버 폭주) 띠 아래 요령 — 학생 모드는 2D 학생판 문구로 바꾼다 */
+  protected stormHint = '쏟아지는 오류 창(빨간 표시)과 패킷을 피하며 결재받으세요';
 
   constructor(c: Ctx, person: Person) {
     super(c, person, PRES_SPOT, PRES_SPOT, '오늘 민원 처리, 수고 많았어요.');
@@ -703,7 +705,7 @@ export class President extends PersonBoss {
           this.phase2 = true;
           this.stormT = 0;
           this.say('잠깐, 수강신청 서버가…!', 1.8);
-          c.banner('수강신청 서버 폭주!', '쏟아지는 오류 창(빨간 표시)과 패킷을 피하며 결재받으세요');
+          c.banner('수강신청 서버 폭주!', this.stormHint);
           this.setState('server');
           this.stormLeft = 6;
           break;
