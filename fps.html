@@ -159,6 +159,38 @@
         background: linear-gradient(90deg, #f5c542, #7cfc9a);
         transition: width 0.15s;
       }
+      /* 사람 보스의 지금 대사: 보스 막대 아래 자막 한 줄 "이름: 대사" (speech.ts) */
+      #subtitle {
+        left: 50%;
+        top: 104px;
+        transform: translateX(-50%);
+        max-width: min(92vw, 860px);
+        box-sizing: border-box;
+        padding: 4px 16px 5px;
+        border-radius: 8px;
+        background: rgba(11, 13, 18, 0.8);
+        font-size: 24px;
+        font-weight: 700;
+        line-height: 1.3;
+        color: #fff;
+        text-align: center;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        text-shadow: none;
+        opacity: 0;
+        transition: opacity 0.15s;
+      }
+      #subtitle.on {
+        opacity: 1;
+      }
+      /* 구역 정리 카드가 떠 있는 동안은 자막을 숨긴다 (말풍선은 그대로) */
+      #areacard.on ~ #subtitle {
+        opacity: 0;
+      }
+      #subtitle b {
+        font-weight: 800;
+      }
       #cross {
         left: 50%;
         top: 50%;
@@ -246,6 +278,9 @@
         left: 50%;
         top: 30%;
         transform: translateX(-50%);
+        padding: 2px 18px 5px;
+        border-radius: 10px;
+        background: rgba(11, 13, 18, 0.55);
         font-size: 30px;
         font-weight: 700;
         text-align: center;
@@ -845,8 +880,26 @@
           padding: 1px 6px;
           font-size: 13px;
         }
+        /* 휴대폰 가로: 시계·보스 막대·자막·띠를 위로 붙여 머리 위 말풍선과 조준점 사이를 비운다 */
+        #clock {
+          top: 4px;
+        }
+        #bossbox {
+          top: 46px;
+        }
+        #subtitle {
+          top: 86px;
+          padding: 2px 12px 3px;
+          font-size: 18px;
+          line-height: 1.25;
+        }
         #banner {
-          font-size: 24px;
+          top: 122px;
+          font-size: 22px;
+        }
+        #banner small {
+          font-size: 13px;
+          margin-top: 2px;
         }
         #topleft {
           min-width: 190px;
@@ -925,6 +978,7 @@
     <div class="hud" id="note"></div>
     <div class="hud" id="jumpcue">점프!<small>Space</small></div>
     <div class="hud" id="areacard"></div>
+    <div class="hud" id="subtitle" aria-live="polite"></div>
     <div class="hud bigstamp" id="stamp1"><div class="inner">퇴근 승인</div></div>
     <div class="hud bigstamp" id="stamp2"><div class="inner">월급 인상</div></div>
     <div class="hud" id="fade"></div>

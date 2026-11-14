@@ -10,6 +10,7 @@ import type { Ctx, Enemy, HurtKind } from '../enemies';
 import type { FoodKind } from '../models';
 import { peopleKit, type Person, type Who } from '../people';
 import { DIFF_KEYS, DIFFS, saveSettings, timeText, type Diff, type DiffKey, type Settings } from '../settings';
+import { prepareSpeech } from '../speech';
 import { FRONT_X } from '../social';
 import type { World } from '../world';
 import { Bansa, Banryeo, StudentBoss, StudentPresident, WindowStaff, type StaffKind, type StuCtx } from './bosses';
@@ -124,7 +125,7 @@ const HURT: Partial<Record<HurtKind, string>> = {
   bubble: '휴강 공지에 부딪힘… (느려짐)',
   bulk: '번호표 행렬에 밀림… (느려짐)',
   paper: '서류에 맞음… (느려짐)',
-  scholar: '반려 서류에 맞음… (느려짐)',
+  rental: '반려 서류에 맞음… (느려짐)',
   meeting: '결재 서류에 맞음… (느려짐)',
   wave: '전결 돌진에 밀림… (느려짐)',
 };
@@ -279,13 +280,13 @@ export class StudentMode implements StuCtx {
     const ppl = [this.ppl.banryeo, this.ppl.bansa, ...Object.values(this.ppl.staff)];
     ppl.forEach((p, i) => {
       p.root.position.set(-4 + i * 2, -1.6, -3);
-      p.say('…', 1);
+      p.say('…', 1, false);
       p.stampMark(true);
       p.update(0.016, { walking: true, raise: 0.5, reach: 0.5, wave: false });
       group.add(p.root);
     });
-    const kit = peopleKit();
-    for (const line of [
+    // 대사 그림 (speech.ts 공용 말풍선 · 자막)
+    prepareSpeech([
       '점호 시간입니다',
       '자소서 다시 써 오세요',
       '번호표 뽑고 기다리세요',
@@ -306,9 +307,7 @@ export class StudentMode implements StuCtx {
       '결재… 올려 드리죠. 퇴근합니다…',
       '졸업 서류요? 한번 검토해 봅시다.',
       '좋아요, 검토 끝났습니다.',
-    ]) {
-      kit.speechMat(line);
-    }
+    ]);
     const p = _v.set(0, 1.6, 6);
     for (const [t, col] of [
       ...DONE_TEXT.map(([, t]) => [t, '#7CFC9A']),

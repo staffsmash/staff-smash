@@ -8,7 +8,7 @@ import { FRONT_X } from './social';
 // 사람 보스는 다치지 않는다. 막대는 체력이 아니라 "결재 진행"이고, 도장은 들고 있는 결재판에 찍힌다.
 // 결재판을 머리 위로 들어 올린 동안만 약점(크게 진행). 다 차면 승인 도장을 찍고 한마디 하고 퇴근한다
 // (총장은 선 채로 승인한다).
-// 1. 최장학 (교직원)  — 본관 앞: 동전 미끼, 장학 서류 부채꼴
+// 1. 김총괄 (교직원)  — 본관 앞: 바닥의 강의실 열쇠 미끼, 대관 신청서 부채꼴 (대관 총괄, 가상 인물)
 // 2. 김보고 처장       — 사회과학관 앞: 몸 둘레 메일 폭풍, "보고해!" 말풍선
 // 3. 회의소집 부총장   — 대운동장: 단상에서 회의 소집 고리(점프), 회의 자료, 말풍선 → 2단계는 운동장을 걸어서 돈다
 // 4. 총장 프레지던트 캉 — 해 질 녘 본관 앞: 거대 도장 → 2단계 수강신청 서버 폭주
@@ -21,18 +21,18 @@ export const BODY_DMG = 0.5;
 const WINDOW_MAX = 3;
 
 export const BOSS_NAMES: Record<Who, string> = {
-  janghak: '최장학 (교직원)',
+  chonggwal: '김총괄 (교직원)',
   bogo: '김보고 처장',
   meeting: '회의소집 부총장',
   president: '총장 프레지던트 캉',
 };
 
 /** 결재에 필요한 양 (난이도 bossHp를 곱한다) */
-export const BOSS_HP: Record<Who, number> = { janghak: 50, bogo: 70, meeting: 85, president: 95 };
+export const BOSS_HP: Record<Who, number> = { chonggwal: 50, bogo: 70, meeting: 85, president: 95 };
 
 /** 처음 만났을 때 띠 아래 공략 한 줄 */
 export const BOSS_HINTS: Record<Who, string> = {
-  janghak: '동전은 미끼! 밟으면 잠깐 멈춰요',
+  chonggwal: '바닥의 강의실 열쇠는 미끼! 밟으면 잠깐 멈춰요',
   bogo: '빨간 그림자에 떨어지는 "보고해!"를 피하세요',
   meeting: '바닥으로 퍼지는 회의 소집 고리는 점프로 넘으세요',
   president: '빨간 그림자에 떨어지는 거대 도장을 피하며 결재받으세요',
@@ -73,17 +73,27 @@ export abstract class PersonBoss extends Enemy {
   protected approveLine: string;
   /** 결재 뒤 떠오르는 글자 (학생 모드: "반려 철회!" 등) */
   protected doneText = '결재 완료!';
-  /** 걸어 나가며 하는 말 (학생 모드는 결재 대사에 이미 들어 있어 비운다) */
-  protected leaveLine = '퇴근합니다…';
+  /** 걸어 나가며 하는 말 (비우면 말없이 나간다: 학생 모드는 결재 대사에 이미 들어 있다) */
+  protected leaveLine: string;
   private leaveT = 0;
 
   /** name·hp: 학생 모드 인물은 이름과 결재 양을 따로 준다 */
-  constructor(c: Ctx, person: Person, at: THREE.Vector3, exit: THREE.Vector3, approveLine: string, name = BOSS_NAMES[person.who], hp = BOSS_HP[person.who]) {
+  constructor(
+    c: Ctx,
+    person: Person,
+    at: THREE.Vector3,
+    exit: THREE.Vector3,
+    approveLine: string,
+    leaveLine = '퇴근합니다…',
+    name = BOSS_NAMES[person.who],
+    hp = BOSS_HP[person.who],
+  ) {
     super();
     this.who = person.who;
     this.person = person;
     this.bossName = name;
     this.approveLine = approveLine;
+    this.leaveLine = leaveLine;
     person.reset();
     this.obj.add(person.root);
     this.obj.position.copy(at);
@@ -286,25 +296,29 @@ export abstract class PersonBoss extends Enemy {
   }
 }
 
-// ---------- 1. 최장학 (교직원) ----------
+// ---------- 1. 김총괄 (교직원) ----------
+// 대관(시설 대여)을 총괄하는 가상 교직원. 대관 신청서 부채꼴과 바닥의 강의실 열쇠 미끼를 번갈아 쓴다.
+// 대사는 사용자가 정한 둘("제가 왜 협조하죠?", "대관 불가입니다")에 결재·퇴근 한마디만 더한다.
 
-export class Janghak extends PersonBoss {
-  private coinAct = false;
+export class Chonggwal extends PersonBoss {
+  private keyAct = false;
   private actT = 3.2;
   private cycle = 0;
   private lineT = 11;
   private side = 1;
   private sideT = 0;
+  /** 미끼를 깔아 둔 동안 바닥에 남은 열쇠 수 (밟혔는지 보려고) */
+  private keysLeft = 0;
 
   constructor(c: Ctx, person: Person) {
     // 본관 문에서 걸어 나온다
-    super(c, person, new THREE.Vector3(0, 0, -19.2), new THREE.Vector3(0, 0, -20), '이번 한 번만이에요.');
+    super(c, person, new THREE.Vector3(0, 0, -19.2), new THREE.Vector3(0, 0, -20), '이번만 대관 승인입니다.', '열쇠 반납하고 퇴근합니다…');
   }
 
   protected think(dt: number, c: Ctx): void {
     switch (this.state) {
       case 'enter':
-        if (this.stateT < dt * 1.5) this.say('제가 왜 협조해야되죠?', 2.8);
+        if (this.stateT < dt * 1.5) this.say('제가 왜 협조하죠?', 2.8);
         this.walkTo(0, -9, 2.2, dt, null, 0.3);
         this.faceTo(c.eye.x, c.eye.z, dt);
         if (this.stateT > 3.0) this.setState('idle');
@@ -321,36 +335,37 @@ export class Janghak extends PersonBoss {
         this.lineT -= dt;
         if (this.lineT <= 0) {
           this.lineT = 10 + Math.random() * 5;
-          this.say('제가 왜 협조해야되죠?', 2.2);
+          this.say('제가 왜 협조하죠?', 2.2);
         }
         this.actT -= dt;
         if (this.actT <= 0) {
           this.cycle++;
-          // 동전과 장학 서류를 번갈아 (바닥에 동전이 남아 있으면 서류)
-          this.coinAct = this.cycle % 2 === 0 && c.hz.coinsOut() === 0;
+          // 열쇠와 대관 신청서를 번갈아 (바닥에 열쇠가 남아 있으면 신청서)
+          this.keyAct = this.cycle % 2 === 0 && c.hz.keysOut() === 0;
           this.setState('act');
           this.reachTo = 1;
         }
         break;
       case 'act': {
         this.faceTo(c.eye.x, c.eye.z, dt, 8);
-        const coins = this.coinAct;
+        const keys = this.keyAct;
         if (this.stateT >= 0.55 && this.stateT - dt < 0.55) {
-          if (coins) {
-            c.hz.scatterCoins(this.person.chest, c.eye.x, c.eye.z, 6, c.area);
-            this.say('신청 기간이 아닙니다', 1.8);
+          if (keys) {
+            c.hz.scatterKeys(this.person.chest, c.eye.x, c.eye.z, 6, c.area);
             c.sound('pickup', this.person.chest, 0.7);
           } else {
-            this.fan(c, 'scholar', 5, 8.5, 0.17);
-            this.say('서류 다시 내세요.', 1.4);
+            this.fan(c, 'rental', 5, 8.5, 0.17);
+            this.say('대관 불가입니다', 1.8);
+            this.lineT = Math.max(this.lineT, 3);
           }
         }
         if (this.stateT >= 0.9) {
           this.reachTo = 0;
-          if (coins) {
-            // 동전을 뿌려 놓고 결재판을 든 채 기다린다 (이때가 빈틈)
+          if (keys) {
+            // 열쇠를 뿌려 놓고 결재판을 든 채 기다린다 (이때가 빈틈)
             this.setState('lure');
             this.openWindow();
+            this.keysLeft = c.hz.keysOut();
           } else {
             this.setState('idle');
             this.actT = 3.2;
@@ -358,16 +373,23 @@ export class Janghak extends PersonBoss {
         }
         break;
       }
-      case 'lure':
+      case 'lure': {
         this.faceTo(c.eye.x, c.eye.z, dt);
-        if (this.stateT >= 3.4 || c.hz.coinsOut() === 0) {
+        // 열쇠를 밟으면 (멈춤과 함께) 한마디
+        const n = c.hz.keysOut();
+        if (n < this.keysLeft) {
+          this.say('대관 불가입니다', 1.8);
+          this.lineT = Math.max(this.lineT, 3);
+        }
+        this.keysLeft = n;
+        if (this.stateT >= 3.4 || n === 0) {
           this.raiseTo = 0;
-          this.say('회수합니다~', 1.2);
-          c.hz.recallCoins(this.person.chest);
+          c.hz.recallKeys(this.person.chest);
           this.setState('idle');
           this.actT = 3.0;
         }
         break;
+      }
       default:
         break;
     }

@@ -15,9 +15,9 @@ import { drawTimer } from './textures';
 
 export type Kind = 'mail' | 'bulk' | 'phone' | 'bubble' | 'bomb' | 'boss';
 /** 다친 까닭 (잡몹 + 보스가 쓰는 것) */
-export type HurtKind = Kind | 'wave' | 'paper' | 'scholar' | 'meeting' | 'packet' | 'bigstamp' | 'error';
+export type HurtKind = Kind | 'wave' | 'paper' | 'rental' | 'meeting' | 'packet' | 'bigstamp' | 'error';
 /** 날아오는 종이·물건 (도장으로 맞혀 없앨 수 있다) */
-export type SheetKind = 'paper' | 'scholar' | 'meeting' | 'packet';
+export type SheetKind = 'paper' | 'rental' | 'meeting' | 'packet';
 
 export interface Ctx {
   readonly scene: THREE.Scene;
@@ -31,7 +31,7 @@ export interface Ctx {
   /** 지금 움직일 수 있는 구역 (말풍선 돌진이 멈추는 경계) */
   readonly area: Rect;
   hurt(dmg: number, from: THREE.Vector3, kind?: HurtKind): void;
-  /** 잠깐 멈춤 (동전·"보고해!"). 이미 멈춰 있으면 false */
+  /** 잠깐 멈춤 (강의실 열쇠·"보고해!"). 이미 멈춰 있으면 false */
   freeze(sec: number, text: string): boolean;
   sound(name: SfxName, at?: THREE.Vector3, vol?: number): void;
   /** 화면 흔들림 (설정에서 줄이면 무시) */

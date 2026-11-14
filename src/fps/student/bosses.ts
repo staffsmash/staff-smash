@@ -50,11 +50,10 @@ export abstract class StudentBoss extends PersonBoss {
   abstract readonly hintText: string;
 
   constructor(c: Ctx, s: StuCtx, person: Person, at: THREE.Vector3, exit: THREE.Vector3, approveLine: string, name: string, hp: number, doneText: string) {
-    super(c, person, at, exit, approveLine, name, hp);
+    // 결재 대사에 "퇴근합니다…"가 이미 들어 있어 나갈 때는 말없이 (leaveLine = '')
+    super(c, person, at, exit, approveLine, '', name, hp);
     this.s = s;
     this.doneText = doneText;
-    // 결재 대사에 "퇴근합니다…"가 이미 들어 있다
-    this.leaveLine = '';
   }
 
   stamped(weak: boolean, c: Ctx): void {
@@ -382,7 +381,7 @@ export class Banryeo extends StudentBoss {
           this.throws++;
           this.reachTo = 1;
           this.say('반려합니다!', 1.0);
-          this.fan(c, 'scholar', 3, 8.5, 0.22);
+          this.fan(c, 'rental', 3, 8.5, 0.22);
           this.openWindow();
           this.go('look');
         }

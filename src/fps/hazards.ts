@@ -1,9 +1,9 @@
 import * as THREE from 'three';
 import type { Ctx } from './enemies';
-import { bigStampMarkTex, errorWinTex, meetingRingTex, reportBubbleTex } from './textures';
+import { bigStampMarkTex, errorWinTex, keyTagTex, meetingRingTex, reportBubbleTex } from './textures';
 
 // 사람 보스들이 바닥에 깔거나 떨어뜨리는 것 (모두 미리 만든 것을 돌려 쓴다).
-// - 동전 (최장학): 밟으면 "신청 기간이 아닙니다… (잠깐 멈춤)". 잠시 뒤 최장학이 회수한다.
+// - 강의실 열쇠 (김총괄): 바닥에서 반짝이며 도는 미끼. 밟으면 "대관 불가입니다… (잠깐 멈춤)". 잠시 뒤 김총괄이 회수한다.
 // - "보고해!" 말풍선 (김보고 처장): 빨간 그림자 자리에 떨어져 6초 남는다. 밟으면 보고서를 쓰느라 잠깐 멈춘다.
 // - 회의 소집 고리 (회의소집 부총장): 바닥을 따라 퍼진다. 점프로 넘는다.
 // - 거대 도장·오류 창 (프레지던트 캉): 빨간 그림자 → 떨어진다. 피한다.
@@ -14,15 +14,15 @@ export const RING_SPEED = 8;
 const RING_MAX = 54;
 const RING_BAND = 0.45;
 
-const COIN_N = 8;
-const COIN_FLIGHT = 0.6;
+const KEY_N = 8;
+const KEY_FLIGHT = 0.6;
 const REPORT_N = 3;
 const REPORT_FLIGHT = 1.1;
 const REPORT_LIFE = 6;
 const DROP_WARN = 1.05;
 
-interface Coin {
-  mesh: THREE.Mesh;
+interface Key {
+  mesh: THREE.Object3D;
   on: boolean;
   t: number;
   from: THREE.Vector3;
@@ -73,7 +73,7 @@ interface Decal {
 const _a = new THREE.Vector3();
 
 export class Hazards {
-  private coins: Coin[] = [];
+  private keys: Key[] = [];
   private reports: Report[] = [];
   private drops: Drop[] = [];
   readonly rings: Ring[] = [];
@@ -86,15 +86,34 @@ export class Hazards {
   warnN = 0;
 
   constructor(scene: THREE.Scene, warnGeo: THREE.BufferGeometry, warnMat: THREE.Material) {
-    // 동전
-    const coinGeo = new THREE.CylinderGeometry(0.26, 0.26, 0.06, 18);
-    const coinMat = new THREE.MeshLambertMaterial({ color: 0xf2c230, emissive: 0x6b4a00 });
-    for (let i = 0; i < COIN_N; i++) {
-      const mesh = new THREE.Mesh(coinGeo, coinMat);
+    // 강의실 열쇠: 놋쇠 열쇠(고리·몸통·톱니) + 파란 "강의실" 번호표. 세로로 서서 돈다
+    const brass = new THREE.MeshLambertMaterial({ color: 0xf2c230, emissive: 0x6b4a00 });
+    const tagTex = keyTagTex();
+    this.textures.push(tagTex);
+    const tagFace = new THREE.MeshLambertMaterial({ map: tagTex, emissive: 0x0a1f4a });
+    const tagSide = new THREE.MeshLambertMaterial({ color: 0x2f6fd1, emissive: 0x0a1f4a });
+    const bowGeo = new THREE.TorusGeometry(0.15, 0.05, 8, 18);
+    const shaftGeo = new THREE.BoxGeometry(0.46, 0.08, 0.05);
+    const toothGeo = new THREE.BoxGeometry(0.07, 0.13, 0.05);
+    const tagGeo = new THREE.BoxGeometry(0.34, 0.24, 0.03);
+    for (let i = 0; i < KEY_N; i++) {
+      const mesh = new THREE.Group();
+      const bow = new THREE.Mesh(bowGeo, brass);
+      bow.position.x = -0.3;
+      const shaft = new THREE.Mesh(shaftGeo, brass);
+      shaft.position.x = 0.06;
+      const t1 = new THREE.Mesh(toothGeo, brass);
+      t1.position.set(0.16, -0.09, 0);
+      const t2 = new THREE.Mesh(toothGeo, brass);
+      t2.position.set(0.25, -0.07, 0);
+      const tag = new THREE.Mesh(tagGeo, [tagSide, tagSide, tagSide, tagSide, tagFace, tagFace]);
+      tag.position.set(-0.34, -0.3, 0);
+      tag.rotation.z = 0.25;
+      mesh.add(bow, shaft, t1, t2, tag);
+      for (const ch of mesh.children) ch.castShadow = true;
       mesh.visible = false;
-      mesh.castShadow = true;
       scene.add(mesh);
-      this.coins.push({ mesh, on: false, t: 0, from: new THREE.Vector3(), to: new THREE.Vector3(), mode: 0 });
+      this.keys.push({ mesh, on: false, t: 0, from: new THREE.Vector3(), to: new THREE.Vector3(), mode: 0 });
     }
     // "보고해!"
     const bubble = reportBubbleTex();
@@ -177,12 +196,12 @@ export class Hazards {
     return { obj, warn, on: false, t: 0, x: 0, z: 0, kind, r: kind === 'stamp' ? 1.7 : 1.25, mark: '보류' };
   }
 
-  // ---------- 동전 ----------
+  // ---------- 강의실 열쇠 ----------
 
-  /** 최장학이 동전을 뿌린다: 플레이어 주위 2~6m에 */
-  scatterCoins(from: THREE.Vector3, px: number, pz: number, n: number, area: { minX: number; maxX: number; minZ: number; maxZ: number }): void {
+  /** 김총괄이 강의실 열쇠를 뿌린다: 플레이어 주위 2~6m에 */
+  scatterKeys(from: THREE.Vector3, px: number, pz: number, n: number, area: { minX: number; maxX: number; minZ: number; maxZ: number }): void {
     let k = 0;
-    for (const c of this.coins) {
+    for (const c of this.keys) {
       if (c.on || k >= n) continue;
       const a = (k / n) * Math.PI * 2 + Math.random() * 0.6;
       const d = 1.8 + Math.random() * 3.8;
@@ -200,15 +219,16 @@ export class Hazards {
     }
   }
 
-  coinsOut(): number {
+  /** 바닥에 있거나 날아가는 열쇠 수 (회수 중은 빼고) */
+  keysOut(): number {
     let n = 0;
-    for (const c of this.coins) if (c.on && c.mode !== 2) n++;
+    for (const c of this.keys) if (c.on && c.mode !== 2) n++;
     return n;
   }
 
   /** 회수: 주인에게 날아가 사라진다 */
-  recallCoins(to: THREE.Vector3): void {
-    for (const c of this.coins) {
+  recallKeys(to: THREE.Vector3): void {
+    for (const c of this.keys) {
       if (!c.on) continue;
       c.from.copy(c.mesh.position);
       c.to.copy(to);
@@ -217,9 +237,9 @@ export class Hazards {
     }
   }
 
-  /** 바닥에 있는 동전 (시험 봇이 피할 때) */
-  coinAt(i: number): THREE.Vector3 | null {
-    const c = this.coins[i];
+  /** 바닥에 있는 열쇠 (시험 봇이 피할 때) */
+  keyAt(i: number): THREE.Vector3 | null {
+    const c = this.keys[i];
     return c && c.on && c.mode === 1 ? c.mesh.position : null;
   }
 
@@ -294,12 +314,12 @@ export class Hazards {
     const eye = c.eye;
     const feet = c.feet;
     this.warnN = 0;
-    for (const k of this.coins) {
+    for (const k of this.keys) {
       if (!k.on) continue;
       k.t += dt;
       const m = k.mesh;
       if (k.mode === 0 || k.mode === 2) {
-        const dur = k.mode === 0 ? COIN_FLIGHT : 0.5;
+        const dur = k.mode === 0 ? KEY_FLIGHT : 0.5;
         const f = Math.min(1, k.t / dur);
         m.position.lerpVectors(k.from, k.to, f);
         m.position.y += Math.sin(f * Math.PI) * (k.mode === 0 ? 2.2 : 1.2);
@@ -310,13 +330,13 @@ export class Hazards {
             m.visible = false;
           } else {
             k.mode = 1;
-            m.rotation.set(0, 0, Math.PI / 2);
+            m.rotation.set(0, Math.random() * Math.PI * 2, 0);
           }
         }
       } else {
         m.rotation.y += dt * 3;
-        m.position.y = 0.32 + Math.sin(k.t * 4) * 0.06;
-        if (feet < 0.3 && Math.hypot(eye.x - m.position.x, eye.z - m.position.z) < 0.85 && c.freeze(1.2, '신청 기간이 아닙니다… (잠깐 멈춤)')) {
+        m.position.y = 0.56 + Math.sin(k.t * 4) * 0.06;
+        if (feet < 0.3 && Math.hypot(eye.x - m.position.x, eye.z - m.position.z) < 0.85 && c.freeze(1.2, '대관 불가입니다… (잠깐 멈춤)')) {
           k.on = false;
           m.visible = false;
           c.fx.confetti(m.position, 8, 3, 0xf2c230, 1.5, 0.6);
@@ -435,7 +455,7 @@ export class Hazards {
   }
 
   clear(): void {
-    for (const c of this.coins) {
+    for (const c of this.keys) {
       c.on = false;
       c.mesh.visible = false;
     }
