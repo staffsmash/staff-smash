@@ -52,8 +52,10 @@ const CSS = `
 .result.stu .gs { display: inline-block; min-width: 34px; padding: 0 4px; border: 3px solid #d0202f; border-radius: 50%; color: #ff6b6b;
   font-weight: 900; font-size: 17px; line-height: 28px; transform: rotate(-8deg); background: rgba(255,250,238,.06); }
 .result.stu .gs.F { border-color: #9aa3ad; color: #c9ced8; }
-.result.stu .gpa { font-size: 16px; color: #dfe6f2; }
-.result.stu .gpa b { font-size: 26px; color: #f5c542; margin: 0 4px; }
+.result.stu .repw { display: flex; align-items: center; justify-content: center; gap: 6px 18px; flex-wrap: wrap; }
+.result.stu .gpa { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 104px; height: 104px; border-radius: 50%;
+  border: 3px solid #f5c542; color: #dfe6f2; font-size: 13px; line-height: 1.15; }
+.result.stu .gpa b { font-size: 30px; color: #f5c542; }
 #stuEnd { position: fixed; inset: 0; z-index: 6; display: none; overflow: hidden; font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif; }
 #stuEnd.on { display: block; }
 #stuEnd .shade { position: absolute; inset: 0; background: linear-gradient(rgba(11,13,18,.72), rgba(11,13,18,.15) 30%, rgba(11,13,18,.15) 70%, rgba(11,13,18,.72)); }
@@ -125,8 +127,14 @@ const CSS = `
   .panel.sel .tabs button { padding: 4px 12px; font-size: 13px; }
   .sel .srow.center { margin: 3px 0 0; }
   .result.stu table.rep td, .result.stu table.rep th { padding: 1px 7px; font-size: 12px; }
-  .result.stu .gs { font-size: 14px; line-height: 22px; min-width: 28px; border-width: 2px; }
-  .result.stu .gpa b { font-size: 20px; }
+  .result.stu .gs { font-size: 13px; line-height: 18px; min-width: 26px; border-width: 2px; }
+  .result.stu .gpa { width: 82px; height: 82px; font-size: 11px; }
+  .result.stu .gpa b { font-size: 22px; }
+  .result.stu h1 { font-size: 22px; margin: 0; }
+  .result.stu .big { font-size: 16px; margin: 2px 0; }
+  .result.stu .who, .result.stu .counts, .result.stu .best { font-size: 12px; margin: 2px 0; line-height: 1.35; }
+  .result.stu .foot { display: none; }
+  #stuEnd .dip { width: min(84vw, 420px, 96vh); }
 }
 `;
 

@@ -91,9 +91,9 @@ interface StaffInfo {
 
 /** 본편 2D enemies.json의 값을 1인칭에 맞췄다 (설득 양 = 결재 양과 같은 단위) */
 export const STAFF: Record<StaffKind, StaffInfo> = {
-  haksa: { hp: 24, every: 10, keep: 9, hint: '불이 꺼지면 내 주변만 보여요' },
-  jinchwi: { hp: 24, every: 8, keep: 9, hint: '빨간 첨삭 선은 점프(Space)로 넘을 수 있어요' },
-  hakjong: { hp: 26, every: 5.5, keep: 11, hint: '번호표를 뽑는 동안 본체를 치면 멈춰요' },
+  haksa: { hp: 34, every: 10, keep: 9, hint: '불이 꺼지면 내 주변만 보여요' },
+  jinchwi: { hp: 34, every: 8, keep: 9, hint: '빨간 첨삭 선은 점프(Space)로 넘을 수 있어요' },
+  hakjong: { hp: 36, every: 5.5, keep: 11, hint: '번호표를 뽑는 동안 본체를 치면 멈춰요' },
 };
 
 const DARK_SEC = 5.5;
@@ -260,7 +260,7 @@ export class Banryeo extends StudentBoss {
   private towerHp: number;
 
   constructor(c: Ctx, s: StuCtx, person: Person, at: THREE.Vector3, spot: THREE.Vector3, exit: THREE.Vector3, towerHp: number) {
-    super(c, s, person, at, exit, '반려… 철회합니다. 퇴근합니다…', '박반려 · 서류반려처장', 60, '반려 철회!');
+    super(c, s, person, at, exit, '반려… 철회합니다. 퇴근합니다…', '박반려 · 서류반려처장', 70, '반려 철회!');
     this.spot.copy(spot);
     this.towerHp = towerHp;
   }
@@ -288,8 +288,8 @@ export class Banryeo extends StudentBoss {
 
   protected think(dt: number, c: Ctx): void {
     if (this.state === 'enter') {
-      // 결재 양은 세운 뒤(난이도 반영) 정해지므로 첫 단계에서 1/3 경계를 잡는다
-      if (this.stateT < dt * 1.5) this.thresholds = [this.maxHp * (2 / 3), this.maxHp / 3];
+      // 결재 양은 세운 뒤(난이도 반영) 정해지므로 첫 단계에서 경계를 잡는다 (절반에서 한 번 다시 쌓는다)
+      if (this.stateT < dt * 1.5) this.thresholds = [this.maxHp / 2];
       if (this.stateT < dt * 1.5) this.say('이 서류는 반려입니다!', 2.2);
       const there = this.walkTo(this.spot.x, this.spot.z, 2.8, dt, null, 0.4);
       this.faceTo(c.eye.x, c.eye.z, dt);
@@ -361,7 +361,7 @@ export class Banryeo extends StudentBoss {
         this.faceTo(c.eye.x, c.eye.z, dt, 3);
         if (this.subT >= (this.s.easy ? 3.2 : 2.4)) {
           this.raiseTo = 0;
-          this.exposedT = 7;
+          this.exposedT = 11;
           this.throwT = 0.8;
           this.go('out');
         }
@@ -449,7 +449,7 @@ export class Bansa extends StudentBoss {
   private spot: THREE.Vector3;
 
   constructor(c: Ctx, s: StuCtx, person: Person, at: THREE.Vector3, spot: THREE.Vector3, exit: THREE.Vector3) {
-    super(c, s, person, at, exit, '결재… 올려 드리죠. 퇴근합니다…', '반사반사 · 결재부총장', 64, '결재 완료!');
+    super(c, s, person, at, exit, '결재… 올려 드리죠. 퇴근합니다…', '반사반사 · 결재부총장', 75, '결재 완료!');
     this.spot = spot.clone();
     // 큰 결재판
     person.clip.scale.setScalar(1.4);

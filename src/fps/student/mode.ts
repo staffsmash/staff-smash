@@ -10,7 +10,7 @@ import type { Ctx, Enemy, HurtKind } from '../enemies';
 import type { FoodKind } from '../models';
 import { peopleKit, type Person, type Who } from '../people';
 import { DIFF_KEYS, DIFFS, saveSettings, timeText, type Diff, type DiffKey, type Settings } from '../settings';
-import { prepareSpeech } from '../speech';
+import { clearSubtitle, prepareSpeech } from '../speech';
 import { FRONT_X } from '../social';
 import type { World } from '../world';
 import { Bansa, Banryeo, StudentBoss, StudentPresident, WindowStaff, type StaffKind, type StuCtx } from './bosses';
@@ -1032,7 +1032,7 @@ export class StudentMode implements StuCtx {
     if (g.stage === 'path2') return `사회과학관 앞으로 이동하세요 · ${n}`;
     if (g.stage === 'path') return `본관 앞으로 이동하세요 · ${n}`;
     const b = g.boss;
-    if (b && !b.dead && b.targetable) return `${b.bossName} 설득 중 · ${n}`;
+    if (b && !b.dead && b.targetable) return `${b.bossName} ${b instanceof StudentPresident ? '결재 받는 중' : '설득 중'} · ${n}`;
     if (b instanceof Banryeo && !b.dead && b.towerUp) return `${b.towerText} · ${n}`;
     if (this.flow === 'wave') return `행정 ${this.queue.length + g.minions()}건 남음 · ${n}`;
     return `${this.place()} · ${n}`;
@@ -1101,6 +1101,9 @@ export class StudentMode implements StuCtx {
     g.firing = false;
     document.exitPointerLock?.();
     showCombo(0);
+    // 엔딩 카드 아래로 총장 말풍선·자막이 비치지 않게
+    g.boss?.person.tag.hide();
+    clearSubtitle();
     this.flow = 'ending';
     this.ending = playEnding({ name: this.hero.name }, () => {
       this.ending = null;
@@ -1117,7 +1120,6 @@ export class StudentMode implements StuCtx {
     const v = gpa(grades) ?? 0;
     const rec = recordBest(g.runDiff, { gpa: v, time: g.elapsed });
     const left = Math.ceil(OFF_HOURS - clock);
-    const now = left > 0 ? `현재 시각 ${clockText(clock)} · 본관 마감까지 ${left}분` : `현재 시각 ${clockText(clock)} · 마감 지남 ${lateMin(clock)}분`;
     const arrive = onTime(clock)
       ? left > 0
         ? `도착 시각 ${clockText(clock)} · 본관 마감 ${left}분 전!`
@@ -1134,9 +1136,11 @@ export class StudentMode implements StuCtx {
         <h1><img class="emblem inline" src="hufs/emblem-mono.png" alt=""> 성 적 표</h1>
         <p class="who">3학년 ${esc(this.hero.name)} · 학생 모드 완료</p>
         <p class="big">${outcomeText('student', true, 3, clock, true)}</p>
-        <p class="who">${arrive} · ${now}</p>
-        <table class="rep"><tr><th>구역</th><th>걸린 시간</th><th>받은 피해</th><th>최대 연속 공격</th><th>학점</th></tr>${rows}</table>
-        <div class="gpa">누적 GPA<b>${v.toFixed(2)}</b>/ 4.5</div>
+        <p class="who">${arrive}</p>
+        <div class="repw">
+          <table class="rep"><tr><th>구역</th><th>걸린 시간</th><th>받은 피해</th><th>최대 연속 공격</th><th>학점</th></tr>${rows}</table>
+          <div class="gpa"><small>누적 GPA</small><b>${v.toFixed(2)}</b><span>/ 4.5</span></div>
+        </div>
         <p class="counts">${this.countsHtml()}</p>
         <p class="best">난이도 ${g.diff.label} · ${bestTxt}</p>
         <p class="foot">비공식 게임 · 프레지던트 캉을 제외한 인물과 부서는 모두 가상입니다</p>
