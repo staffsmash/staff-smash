@@ -33,8 +33,6 @@ export interface PerkHost {
   readonly yaw: number;
   /** 지금 움직일 수 있는 구역 */
   readonly area: Rect;
-  /** 지금 구역 번호 (조력자는 구역마다 한 번) */
-  areaNo(): number;
   /** 주인공 이름 (교직원 김국제, 학생은 고른 주인공) */
   playerName(): string;
   /** 학생 모드에서 고른 주인공 id */

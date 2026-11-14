@@ -581,7 +581,6 @@ class Game implements Ctx {
       get area() {
         return g.area;
       },
-      areaNo: () => (g.mode === 'student' ? g.stu.areaNo : areaOf(g.stage)),
       playerName: () => (g.mode === 'student' ? g.stu.heroName : STAFF_NAME),
       heroId: () => g.stu.heroId,
       note: (text, time) => g.note(text, time),
