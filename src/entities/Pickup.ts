@@ -6,7 +6,7 @@ import { WEAPONS, isWeaponId, weaponName, type WeaponId } from './weapons';
 
 // 바닥에 놓인 물건.
 // - 무기: 위에 서서 L(또는 맨손 공격)로 줍는다.
-// - 음식·식권·보조배터리·일거리·서명지: 밟으면 바로 줍는다. 일거리는 김밥처럼 생겼지만 서류 귀퉁이가 보인다.
+// - 음식·식권·보조배터리·연차 쿠폰(공결 확인서)·셔틀버스 시간표·단톡방 공지 캡처·일거리·서명지: 밟으면 바로 줍는다. 일거리는 김밥처럼 생겼지만 서류 귀퉁이가 보인다.
 // - 경비원이 던져 주거나 상자에서 튀어나온 물건은 날아가는 동안(toss) 줍지 못한다.
 
 export type PickupKind = WeaponId | FoodKind | 'petition';
@@ -18,7 +18,15 @@ const LABELS: Record<string, string> = {
   work: '삼각김밥?',
   mealticket: '식권',
   battery: '보조배터리',
+  shield: '연차 쿠폰',
+  shuttle: '셔틀버스 시간표',
+  capture: '단톡방 공지 캡처',
   petition: '단체 서명지',
+};
+
+/** 학생 모드에서 이름이 바뀌는 것 */
+const STUDENT_LABELS: Record<string, string> = {
+  shield: '공결 확인서',
 };
 
 /** 던져진 물건이 날아가는 중의 정보 */
@@ -53,9 +61,9 @@ export class Pickup {
     this.ttl = ttl;
     if (isWeaponId(kind)) this.obj = weaponIcon(scene, kind, student);
     else if (kind === 'petition') this.obj = createPetitionIcon(scene);
-    else this.obj = createFoodIcon(scene, kind);
+    else this.obj = createFoodIcon(scene, kind, student);
     this.shadow = scene.add.ellipse(x, y, 46, 10, 0x000000, 0.25).setDepth(-5);
-    const name = isWeaponId(kind) ? weaponName(WEAPONS[kind], student) : LABELS[kind];
+    const name = isWeaponId(kind) ? weaponName(WEAPONS[kind], student) : ((student && STUDENT_LABELS[kind]) || LABELS[kind]);
     this.label = scene.add
       .text(x, y - 40, name, {
         fontFamily: FONT,

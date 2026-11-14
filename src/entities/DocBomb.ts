@@ -66,6 +66,8 @@ export class DocBomb extends Enemy {
 
   takeHit(h: HitInfo): boolean {
     if (this.removed) return false;
+    // 단톡방 공지 캡처로 멈춰 있었어도 치면 넘어진다 (넘어진 뭉치는 집어 던질 수 있다)
+    if (this.frozenT > 0) this.thaw();
     this.rig.flash();
     this.set('knocked');
     this.stateT = 0;

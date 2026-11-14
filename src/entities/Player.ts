@@ -60,6 +60,10 @@ const SLOW_MUL = 0.55;
 const CLING_MUL = 0.4;
 /** 아메리카노: 공격 속도 */
 const COFFEE_MUL = 1.35;
+/** 셔틀버스 시간표: 이동 속도 */
+const SHUTTLE_MUL = 1.3;
+/** 연차 쿠폰(공결 확인서)으로 막은 뒤 잠깐 맞지 않는 시간 (한 번의 공격에 두 번 맞지 않게) */
+const SHIELD_GRACE = 0.5;
 const SHAKE_OFF = 4;
 /** 국물 위: 속도가 목표에 늦게 따라간다 (클수록 덜 미끄럽다) */
 const SLIP_GRIP = 2.2;
@@ -110,6 +114,12 @@ export class Player extends Fighter {
   weapon: HeldWeapon | null = null;
   slowT = 0;
   coffeeT = 0;
+  /** 연차 쿠폰(학생: 공결 확인서): 남은 시간. 그동안 다음 한 번 맞는 것을 통째로 막는다 */
+  shieldT = 0;
+  /** 방금 연차 쿠폰으로 막았다 (그 사이 닿은 투사체는 스테이지가 없앤다) */
+  shieldPopT = 0;
+  /** 셔틀버스 시간표: 남은 시간. 그동안 30% 빨리 움직인다 */
+  shuttleT = 0;
   /** 국물 위에 서 있다 (김학생식당). 스테이지가 매 프레임 채운다 */
   slipT = 0;
   clingBy: Clinger | null = null;
@@ -195,6 +205,7 @@ export class Player extends Fighter {
     let m = 1;
     if (this.slowT > 0) m *= SLOW_MUL;
     if (this.clingBy) m *= CLING_MUL;
+    if (this.shuttleT > 0) m *= SHUTTLE_MUL;
     return m;
   }
 
@@ -206,6 +217,9 @@ export class Player extends Fighter {
     if (this.slowT > 0) this.slowT -= dt;
     if (this.coffeeT > 0) this.coffeeT -= dt;
     if (this.slipT > 0) this.slipT -= dt;
+    if (this.shieldT > 0) this.shieldT -= dt;
+    if (this.shieldPopT > 0) this.shieldPopT -= dt;
+    if (this.shuttleT > 0) this.shuttleT -= dt;
 
     // 손에 든 마감 서류 뭉치
     if (this.weapon?.id === 'bomb') {
@@ -576,6 +590,16 @@ export class Player extends Fighter {
         this.weapon = null;
         fx.floatText(this.scene, this.x, this.y - 130, `${this.wname(w.def)} 다 씀`, '#cfd6e3', 16);
       }
+      return false;
+    }
+    // 연차 쿠폰(공결 확인서): 다음 한 번은 통째로 막는다 (피해·밀림·느려짐 없음)
+    if (this.shieldT > 0 && !h.force) {
+      this.shieldT = 0;
+      this.shieldPopT = SHIELD_GRACE;
+      this.invuln = Math.max(this.invuln, SHIELD_GRACE);
+      fx.ringWave(this.scene, this.x, this.y, 0x9fd3ff);
+      const text = this.student ? '공결 확인서로 막음!' : '연차 쿠폰으로 막음!';
+      fx.floatText(this.scene, this.x, this.y - 128, text, '#9fd3ff', 18);
       return false;
     }
     this.hp = Math.max(0, this.hp - h.dmg);
