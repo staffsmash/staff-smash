@@ -43,6 +43,9 @@ export class Fx {
   private texts: Timed<THREE.Sprite>[] = [];
   private textTex = new Map<string, THREE.Texture>();
   private markTex = stampMarkTex();
+  /** 지금 쓰는 도장 자국 그림 (학생 모드는 "통과", 바닥은 떨어진 서류) */
+  private curMark: THREE.Texture = this.markTex;
+  private curDecal: THREE.Texture = this.markTex;
 
   constructor(scene: THREE.Scene) {
     const geo = new THREE.BoxGeometry(0.26, 0.02, 0.34);
@@ -169,8 +172,17 @@ export class Fx {
     r.obj.visible = true;
   }
 
-  mark(at: THREE.Vector3, size: number): void {
+  /** 맞힌 자리·바닥 자국 그림을 바꾼다. 비우면 교직원 모드 "처리" 도장 */
+  setMarks(mark?: THREE.Texture, decal?: THREE.Texture): void {
+    this.curMark = mark ?? this.markTex;
+    this.curDecal = decal ?? this.markTex;
+    for (const d of this.decals) (d.mat as THREE.MeshBasicMaterial).map = this.curDecal;
+  }
+
+  /** tex: 이번 자국만 다른 그림 (학생 모드 "설득"·"반사"·주문 도장) */
+  mark(at: THREE.Vector3, size: number, tex?: THREE.Texture): void {
     const m = this.take(this.marks);
+    (m.mat as THREE.SpriteMaterial).map = tex ?? this.curMark;
     m.obj.position.copy(at);
     m.obj.scale.setScalar(size * 1.6);
     m.t = 0;

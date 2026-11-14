@@ -12,7 +12,7 @@ import { clipPaperTex, faceTex, labelTex, mailTex, stampMarkTex } from './textur
 
 export type Who = 'janghak' | 'bogo' | 'meeting' | 'president';
 
-interface Look {
+export interface Look {
   /** 웃옷 (정장 또는 셔츠) */
   top: number;
   pants: number;
@@ -28,8 +28,8 @@ interface Look {
   lanyard?: boolean;
   tieDots?: boolean;
   watch?: boolean;
-  /** 왼손에 드는 것 */
-  left: 'pouch' | 'report' | 'megaphone' | 'stamp';
+  /** 왼손에 드는 것 ('none' = 따로 붙인다: 학생 모드 창구 직원) */
+  left: 'pouch' | 'report' | 'megaphone' | 'stamp' | 'none';
   scale: number;
 }
 
@@ -123,9 +123,10 @@ export class Person {
   private t = 0;
   private faceMat: THREE.MeshLambertMaterial;
 
-  constructor(who: Who, labelText: string, labelColor: string) {
+  /** look: 학생 모드 인물(처장·부총장·창구 직원)은 외형을 따로 준다 */
+  constructor(who: Who, labelText: string, labelColor: string, look: Look = LOOKS[who]) {
     this.who = who;
-    const L = (this.look = LOOKS[who]);
+    const L = (this.look = look);
     const k = peopleKit();
     this.faceMat = new THREE.MeshLambertMaterial({
       map: faceTex({

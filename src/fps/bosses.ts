@@ -70,20 +70,25 @@ export abstract class PersonBoss extends Enemy {
   protected chargeDmg = 0;
   /** 이번에 결재판을 든 동안 받은 약점 도장 수 */
   protected windowHits = 0;
-  private approveLine: string;
+  protected approveLine: string;
+  /** 결재 뒤 떠오르는 글자 (학생 모드: "반려 철회!" 등) */
+  protected doneText = '결재 완료!';
+  /** 걸어 나가며 하는 말 (학생 모드는 결재 대사에 이미 들어 있어 비운다) */
+  protected leaveLine = '퇴근합니다…';
   private leaveT = 0;
 
-  constructor(c: Ctx, person: Person, at: THREE.Vector3, exit: THREE.Vector3, approveLine: string) {
+  /** name·hp: 학생 모드 인물은 이름과 결재 양을 따로 준다 */
+  constructor(c: Ctx, person: Person, at: THREE.Vector3, exit: THREE.Vector3, approveLine: string, name = BOSS_NAMES[person.who], hp = BOSS_HP[person.who]) {
     super();
     this.who = person.who;
     this.person = person;
-    this.bossName = BOSS_NAMES[person.who];
+    this.bossName = name;
     this.approveLine = approveLine;
     person.reset();
     this.obj.add(person.root);
     this.obj.position.copy(at);
     this.exitPt.copy(exit);
-    this.hp = this.maxHp = BOSS_HP[person.who];
+    this.hp = this.maxHp = hp;
     this.radius = 0.9 * person.look.scale;
     c.scene.add(this.obj);
     this.faceNow(c.eye.x, c.eye.z);
@@ -217,7 +222,7 @@ export abstract class PersonBoss extends Enemy {
       this.faceTo(c.eye.x, c.eye.z, dt, 4);
       if (this.stateT > 0.5 && this.stateT - dt <= 0.5) {
         this.person.stampMark(true);
-        c.fx.text(_a.copy(this.person.clipCenter).setY(this.person.clipCenter.y + 0.6), '결재 완료!', '#7CFC9A', 0.8);
+        c.fx.text(_a.copy(this.person.clipCenter).setY(this.person.clipCenter.y + 0.6), this.doneText, '#7CFC9A', 0.8);
         c.sound('process', this.person.clipCenter, 1);
       }
       if (this.stateT >= 2.6) {
@@ -227,7 +232,7 @@ export abstract class PersonBoss extends Enemy {
         }
         this.setState('leave');
         this.raiseTo = 0;
-        this.say('퇴근합니다…', 2.6);
+        if (this.leaveLine) this.say(this.leaveLine, 2.6);
       }
     } else if (this.state === 'leave') {
       this.leaveT += dt;

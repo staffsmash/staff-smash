@@ -151,9 +151,9 @@ export class Hazards {
       scene.add(mesh);
       this.rings.push({ mesh, mat, tex, x: 0, z: 0, r: 0, on: false, hit: false, dodged: false });
     }
-    // 바닥 도장 자국 ("보류" / "재검토")
+    // 바닥 도장 자국 ("보류" / "재검토", 학생 모드 박반려 처장의 "반려")
     const decalGeo = new THREE.PlaneGeometry(3.2, 3.2).rotateX(-Math.PI / 2);
-    for (const text of ['보류', '재검토']) {
+    for (const text of ['보류', '재검토', '반려']) {
       const t = bigStampMarkTex(text);
       this.textures.push(t);
       this.decalMats.set(

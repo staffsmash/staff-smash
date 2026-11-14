@@ -20,6 +20,7 @@ import {
   type DiffKey,
   type Settings,
 } from './settings';
+import { StudentMode, type StudentHost } from './student/mode';
 import { loadLogos } from './textures';
 import { buildWorld, type World } from './world';
 
@@ -229,6 +230,9 @@ class Game implements Ctx {
   world!: World;
   phase: Phase = 'title';
   stage: Stage = 'yard';
+  /** 교직원 모드(출근하기) / 학생 모드(등교하기, src/fps/student/) */
+  mode: 'staff' | 'student' = 'staff';
+  stu!: StudentMode;
   /** 이번 판의 난이도 (판 도중에 설정을 바꿔도 다음 판부터) */
   runDiff: DiffKey = this.settings.diff;
   pos = new THREE.Vector3(0, EYE, 11);
@@ -363,6 +367,7 @@ class Game implements Ctx {
     this.rack.position.copy(SERVER_SPOT);
     this.rack.visible = false;
     this.scene.add(this.rack);
+    this.stu = new StudentMode(this, this.studentHost());
     this.bounds = [this.world.yard];
     this.world.setDusk(0);
     this.warmup();
@@ -420,6 +425,7 @@ class Game implements Ctx {
       g.add(pp.root);
     });
     this.rack.visible = true;
+    const unwarm = this.stu.warm(g);
     this.scene.add(g);
     const p = _v.set(0, 1.6, 6);
     this.fx.confetti(p, 4, 1);
@@ -464,7 +470,9 @@ class Game implements Ctx {
     });
     for (const t of peopleKit().textures) this.renderer.initTexture(t);
     for (const t of this.hz.textures) this.renderer.initTexture(t);
+    for (const t of this.stu.textures) this.renderer.initTexture(t);
     this.renderer.render(this.scene, this.camera);
+    unwarm();
     this.scene.remove(g);
     for (const pp of ppl) {
       g.remove(pp.root);
@@ -482,6 +490,29 @@ class Game implements Ctx {
     this.renderer.setSize(w, h);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
+  }
+
+  /** 학생 모드(src/fps/student/)가 빌려 쓰는 Game 안쪽 기능 */
+  private studentHost(): StudentHost {
+    return {
+      touch: TOUCH,
+      overlay: (html) => this.overlay(html),
+      hideOverlay: () => this.hideOverlay(),
+      showTitle: () => this.showTitle(),
+      toTitle: () => {
+        this.resetRun();
+        this.showTitle();
+      },
+      showSettings: () => this.showSettings('title'),
+      placeBoss: (b) => this.placeBoss(b),
+      showBossBar: (name) => this.showBossBar(name),
+      lower: (g) => this.lower(g),
+      note: (text, time) => this.note(text, time),
+      hint: (key, text, time) => this.hint(key, text, time),
+      buzz: (p) => this.buzz(p),
+      setDusk: (k) => (this.dusk = k),
+      arm: { sleeve: this.viewmodel.children[0] as THREE.Mesh, stamp: this.handStamp },
+    };
   }
 
   /** 화면 오른쪽 아래 주무관의 팔과 도장 */
@@ -510,6 +541,8 @@ class Game implements Ctx {
     window.addEventListener('touchstart', unlock, { passive: true });
     window.addEventListener('keydown', (e) => {
       unlock();
+      // 타이틀·학생 선택 화면의 모드 키(1·2·Enter), 학생 엔딩 건너뛰기
+      if (this.stu.key(e)) return;
       this.keys.add(e.code);
       if (e.code === 'Space' && this.phase === 'play') e.preventDefault();
       if (e.repeat) return;
@@ -744,13 +777,13 @@ class Game implements Ctx {
         <p class="ctl">${ctl}</p>
         <div class="srow center"><span class="slabel">난이도</span><div class="seg" role="group" aria-label="난이도">${this.diffSeg()}</div></div>
         <p class="best">최고 기록 ${bestLine(this.settings.diff)}</p>
-        <button id="startBtn" type="button">출근하기</button>
+        ${this.stu.modeButtons()}
         <button id="setBtn" class="ghost" type="button">설정</button>
         <a class="btn" href="./">본편(2D)으로</a>
         <p class="foot">비공식 게임 · 프레지던트 캉을 제외한 인물과 부서는 모두 가상입니다 · 기록은 이 브라우저에만 저장됩니다</p>
       </div>`);
     bindSettings(o, this.settings, (key) => this.applySetting(key));
-    $('startBtn').addEventListener('click', () => this.start());
+    this.stu.bindTitle();
     $('setBtn').addEventListener('click', () => this.showSettings('title'));
   }
 
@@ -793,7 +826,8 @@ class Game implements Ctx {
     }
     if (this.phase === 'title') {
       this.runDiff = this.settings.diff;
-      this.beginWave(0);
+      if (this.mode === 'student') this.stu.begin();
+      else this.beginWave(0);
     }
     this.phase = 'play';
     this.last = performance.now();
@@ -891,6 +925,7 @@ class Game implements Ctx {
     $('bossbox').classList.remove('on');
     $('areacard').classList.remove('on');
     for (const id of ['stamp1', 'stamp2']) $(id).classList.remove('on');
+    this.stu.reset();
     this.phase = 'title';
   }
 
@@ -982,6 +1017,7 @@ class Game implements Ctx {
     this.hz.clear();
     this.freezeT = 0;
     this.buzz([40, 30, 80]);
+    if (this.mode === 'student') return this.stu.bossApproved(b);
     if (b.who === 'president') {
       this.presidentApproved();
       return;
@@ -1268,7 +1304,8 @@ class Game implements Ctx {
     this.sound('process', e.center);
     // 사람 보스 몸에는 "처리" 자국을 띄우지 않는다
     if (!isBoss(e)) this.fx.mark(e.center, e.kind === 'bulk' ? 1.6 : 1.2);
-    if (e.kind === 'bulk') this.note('단체 메일 처리!');
+    if (this.mode === 'student') this.stu.processed(e);
+    else if (e.kind === 'bulk') this.note('단체 메일 처리!');
     else if (e.kind === 'phone') this.fx.text(_v.copy(e.center).setY(e.center.y + 1.1), '네, 행정실입니다~', '#ffffff');
     else if (e.kind === 'bubble') {
       this.fx.text(_v.copy(e.center).setY(e.center.y + 0.9), '펑!', '#ffffff', 0.7);
@@ -1366,7 +1403,7 @@ class Game implements Ctx {
       this.note('삼각김밥! 체력 +2');
     } else {
       this.buffT = BUFF_T;
-      this.note('아메리카노! 8초 동안 도장을 빨리 던집니다');
+      this.note(this.mode === 'student' ? '아메리카노! 공격 속도 UP' : '아메리카노! 8초 동안 도장을 빨리 던집니다');
     }
     this.sound('pickup');
     this.fx.confetti(_v.set(p.obj.position.x, 0.8, p.obj.position.z), 12, 3, 0xf5c542, 2, 0.7);
@@ -1380,13 +1417,16 @@ class Game implements Ctx {
     this.sp = 0;
     this.spReadyShown = false;
     this.sound('special');
-    this.banner('전체 공지 발송!', '수신: 화면 안 모든 민원 · 회신 불필요');
+    // 학생 모드: 고른 외국어 주문 (효과는 같다)
+    if (this.mode === 'student') this.stu.castSpell();
+    else this.banner('전체 공지 발송!', '수신: 화면 안 모든 민원 · 회신 불필요');
+    const col = this.mode === 'student' ? this.stu.spellColor : 0xf5c542;
     this.flashT = 0.45;
     if (!this.settings.calm) this.fovKick = 1;
     this.swing = 1;
     const fwd = _w.set(-Math.sin(this.yaw), 0, -Math.cos(this.yaw));
-    this.fx.spray(_v.set(this.pos.x, EYE - 0.1, this.pos.z).addScaledVector(fwd, 3.5), fwd, 110, 30, 1.2, 0xf5c542);
-    this.fx.ring(this.pos.x, 0.08, this.pos.z, 1, 36, 0.8, 0xf5c542);
+    this.fx.spray(_v.set(this.pos.x, EYE - 0.1, this.pos.z).addScaledVector(fwd, 3.5), fwd, 110, 30, 1.2, col);
+    this.fx.ring(this.pos.x, 0.08, this.pos.z, 1, 36, 0.8, col);
     for (const e of this.enemies) {
       if (!e.targetable) continue;
       const dx = e.center.x - this.pos.x;
@@ -1432,7 +1472,7 @@ class Game implements Ctx {
     this.invuln = 0.6;
     this.calmT = 0;
     this.slow = 1.2;
-    this.note(HURT_NOTE[kind] ?? '(느려짐)');
+    this.note((this.mode === 'student' ? this.stu.hurtNote(kind) : undefined) ?? HURT_NOTE[kind] ?? '(느려짐)');
     const v = $('vignette');
     v.style.opacity = this.settings.calm ? '0.45' : '1';
     setTimeout(() => (v.style.opacity = '0'), 160);
@@ -1495,6 +1535,7 @@ class Game implements Ctx {
     }
     s.on = true;
     s.obj.visible = true;
+    this.stu.dress(s.obj);
     s.obj.position.copy(start);
     s.obj.rotation.set(0, this.yaw, 0);
     s.vel.copy(dir).multiplyScalar(STAMP_SPEED);
@@ -1566,7 +1607,8 @@ class Game implements Ctx {
           }
         }
       }
-      s.obj.rotation.x += dt * 14;
+      if (this.mode === 'student') this.stu.orient(s.obj, s.vel);
+      else s.obj.rotation.x += dt * 14;
       if (p.y < 0.08 && s.life > 0) {
         s.life = 0;
         this.fx.decal(p.x, p.z);
@@ -1756,6 +1798,7 @@ class Game implements Ctx {
     $('areacard').classList.remove('on');
     const where = AREA_NAMES[areaOf(this.stage)];
     this.freezeT = 0;
+    if (this.mode === 'student') return this.stu.gameOver();
     this.overlay(`
       <div class="panel">
         <h1 style="color:#ff6b6b">야근 확정</h1>
@@ -1884,7 +1927,8 @@ class Game implements Ctx {
     const timeK = Math.max(0, Math.min(1, this.elapsed / 60 / (OFF_HOURS - START_CLOCK)));
     let target = timeK;
     const a = areaOf(this.stage);
-    if (this.phase !== 'title') {
+    if (this.mode === 'student' && this.phase !== 'title') target = this.stu.duskTarget(timeK);
+    else if (this.phase !== 'title') {
       if (a === 3) target = 1;
       else if (a === 2) target = Math.max(timeK, 0.6 + (this.boss && this.stage === 'field' ? 0.2 * this.boss.progress : this.stage === 'path2' ? 0 : 0.2));
       else if (a === 1) target = Math.max(timeK, 0.32);
@@ -1929,7 +1973,11 @@ class Game implements Ctx {
     this.updateJump(dt);
     this.eye.set(this.pos.x, EYE - 0.25 + this.jumpY, this.pos.z);
 
-    switch (this.stage) {
+    // 학생 모드는 구역 흐름이 따로 있다 (src/fps/student/mode.ts)
+    switch (this.mode === 'student' ? 'student' : this.stage) {
+      case 'student':
+        this.stu.step(dt);
+        break;
       case 'yard':
         if (this.queue.length > 0) {
           this.spawnT -= dt;
@@ -2078,17 +2126,19 @@ class Game implements Ctx {
     const left = Math.ceil(OFF_HOURS - clock);
     const places = PLACES;
     const clockLine = this.stage === 'done' && this.offShown ? `${clockText(clock)} · 퇴근 승인!` : `${clockText(clock)} · ${left > 0 ? `퇴근까지 ${left}분` : `초과근무 ${Math.max(1, Math.floor(clock - OFF_HOURS))}분`}`;
-    this.setText('clock', `${clockLine}<small>1인칭 시험판 · ${places[this.stage]}</small>`, true);
+    const student = this.mode === 'student' && this.phase !== 'title';
+    this.setText('clock', student ? this.stu.clockHtml(clock) : `${clockLine}<small>1인칭 시험판 · ${places[this.stage]}</small>`, true);
     const r = Math.min(1, this.hp / MAX_HP);
     this.setStyle('hpbar', 'width', `${(r * 100).toFixed(1)}%`);
     this.setStyle('hpbar', 'background', r > 0.5 ? '#5bd16b' : r > 0.25 ? '#f5c542' : '#e5484d');
     this.setStyle('spbar', 'width', `${Math.round(this.sp)}%`);
     const ready = this.sp >= SP_MAX;
-    this.setText('splabel', ready ? (TOUCH ? '전체 공지 발송 — 노란 버튼' : '전체 공지 발송 — Q') : '전체 공지 발송');
+    this.setText('splabel', student ? this.stu.spLabel(ready) : ready ? (TOUCH ? '전체 공지 발송 — 노란 버튼' : '전체 공지 발송 — Q') : '전체 공지 발송');
     this.setClass('sp', 'ready', ready);
     this.setClass('spBtn', 'ready', ready);
     let wave: string;
-    if (this.stage === 'yard') wave = `${this.wave + 1}차 민원 ${this.queue.length + this.minions()}건 남음 · 처리 ${this.processed}건`;
+    if (student) wave = this.stu.waveLine();
+    else if (this.stage === 'yard') wave = `${this.wave + 1}차 민원 ${this.queue.length + this.minions()}건 남음 · 처리 ${this.processed}건`;
     else if (this.stage === 'path') wave = `사회과학관 앞으로 이동하세요 · 처리 ${this.processed}건`;
     else if (this.stage === 'path2') wave = `대운동장으로 이동하세요 · 처리 ${this.processed}건`;
     else if (this.boss && !this.boss.dead && this.boss.targetable) wave = `${this.boss.bossName} 결재 받는 중 · 처리 ${this.processed}건`;
@@ -2100,7 +2150,7 @@ class Game implements Ctx {
     if (boss) {
       const pr = Math.round(boss.progress * 100);
       this.setStyle('bossbar', 'width', `${pr}%`);
-      this.setText('bossprog', `결재 진행 ${pr}%`);
+      this.setText('bossprog', `${student ? this.stu.barWord() : '결재 진행'} ${pr}%`);
     }
     this.setClass('bossbox', 'weak', !!boss && boss.open);
     if (this.bannerTimer > 0) {
@@ -2138,8 +2188,9 @@ class Game implements Ctx {
     // 길 안내
     const guide = this.phase === 'play' && (this.stage === 'path' || this.stage === 'path2');
     if (guide) {
-      const tx = this.stage === 'path' ? PLAZA_X + 3 : FC.x;
-      const tz = this.stage === 'path' ? 1 : FIELD_ENTER_Z + 2;
+      const sg = student ? this.stu.guide() : null;
+      const tx = sg ? sg.x : this.stage === 'path' ? PLAZA_X + 3 : FC.x;
+      const tz = sg ? sg.z : this.stage === 'path' ? 1 : FIELD_ENTER_Z + 2;
       const rel = wrap(Math.atan2(-(tx - this.pos.x), -(tz - this.pos.z)) - this.yaw);
       this.setStyle('guide', 'transform', `rotate(${(-rel).toFixed(2)}rad)`);
       this.setStyle('guide', 'opacity', '1');

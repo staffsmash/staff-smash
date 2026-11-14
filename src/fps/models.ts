@@ -73,6 +73,7 @@ export class Models {
   private docEdge = lam(0xf1ece0);
   private scholarMat = new THREE.MeshLambertMaterial({ map: docTex('장학 서류', '#b7791f') });
   private meetingMat = new THREE.MeshLambertMaterial({ map: docTex('회의 자료', '#6d28d9') });
+  private staffDocs = [this.scholarMat.map, this.meetingMat.map];
   private packetGeo = new THREE.BoxGeometry(0.42, 0.42, 0.42);
   private packetMat = new THREE.MeshBasicMaterial({ color: 0x5ee0ff });
   // 줍는 물건
@@ -176,6 +177,15 @@ export class Models {
     const m = new THREE.Mesh(this.docGeo, [e, e, e, e, f, f]);
     m.castShadow = true;
     return m;
+  }
+
+  /**
+   * 보스 서류 그림을 바꾼다. 학생 모드에는 교직원 모드 보스가 없으므로 같은 모양을
+   * 'scholar' = 반려 서류(박반려 처장), 'meeting' = 결재 서류(반사반사 부총장)로 쓴다. 비우면 원래대로.
+   */
+  setDocSkin(scholar?: THREE.Texture, meeting?: THREE.Texture): void {
+    this.scholarMat.map = scholar ?? this.staffDocs[0];
+    this.meetingMat.map = meeting ?? this.staffDocs[1];
   }
 
   /** 수강신청 서버 랙 (총장 2단계) */
