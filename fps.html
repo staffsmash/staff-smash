@@ -723,6 +723,259 @@
       .result .counts {
         font-size: 13px;
       }
+      /* 닉네임 기록판 (src/fps/board.ts): 결과 화면의 입력 칸과 기록판 창 */
+      .frec {
+        max-width: 470px;
+        margin: 10px auto 0;
+      }
+      .frec-row {
+        display: flex;
+        justify-content: center;
+        gap: 8px;
+      }
+      .frec input {
+        flex: 1 1 auto;
+        min-width: 0;
+        max-width: 240px;
+        box-sizing: border-box;
+        padding: 8px 10px;
+        border: 3px solid #f5c542;
+        border-radius: 6px;
+        background: #fff;
+        color: #111318;
+        font: 700 17px 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif;
+        text-align: center;
+        outline: none;
+        -webkit-user-select: text;
+        user-select: text;
+      }
+      .frec input:disabled {
+        opacity: 0.6;
+      }
+      .panel .frec button {
+        flex: none;
+        margin: 0;
+        padding: 8px 16px;
+      }
+      .panel .frec button:disabled {
+        opacity: 0.6;
+        cursor: default;
+      }
+      .panel .frec .frec-note {
+        margin: 4px 0 0;
+        font-size: 12px;
+        line-height: 1.4;
+        color: #f5c542;
+      }
+      .panel .frec .frec-msg {
+        margin: 2px 0 0;
+        min-height: 18px;
+        font-size: 13px;
+        line-height: 1.4;
+        color: #ff8a8a;
+      }
+      .panel .frec .frec-msg:empty {
+        min-height: 0;
+        margin: 0;
+      }
+      .panel .frec .frec-msg.ok {
+        color: #c9d3e6;
+      }
+      .panel .frec .frec-done {
+        display: inline-block;
+        margin: 0 6px 0 0;
+        font-size: 14px;
+        color: #7cfc9a;
+        vertical-align: middle;
+      }
+      .panel .frec .frec-done b {
+        color: #fff;
+      }
+      .panel .frec #frecView {
+        padding: 6px 14px;
+        font-size: 14px;
+        vertical-align: middle;
+      }
+      #fboard {
+        position: fixed;
+        inset: 0;
+        z-index: 8;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-sizing: border-box;
+        padding: calc(8px + env(safe-area-inset-top)) calc(8px + env(safe-area-inset-right)) calc(8px + env(safe-area-inset-bottom))
+          calc(8px + env(safe-area-inset-left));
+        background: rgba(11, 13, 18, 0.7);
+      }
+      #fboard .fb-box {
+        display: flex;
+        flex-direction: column;
+        width: min(100%, 700px);
+        max-height: 100%;
+        box-sizing: border-box;
+        padding: 12px 16px 14px;
+        border: 2px solid #e0bb62;
+        border-radius: 10px;
+        background: #1d2433;
+        text-align: center;
+      }
+      #fboard .fb-head {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      #fboard h2 {
+        margin: 0;
+        font-size: 22px;
+        white-space: nowrap;
+      }
+      #fboard button {
+        font: 700 14px 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif;
+        color: #fff;
+        cursor: pointer;
+      }
+      #fboard .fb-tabs {
+        display: inline-flex;
+        border: 2px solid #111318;
+        border-radius: 6px;
+        overflow: hidden;
+      }
+      #fboard .fb-tabs button {
+        padding: 6px 18px;
+        border: 0;
+        background: #33465e;
+        color: #dfe6f2;
+      }
+      #fboard .fb-tabs button + button {
+        border-left: 2px solid #111318;
+      }
+      #fboard .fb-tabs button.on {
+        background: #f5c542;
+        color: #111318;
+      }
+      #fboard .fb-x {
+        margin-left: auto;
+        width: 36px;
+        height: 36px;
+        border: 2px solid rgba(255, 255, 255, 0.4);
+        border-radius: 6px;
+        background: transparent;
+        font-size: 16px;
+      }
+      #fboard .fb-note {
+        margin: 8px 0 6px;
+        font-size: 13px;
+        color: #f5c542;
+      }
+      #fboard .fb-note .on {
+        color: #7cfc9a;
+      }
+      #fboard .fb-body {
+        flex: 1 1 auto;
+        min-height: 60px;
+        overflow-y: auto;
+        touch-action: pan-y;
+        -webkit-overflow-scrolling: touch;
+      }
+      #fboard table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 14px;
+      }
+      #fboard th {
+        position: sticky;
+        top: 0;
+        padding: 4px 6px;
+        background: #1d2433;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.3);
+        font-size: 12px;
+        color: #9fb0c8;
+        white-space: nowrap;
+      }
+      #fboard td {
+        padding: 3px 6px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        color: #dfe6f2;
+        white-space: nowrap;
+      }
+      #fboard td.r {
+        color: #9fb0c8;
+      }
+      #fboard td.n {
+        text-align: left;
+        font-weight: 700;
+        color: #fff;
+      }
+      #fboard td.res.ok {
+        color: #7cfc9a;
+        font-weight: 700;
+      }
+      #fboard tbody tr:nth-child(-n + 3) td.r {
+        color: #f5c542;
+        font-weight: 800;
+      }
+      #fboard tr.me td {
+        background: rgba(245, 197, 66, 0.28);
+        color: #ffe066;
+      }
+      #fboard .fb-empty {
+        margin: 24px 0;
+        font-size: 15px;
+        color: #dfe6f2;
+      }
+      #fboard .fb-close {
+        align-self: center;
+        margin-top: 10px;
+        padding: 9px 28px;
+        border: 2px solid #111318;
+        border-radius: 4px;
+        background: #4a5568;
+        font-size: 15px;
+      }
+      @media (max-height: 500px) {
+        .frec {
+          margin-top: 6px;
+        }
+        .frec input {
+          padding: 5px 8px;
+          font-size: 16px;
+        }
+        .panel .frec button {
+          padding: 6px 12px;
+          font-size: 14px;
+        }
+        .panel .frec .frec-note {
+          font-size: 11px;
+        }
+        #fboard .fb-box {
+          padding: 8px 12px 10px;
+        }
+        #fboard h2 {
+          font-size: 18px;
+        }
+        #fboard .fb-tabs button {
+          padding: 4px 14px;
+        }
+        #fboard .fb-x {
+          width: 32px;
+          height: 32px;
+        }
+        #fboard .fb-note {
+          margin: 4px 0;
+          font-size: 12px;
+        }
+        #fboard table {
+          font-size: 13px;
+        }
+        #fboard td {
+          padding: 2px 6px;
+        }
+        #fboard .fb-close {
+          margin-top: 6px;
+          padding: 6px 24px;
+        }
+      }
       #touch {
         display: none;
       }

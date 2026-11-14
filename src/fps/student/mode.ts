@@ -5,6 +5,7 @@ import { STUDENT_HEROES, studentHeroById, type StudentHeroDef } from '../../data
 import { gpa, gradeStage, type Grade } from '../../grade';
 import { lateMin, onTime, outcomeText } from '../../run';
 import type { Rect } from '../blocks';
+import { attachRecordForm } from '../board';
 import type { PersonBoss } from '../bosses';
 import type { Ctx, Enemy, HurtKind } from '../enemies';
 import type { FoodKind } from '../models';
@@ -1150,7 +1151,7 @@ export class StudentMode implements StuCtx {
     const bestTxt = rec.isNew
       ? `<span class="newbest">새 최고 기록!</span>${rec.prev ? ` 이전 GPA ${rec.prev.gpa.toFixed(2)} · ${timeText(rec.prev.time)}` : ''}`
       : `최고 기록 GPA ${rec.best.gpa.toFixed(2)} · ${timeText(rec.best.time)}`;
-    this.h.overlay(`
+    const o = this.h.overlay(`
       <div class="panel result stu">
         <h1><img class="emblem inline" src="hufs/emblem-mono.png" alt=""> 성 적 표</h1>
         <p class="who">3학년 ${esc(this.hero.name)} · 학생 모드 완료</p>
@@ -1169,6 +1170,8 @@ export class StudentMode implements StuCtx {
       </div>`);
     document.getElementById('againBtn')?.addEventListener('click', () => g.restart());
     document.getElementById('titleBtn')?.addEventListener('click', () => this.h.toTitle());
+    // 닉네임 기록판 (src/fps/board.ts)
+    attachRecordForm(o, { mode: 'fps-student', stage: this.recs.length, cleared: true, elapsed: g.elapsed, grades: grades.join(''), hero: this.hero.name, skill: this.spell.id, diff: g.runDiff });
   }
 
   /** 학사경고 (Game.gameOver가 부른다) */
@@ -1179,7 +1182,7 @@ export class StudentMode implements StuCtx {
     this.flow = 'result';
     const where = this.place();
     const acc = g.thrown ? Math.round((g.hits / g.thrown) * 100) : 0;
-    this.h.overlay(`
+    const o = this.h.overlay(`
       <div class="panel">
         <h1 style="color:#ff6b6b">학사경고</h1>
         <p>${where}에서 행정에 밀려 졸업 서류를 내지 못했습니다</p>
@@ -1191,5 +1194,7 @@ export class StudentMode implements StuCtx {
       </div>`);
     document.getElementById('againBtn')?.addEventListener('click', () => g.restart());
     document.getElementById('titleBtn')?.addEventListener('click', () => this.h.toTitle());
+    // 닉네임 기록판 (src/fps/board.ts)
+    attachRecordForm(o, { mode: 'fps-student', stage: this.recs.length, cleared: false, elapsed: g.elapsed, grades: this.recs.map((r) => r.grade).join(''), hero: this.hero.name, skill: this.spell.id, diff: g.runDiff });
   }
 }

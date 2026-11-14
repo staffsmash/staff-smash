@@ -53,8 +53,19 @@ export function compareRecords(a: RecordEntry, b: RecordEntry): number {
   return a.elapsed - b.elapsed;
 }
 
+/** 같은 판의 기록인지: 서버는 받은 시각을 ts로 따로 적으므로 ts가 아니라 기록 값으로 맞춘다 */
+function sameRun(a: RecordEntry, b: RecordEntry): boolean {
+  return (
+    a.nickname === b.nickname &&
+    a.stage === b.stage &&
+    a.cleared === b.cleared &&
+    a.clockMin === b.clockMin &&
+    Math.abs(a.elapsed - b.elapsed) < 0.5
+  );
+}
+
 export function isMine(e: RecordEntry): boolean {
-  return !!lastSubmitted && lastSubmitted.ts === e.ts && lastSubmitted.nickname === e.nickname;
+  return !!lastSubmitted && sameRun(lastSubmitted, e);
 }
 
 function loadLocal(): RecordEntry[] {
@@ -134,8 +145,9 @@ export async function fetchBoard(mode: GameMode): Promise<Board> {
       if (j.ok) {
         // 방금 남긴 기록이 아직 시트에 반영되지 않았으면 끼워 넣는다
         const entries = [...j.entries];
-        if (lastSubmitted && lastSubmitted.nickname && !entries.some((x) => x.ts === lastSubmitted?.ts)) {
-          entries.push(lastSubmitted);
+        const mine = lastSubmitted;
+        if (mine && mine.nickname && mine.mode === mode && !entries.some((x) => sameRun(x, mine))) {
+          entries.push(mine);
         }
         entries.sort(compareRecords);
         return { entries: entries.slice(0, 20), online: true, plays: j.plays, players: j.players };

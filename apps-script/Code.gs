@@ -2,12 +2,19 @@
  * Staff Smash: HUFS 기록판 서버 (Google Apps Script 웹앱)
  * - 게임 전용 계정(staffsmash0)의 Google 시트에 붙여서 배포한다. 설치 방법은 같은 폴더 README.md.
  * - doPost: 기록 1건 추가 (닉네임이 비면 익명 — 순위에는 안 나오고 플레이 수에만 잡힌다)
- * - doGet : ?mode=staff|student 상위 20개와 플레이 수
+ * - doGet : ?mode=staff|student|fps-staff|fps-student 상위 20개와 플레이 수. 응답의 mode는 실제로 쓴 모드다
+ *           (1인칭 게임은 이 값으로 새 서버인지 확인한다 — 옛 서버는 fps-* 를 'staff'로 돌려준다).
+ * - 모드: staff·student = 본편 2D(스테이지 0~3), fps-staff·fps-student = 1인칭 시험판(구역 0~4). 그 밖의 값은 'staff'.
+ * - 12번째 칸 diff(easy·normal·hard)는 1인칭 난이도다. 2D 기록은 비어 있다.
  * - 개인정보는 받지 않는다. 부적절한 닉네임·조작 기록은 시트에서 행을 지우면 된다.
  */
 
 const SHEET_NAME = 'records';
-const HEADERS = ['ts', 'mode', 'nickname', 'stage', 'cleared', 'clockMin', 'elapsed', 'grades', 'hero', 'skill', 'version'];
+const HEADERS = ['ts', 'mode', 'nickname', 'stage', 'cleared', 'clockMin', 'elapsed', 'grades', 'hero', 'skill', 'version', 'diff'];
+/** 모드별 마지막 스테이지(구역) 번호. 이 값까지 다 깨야 cleared */
+const MODE_MAX = { staff: 3, student: 3, 'fps-staff': 4, 'fps-student': 4 };
+/** 난이도 순위: 같은 단계면 어려운 난이도가 위 */
+const DIFF_RANK = { hard: 3, normal: 2, easy: 1 };
 const BAD = [
   '시발', '씨발', 'ㅅㅂ', 'ㅆㅂ', '병신', 'ㅂㅅ', '좆', '개새', '새끼', '지랄', '미친놈', '미친년',
   '꺼져', '닥쳐', '보지', '자지', '섹스', 'fuck', 'shit', 'bitch', 'sex',
@@ -16,9 +23,16 @@ const BAD = [
 function sheet_() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   let sh = ss.getSheetByName(SHEET_NAME);
-  if (!sh) {
-    sh = ss.insertSheet(SHEET_NAME);
+  if (!sh) sh = ss.insertSheet(SHEET_NAME);
+  if (sh.getLastRow() === 0) {
     sh.appendRow(HEADERS);
+    return sh;
+  }
+  // 열을 줄여 둔 시트라도 12번째 칸(L)을 쓸 수 있게
+  if (sh.getMaxColumns() < HEADERS.length) sh.insertColumnsAfter(sh.getMaxColumns(), HEADERS.length - sh.getMaxColumns());
+  if (sh.getRange(1, HEADERS.length).getValue() !== 'diff') {
+    // 예전 시트(11칸 머리글)에 diff 머리글(L1)을 붙인다
+    sh.getRange(1, HEADERS.length).setValue('diff');
   }
   return sh;
 }
@@ -33,6 +47,17 @@ function num_(v, min, max, fallback) {
   return Math.min(max, Math.max(min, n));
 }
 
+/** 모르는 모드는 예전처럼 'staff' */
+function mode_(raw) {
+  const m = String(raw || '');
+  return Object.prototype.hasOwnProperty.call(MODE_MAX, m) ? m : 'staff';
+}
+
+function diff_(raw) {
+  const d = String(raw || '');
+  return Object.prototype.hasOwnProperty.call(DIFF_RANK, d) ? d : '';
+}
+
 function nick_(raw) {
   const name = String(raw || '').trim().replace(/\s+/g, ' ');
   const len = Array.from(name).length;
@@ -45,20 +70,24 @@ function nick_(raw) {
 function doPost(e) {
   try {
     const d = JSON.parse(e.postData.contents);
-    const mode = d.mode === 'student' ? 'student' : 'staff';
-    const stage = Math.round(num_(d.stage, 0, 3, 0));
+    const mode = mode_(d.mode);
+    const max = MODE_MAX[mode];
+    const fps = max === 4;
+    const stage = Math.round(num_(d.stage, 0, max, 0));
     const row = [
       new Date(),
       mode,
       nick_(d.nickname),
       stage,
-      d.cleared === true && stage === 3,
+      d.cleared === true && stage === max,
       num_(d.clockMin, 900, 1440, 1440),
       num_(d.elapsed, 0, 7200, 7200),
-      String(d.grades || '').slice(0, 6),
+      // 학점 글자: 2D는 3스테이지(6글자), 1인칭은 4구역(최대 8글자, 여유 10)
+      String(d.grades || '').slice(0, fps ? 10 : 6),
       String(d.hero || '').slice(0, 20),
       String(d.skill || '').slice(0, 20),
       String(d.version || '').slice(0, 10),
+      diff_(d.diff),
     ];
     const lock = LockService.getScriptLock();
     lock.waitLock(5000);
@@ -74,7 +103,8 @@ function doPost(e) {
 }
 
 function doGet(e) {
-  const mode = e && e.parameter && e.parameter.mode === 'student' ? 'student' : 'staff';
+  const mode = mode_(e && e.parameter && e.parameter.mode);
+  const max = MODE_MAX[mode];
   const rows = sheet_().getDataRange().getValues().slice(1).filter((r) => r[1] === mode);
   const named = rows.filter((r) => r[2]);
   const entries = named.map((r) => ({
@@ -89,15 +119,21 @@ function doGet(e) {
     hero: String(r[8]),
     skill: String(r[9]),
     version: String(r[10]),
+    diff: diff_(r[11]),
   }));
+  // 순위: 도달 단계(다 깨면 맨 위) → 난이도(고급 > 중급 > 초보 > 없음) → 완료 시각 빠른 순 → 걸린 시간 짧은 순
+  // 2D 기록은 diff가 모두 비어 있어서 예전 순서와 같다.
   entries.sort((a, b) => {
-    const sa = a.cleared ? 4 : a.stage;
-    const sb = b.cleared ? 4 : b.stage;
+    const sa = a.cleared ? max + 1 : a.stage;
+    const sb = b.cleared ? max + 1 : b.stage;
     if (sa !== sb) return sb - sa;
+    const da = DIFF_RANK[a.diff] || 0;
+    const db = DIFF_RANK[b.diff] || 0;
+    if (da !== db) return db - da;
     if (a.clockMin !== b.clockMin) return a.clockMin - b.clockMin;
     return a.elapsed - b.elapsed;
   });
   const players = {};
   named.forEach((r) => (players[r[2]] = true));
-  return json_({ ok: true, entries: entries.slice(0, 20), plays: rows.length, players: Object.keys(players).length });
+  return json_({ ok: true, mode: mode, entries: entries.slice(0, 20), plays: rows.length, players: Object.keys(players).length });
 }
