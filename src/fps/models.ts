@@ -20,8 +20,9 @@ import {
 
 // 적·물건·도장의 블록 모형. 모양(geometry)과 재질은 종류마다 하나씩 만들어 함께 쓴다.
 
-/** 줍는 물건: 음식 셋 + 식권(체력 모두 회복) + 보조배터리(필살기 게이지 +50) */
-export type FoodKind = 'donkatsu' | 'gimbap' | 'americano' | 'ticket' | 'battery';
+/** 줍는 물건: 음식 셋 + 식권(체력 모두 회복) + 보조배터리(필살기 게이지 +50)
+ *  + 연차 쿠폰(학생: 공결 확인서 — 다음 한 번 막기) + 셔틀버스 시간표(10초 빨리 걷기) + 단톡방 공지 캡처(잡몹 2.5초 멈춤) */
+export type FoodKind = 'donkatsu' | 'gimbap' | 'americano' | 'ticket' | 'battery' | 'shield' | 'shuttle' | 'capture';
 
 export const FOOD_NAMES: Record<FoodKind, string> = {
   donkatsu: '학식 돈가스',
@@ -29,7 +30,129 @@ export const FOOD_NAMES: Record<FoodKind, string> = {
   americano: '아메리카노',
   ticket: '식권',
   battery: '보조배터리',
+  shield: '연차 쿠폰',
+  shuttle: '셔틀버스 시간표',
+  capture: '단톡방 공지 캡처',
 };
+
+/** 학생 모드에서 이름이 바뀌는 것 */
+export const STUDENT_FOOD_NAMES: Partial<Record<FoodKind, string>> = {
+  shield: '공결 확인서',
+};
+
+/** 모드에 맞는 물건 이름 */
+export function foodName(kind: FoodKind, student: boolean): string {
+  return (student && STUDENT_FOOD_NAMES[kind]) || FOOD_NAMES[kind];
+}
+
+/** 연차 쿠폰 앞뒤 그림 (민트색 쿠폰, 초록 꼬리표, 절취선) */
+function leaveCouponTex(): THREE.CanvasTexture {
+  return canvasTex(256, 148, (g) => {
+    g.fillStyle = '#d9f5e3';
+    g.fillRect(0, 0, 256, 148);
+    g.fillStyle = '#2f9e6a';
+    g.fillRect(200, 0, 56, 148);
+    g.strokeStyle = '#8fb9a2';
+    g.lineWidth = 4;
+    g.setLineDash([10, 8]);
+    g.beginPath();
+    g.moveTo(196, 8);
+    g.lineTo(196, 140);
+    g.stroke();
+    g.setLineDash([]);
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillStyle = '#1f7a55';
+    g.font = `bold 60px ${FONT}`;
+    g.fillText('연차', 98, 58);
+    g.font = `bold 34px ${FONT}`;
+    g.fillText('쿠폰 1일', 98, 112);
+    g.fillStyle = '#ffffff';
+    g.font = `bold 44px ${FONT}`;
+    g.fillText('1', 228, 76);
+  });
+}
+
+/** 공결 확인서 앞뒤 그림 (흰 서류, 남색 제목 띠, 글줄, 빨간 확인 도장) */
+function absenceOkTex(): THREE.CanvasTexture {
+  return canvasTex(176, 236, (g) => {
+    g.fillStyle = '#ffffff';
+    g.fillRect(0, 0, 176, 236);
+    g.fillStyle = '#1f3a6b';
+    g.fillRect(0, 0, 176, 52);
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillStyle = '#ffffff';
+    g.font = `bold 30px ${FONT}`;
+    g.fillText('공결 확인서', 88, 28);
+    g.fillStyle = '#9aa3ad';
+    for (let i = 0; i < 4; i++) g.fillRect(18, 74 + i * 26, i === 3 ? 80 : 140, 8);
+    g.strokeStyle = '#d0202f';
+    g.lineWidth = 6;
+    g.beginPath();
+    g.arc(128, 190, 28, 0, Math.PI * 2);
+    g.stroke();
+    g.fillStyle = '#d0202f';
+    g.font = `bold 24px ${FONT}`;
+    g.fillText('확인', 128, 191);
+  });
+}
+
+/** 셔틀버스 시간표 앞뒤 그림 (파란 머리 띠, 시간 칸) */
+function shuttleTex(): THREE.CanvasTexture {
+  return canvasTex(224, 176, (g) => {
+    g.fillStyle = '#ffffff';
+    g.fillRect(0, 0, 224, 176);
+    g.fillStyle = '#2f6fd1';
+    g.fillRect(0, 0, 224, 46);
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillStyle = '#ffffff';
+    g.font = `bold 28px ${FONT}`;
+    g.fillText('셔틀버스', 112, 25);
+    g.fillStyle = '#1d1d22';
+    g.font = `bold 24px ${FONT}`;
+    const times = ['16:55', '17:00', '17:05', '17:10', '17:15', '17:20'];
+    times.forEach((t, i) => g.fillText(t, 60 + (i % 2) * 104, 76 + Math.floor(i / 2) * 36));
+    g.fillStyle = '#d0202f';
+    g.fillRect(14, 62, 92, 4);
+  });
+}
+
+/** 단톡방 공지 캡처 화면 (노란 공지 띠, 말풍선, 네 귀퉁이 캡처 표시) */
+function captureTex(): THREE.CanvasTexture {
+  return canvasTex(128, 224, (g) => {
+    g.fillStyle = '#bcd7f0';
+    g.fillRect(0, 0, 128, 224);
+    g.fillStyle = '#f5c542';
+    g.fillRect(0, 10, 128, 44);
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillStyle = '#111318';
+    g.font = `bold 28px ${FONT}`;
+    g.fillText('공지', 64, 33);
+    g.fillStyle = '#ffffff';
+    g.fillRect(10, 76, 84, 30);
+    g.fillRect(10, 156, 70, 30);
+    g.fillStyle = '#fff3c4';
+    g.fillRect(40, 116, 78, 30);
+    g.strokeStyle = '#ffffff';
+    g.lineWidth = 6;
+    const corners: [number, number, number, number][] = [
+      [6, 64, 1, 1],
+      [122, 64, -1, 1],
+      [6, 216, 1, -1],
+      [122, 216, -1, -1],
+    ];
+    for (const [x, y, dx, dy] of corners) {
+      g.beginPath();
+      g.moveTo(x + dx * 18, y);
+      g.lineTo(x, y);
+      g.lineTo(x, y + dy * 18);
+      g.stroke();
+    }
+  });
+}
 
 /** 식권 앞뒤 그림 (크림색 종이, 빨간 띠, 절취선) */
 function mealTicketTex(): THREE.CanvasTexture {
@@ -247,21 +370,23 @@ export class Models {
     return sp;
   }
 
-  /** 바닥에 놓인 음식. 둥실 뜨는 부분(item)과 바닥 빛(glow)을 따로 준다 */
-  food(kind: FoodKind): { obj: THREE.Group; item: THREE.Group } {
-    let proto = this.foodProto.get(kind);
+  /** 바닥에 놓인 음식. 둥실 뜨는 부분(item)과 바닥 빛(glow)을 따로 준다. student: 학생 모드 모양 (공결 확인서) */
+  food(kind: FoodKind, student = false): { obj: THREE.Group; item: THREE.Group } {
+    const st = student && kind in STUDENT_FOOD_NAMES;
+    const key = st ? `${kind}:student` : kind;
+    let proto = this.foodProto.get(key);
     if (!proto) {
-      proto = this.buildFood(kind);
-      this.foodProto.set(kind, proto);
+      proto = this.buildFood(kind, st);
+      this.foodProto.set(key, proto);
     }
     // clone()은 모양과 재질을 그대로 함께 쓴다
     const obj = proto.clone();
     return { obj, item: obj.children[0] as THREE.Group };
   }
 
-  private foodProto = new Map<FoodKind, THREE.Group>();
+  private foodProto = new Map<string, THREE.Group>();
 
-  private buildFood(kind: FoodKind): THREE.Group {
+  private buildFood(kind: FoodKind, student: boolean): THREE.Group {
     const obj = new THREE.Group();
     const item = new THREE.Group();
     obj.add(item);
@@ -286,6 +411,36 @@ export class Models {
       const face = new THREE.MeshLambertMaterial({ map: mealTicketTex() });
       const edge = lam(0xefe4c4);
       add(item, new THREE.BoxGeometry(0.72, 0.42, 0.03), [edge, edge, edge, edge, face, face], 0, 0, 0);
+    } else if (kind === 'shield' && student) {
+      // 공결 확인서: 세워 든 서류 한 장 (앞뒤 같은 그림)
+      const face = new THREE.MeshLambertMaterial({ map: absenceOkTex() });
+      const edge = lam(0xeef0f3);
+      add(item, new THREE.BoxGeometry(0.44, 0.6, 0.03), [edge, edge, edge, edge, face, face], 0, 0, 0);
+    } else if (kind === 'shield') {
+      // 연차 쿠폰: 세워 든 민트색 쿠폰 한 장 (앞뒤 같은 그림)
+      const face = new THREE.MeshLambertMaterial({ map: leaveCouponTex() });
+      const edge = lam(0xc4e8d2);
+      add(item, new THREE.BoxGeometry(0.72, 0.42, 0.03), [edge, edge, edge, edge, face, face], 0, 0, 0);
+    } else if (kind === 'shuttle') {
+      // 셔틀버스 시간표: 시간표 판 + 위에 올라탄 노란 버스
+      const face = new THREE.MeshLambertMaterial({ map: shuttleTex() });
+      const edge = lam(0xdfe6f2);
+      add(item, new THREE.BoxGeometry(0.62, 0.48, 0.04), [edge, edge, edge, edge, face, face], 0, -0.06, 0);
+      add(item, new THREE.BoxGeometry(0.46, 0.2, 0.18), lam(0xf5c542), 0, 0.3, 0);
+      const win = lam(0x1d1d22);
+      const pane = new THREE.BoxGeometry(0.09, 0.07, 0.01);
+      for (const z of [0.092, -0.092]) for (let i = 0; i < 3; i++) add(item, pane, win, -0.13 + i * 0.13, 0.33, z);
+      const wheel = lam(0x2b2b2b);
+      for (const x of [-0.14, 0.14]) add(item, new THREE.BoxGeometry(0.08, 0.08, 0.2), wheel, x, 0.2, 0);
+    } else if (kind === 'capture') {
+      // 단톡방 공지 캡처: 짙은 휴대폰 (앞뒤 모두 캡처 화면)
+      const face = new THREE.MeshBasicMaterial({ map: captureTex() });
+      add(item, new THREE.BoxGeometry(0.34, 0.6, 0.05), lam(0x2b2f38), 0, 0, 0);
+      const screen = new THREE.PlaneGeometry(0.28, 0.49);
+      for (const z of [0.027, -0.027]) {
+        const m = add(item, screen, face, 0, 0.01, z);
+        if (z < 0) m.rotation.y = Math.PI;
+      }
     } else {
       // 보조배터리: 짙은 몸통 + 초록 충전 칸 넷(앞뒤) + 위쪽 단자와 흰 선
       add(item, new THREE.BoxGeometry(0.3, 0.48, 0.13), lam(0x2b2f38), 0, 0, 0);
@@ -299,7 +454,7 @@ export class Models {
     glow.rotation.x = -Math.PI / 2;
     glow.position.y = 0.03;
     obj.add(glow);
-    const label = this.label(FOOD_NAMES[kind], '#ffe066');
+    const label = this.label(foodName(kind, student), '#ffe066');
     label.position.y = 1.25;
     obj.add(label);
     return obj;

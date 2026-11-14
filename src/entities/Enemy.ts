@@ -50,6 +50,10 @@ export interface BossLike {
 
 const NON_HITTABLE = new Set(['down', 'getup', 'dying', 'hidden', 'vanish', 'away', 'bow', 'leaving', 'drop', 'sitin']);
 const NO_CLAMP = new Set(['enter', 'leaving', 'away']);
+/** 멈춰 있어도 그대로 진행하는 공통 상태 (맞고 밀리기·넘어지기·처리되기) */
+const REACTING = new Set(['hurt', 'stagger', 'down', 'getup', 'bow', 'leaving', 'dying']);
+/** 단톡방 공지 캡처로 멈춘 잡몹의 색 */
+const FROST = 0x9fd3ff;
 let nextUid = 1;
 
 export abstract class Enemy extends Fighter {
@@ -83,6 +87,9 @@ export abstract class Enemy extends Fighter {
   private label: Phaser.GameObjects.Text | null = null;
   private speech: Phaser.GameObjects.Text | null = null;
   private speechT = 0;
+  /** 단톡방 공지 캡처: 남은 멈춤 시간 (초)과 머리 위 "…" */
+  frozenT = 0;
+  private frostMark: Phaser.GameObjects.Text | null = null;
 
   constructor(scene: StageScene, x: number, y: number, rig: Rig, hp: number, shadowW: number, enterTargetX: number) {
     super(scene, x, y, rig, hp, shadowW);
@@ -106,13 +113,55 @@ export abstract class Enemy extends Fighter {
   /** 상태에 맞는 자세를 잡는다 */
   protected abstract pose(dt: number): void;
 
+  /** 단톡방 공지 캡처: sec초 동안 제자리에 멈춘다 (움직이지도 공격하지도 않는다. 맞으면 밀리기는 한다) */
+  freezeFor(sec: number): boolean {
+    if (this.dead || this.removed) return false;
+    this.frozenT = Math.max(this.frozenT, sec);
+    this.scene.releaseToken(this);
+    this.rig.setTint(FROST);
+    if (!this.frostMark) {
+      this.frostMark = this.scene.add
+        .text(this.x, this.y, '…', {
+          fontFamily: FONT,
+          fontSize: '18px',
+          fontStyle: 'bold',
+          color: '#9fd3ff',
+          stroke: '#111318',
+          strokeThickness: 4,
+        })
+        .setOrigin(0.5, 1);
+    }
+    return true;
+  }
+
+  /** 멈춤을 푼다 */
+  protected thaw(): void {
+    this.frozenT = 0;
+    this.rig.setTint(null);
+    this.frostMark?.destroy();
+    this.frostMark = null;
+  }
+
   update(dt: number, player: Player): void {
-    this.stateT += dt;
-    this.cooldown -= dt;
+    if (this.frozenT > 0) {
+      this.frozenT -= dt;
+      if (this.frozenT <= 0 || this.dead) this.thaw();
+    }
+    // 멈춘 동안은 상태 시간·공격 대기도 흐르지 않는다
+    const hold = this.frozenT > 0 && (this.state === 'enter' || !REACTING.has(this.state));
+    if (!hold) {
+      this.stateT += dt;
+      this.cooldown -= dt;
+    }
     if (this.invuln > 0) this.invuln -= dt;
     const camLeft = this.scene.cameras.main.scrollX;
 
-    switch (this.state) {
+    switch (hold ? 'held' : this.state) {
+      case 'held':
+        // 단톡방 공지 캡처: 제자리에 멈춘다 (생각·이동·공격 모두 쉰다)
+        this.vx = 0;
+        this.vy = 0;
+        break;
       case 'enter': {
         const dx = this.enterTargetX - this.x;
         this.facing = dx >= 0 ? 1 : -1;
@@ -169,10 +218,11 @@ export abstract class Enemy extends Fighter {
     }
     if (this.removed) return;
 
-    const landed = this.move(dt);
+    const landed = hold ? false : this.move(dt);
     if (landed && this.state === 'down') fx.dust(this.scene, this.x, this.y);
     if (!NO_CLAMP.has(this.state)) this.x = Phaser.Math.Clamp(this.x, camLeft + 20, camLeft + GAME_W - 20);
-    this.pose(dt);
+    if (hold) this.rig.hold(dt);
+    else this.pose(dt);
     this.sync();
     this.afterSync();
     this.syncTexts(dt);
@@ -353,12 +403,19 @@ export abstract class Enemy extends Fighter {
       this.speechT -= dt;
       this.speech.setPosition(this.x, top - (this.label ? 16 : 0)).setVisible(visible && this.speechT > 0);
     }
+    this.frostMark
+      ?.setPosition(this.x + 14, top + 4)
+      .setDepth(this.y + 0.6)
+      .setVisible(visible)
+      .setAlpha(0.6 + Math.sin(this.scene.time.now / 160) * 0.4);
   }
 
   destroy(): void {
     this.scene.releaseToken(this);
     this.label?.destroy();
     this.speech?.destroy();
+    this.frostMark?.destroy();
+    this.frostMark = null;
     super.destroy();
   }
 }

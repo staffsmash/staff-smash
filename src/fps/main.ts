@@ -37,6 +37,7 @@ import { buildWorld, type World } from './world';
 // 본편(2D)과 따로 도는 시험용 페이지다. 프레지던트 캉을 제외한 인물은 모두 가상이다.
 // 2026-11-14: 무기(arms.ts — 경비원·도서 무인 대출기에서 받는다), 부수는 상자·경비원·대출기(props.ts),
 // 조력자 이벤트(helpers.ts), 식권·보조배터리.
+// 연차 쿠폰(학생: 공결 확인서 — 다음 한 번 막기)·셔틀버스 시간표(10초 빨리 걷기)·단톡방 공지 캡처(잡몹 2.5초 멈춤).
 
 const params = new URLSearchParams(location.search);
 const DEBUG = params.has('debug');
@@ -54,6 +55,17 @@ const FIRE_CD = 0.28;
 const FIRE_CD_FAST = 0.14;
 const STAMP_SPEED = 24;
 const BUFF_T = 8;
+/** 연차 쿠폰(공결 확인서)이 기다려 주는 시간, 막은 뒤 잠깐 맞지 않는 시간 (초) */
+const SHIELD_T = 30;
+const SHIELD_GRACE = 0.6;
+/** 셔틀버스 시간표: 시간(초)과 이동 속도 배율 */
+const SHUTTLE_T = 10;
+const SHUTTLE_MUL = 1.3;
+/** 단톡방 공지 캡처: 잡몹이 멈추는 시간 (초) */
+const CAPTURE_T = 2.5;
+/** 민원이 떨어뜨리는 것 가운데 연차 쿠폰·셔틀버스 시간표·단톡방 공지 캡처가 나올 몫 (각각) */
+const PERK_SHARE = 0.12;
+const PERKS: FoodKind[] = ['shield', 'shuttle', 'capture'];
 const SP_MAX = 100;
 const JUMP_V = 5.4;
 const GRAVITY = 16;
@@ -160,6 +172,14 @@ const SHEET_R: Record<SheetKind, [number, number]> = {
   meeting: [0.85, 1.0],
   packet: [0.6, 0.75],
 };
+
+/** 단톡방 공지 캡처로 멈춘 잡몹: 남은 시간, 몸 원점에서 맞는 점까지, 푸른 껍질과 "…" */
+interface Frost {
+  t: number;
+  off: THREE.Vector3;
+  shell: THREE.Mesh;
+  mark: THREE.Sprite;
+}
 
 interface Pickup {
   kind: FoodKind;
@@ -299,6 +319,14 @@ class Game implements Ctx {
   areaStats: AreaStat[] = [];
   sp = 0;
   buffT = 0;
+  /** 연차 쿠폰(학생: 공결 확인서): 남은 시간. 그동안 다음 한 번 맞는 것을 막는다 */
+  shieldT = 0;
+  /** 셔틀버스 시간표: 남은 시간. 그동안 30% 빨리 걷는다 */
+  shuttleT = 0;
+  /** 단톡방 공지 캡처로 멈춘 잡몹 */
+  frozen = new Map<Enemy, Frost>();
+  private frostGeo = new THREE.IcosahedronGeometry(1, 1);
+  private frostMat = new THREE.MeshBasicMaterial({ color: 0x9fd3ff, transparent: true, opacity: 0.3, depthWrite: false });
   dropCd = 4;
   /** 발이 땅에서 뜬 높이와 위아래 속도 */
   jumpY = 0;
@@ -435,6 +463,10 @@ class Game implements Ctx {
       m.food('americano').obj,
       m.food('ticket').obj,
       m.food('battery').obj,
+      m.food('shield').obj,
+      m.food('shield', true).obj,
+      m.food('shuttle').obj,
+      m.food('capture').obj,
       ...this.arms.warmItems(),
       m.sheet('paper'),
       m.sheet('rental'),
@@ -987,6 +1019,8 @@ class Game implements Ctx {
     this.areaStart = { time: 0, damage: 0, processed: 0 };
     this.sp = 0;
     this.buffT = 0;
+    this.shieldT = 0;
+    this.shuttleT = 0;
     this.dropCd = 4;
     this.slow = 0;
     this.invuln = 0;
@@ -1423,19 +1457,23 @@ class Game implements Ctx {
     if (Math.random() > chance * 0.5) return;
     this.dropCd = 7;
     const r = Math.random();
-    // 가끔 보조배터리 (필살기 게이지가 다 찼으면 음식)
+    const perk = Math.random();
+    // 가끔 보조배터리 (필살기 게이지가 다 찼으면 음식).
+    // 체력이 넉넉하면 가끔 연차 쿠폰(공결 확인서)·셔틀버스 시간표·단톡방 공지 캡처 (위급할 때는 음식)
     const food: FoodKind =
       this.sp < SP_MAX - 10 && Math.random() < 0.2
         ? 'battery'
-        : this.hp <= 4
-          ? r < 0.5
-            ? 'donkatsu'
-            : 'gimbap'
-          : r < 0.45
-            ? 'gimbap'
-            : r < 0.75
-              ? 'americano'
-              : 'donkatsu';
+        : this.hp > 4 && perk < PERK_SHARE * PERKS.length
+          ? PERKS[Math.floor(perk / PERK_SHARE)]
+          : this.hp <= 4
+            ? r < 0.5
+              ? 'donkatsu'
+              : 'gimbap'
+            : r < 0.45
+              ? 'gimbap'
+              : r < 0.75
+                ? 'americano'
+                : 'donkatsu';
     const spot = this.freeSpot(at.x, at.z);
     this.spawnPickup(food, spot.x, spot.z);
   }
@@ -1466,7 +1504,7 @@ class Game implements Ctx {
   }
 
   spawnPickup(kind: FoodKind, x: number, z: number): void {
-    const { obj, item } = this.models.food(kind);
+    const { obj, item } = this.models.food(kind, this.mode === 'student');
     obj.position.set(x, 0.05, z);
     this.scene.add(obj);
     this.pickups.push({ kind, obj, item, ttl: kind === 'americano' || this.stage === 'yard' || this.stage === 'path' ? 15 : 40, t: Math.random() * 6 });
@@ -1504,12 +1542,82 @@ class Game implements Ctx {
     } else if (p.kind === 'battery') {
       this.addSp(SP_MAX * 0.5);
       this.note('보조배터리! 필살기 게이지 +50');
+    } else if (p.kind === 'shield') {
+      this.shieldT = SHIELD_T;
+      this.note(this.mode === 'student' ? '공결 확인서! 다음 한 번은 안 맞아요' : '연차 쿠폰! 다음 한 번은 안 맞아요', 2);
+    } else if (p.kind === 'shuttle') {
+      this.shuttleT = SHUTTLE_T;
+      this.note('셔틀버스 시간표! 10초 동안 빨라져요', 2);
+    } else if (p.kind === 'capture') {
+      this.freezeMobs(CAPTURE_T);
+      this.note('단톡방 공지 캡처! 잡몹이 잠깐 멈춰요', 2);
     } else {
       this.buffT = BUFF_T;
       this.note(this.mode === 'student' ? '아메리카노! 공격 속도 UP' : '아메리카노! 8초 동안 도장을 빨리 던집니다');
     }
     this.sound('pickup');
     this.fx.confetti(_v.set(p.obj.position.x, 0.8, p.obj.position.z), 12, 3, 0xf5c542, 2, 0.7);
+  }
+
+  // ---------- 단톡방 공지 캡처: 잡몹 멈춤 ----------
+
+  /** 살아 있는 잡몹을 모두 sec초 멈춘다 (사람 보스·창구 직원·박반려 처장의 서류 탑은 그대로). 멈춘 수 */
+  freezeMobs(sec: number): number {
+    let n = 0;
+    for (const e of this.enemies) {
+      if (!e.targetable || isBoss(e) || e instanceof DocTower) continue;
+      const had = this.frozen.get(e);
+      if (had) {
+        had.t = Math.max(had.t, sec);
+        n++;
+        continue;
+      }
+      const shell = new THREE.Mesh(this.frostGeo, this.frostMat);
+      shell.scale.setScalar(e.radius * 1.15);
+      const mark = this.models.label('…', '#9fd3ff');
+      mark.scale.multiplyScalar(1.4);
+      this.scene.add(shell, mark);
+      this.frozen.set(e, { t: sec, off: e.center.clone().sub(e.obj.position), shell, mark });
+      n++;
+    }
+    if (n > 0) {
+      this.sound('tick', undefined, 0.8);
+      this.fx.ring(this.pos.x, 0.08, this.pos.z, 1, 28, 0.6, 0x9fd3ff);
+    }
+    return n;
+  }
+
+  /** 멈춘 잡몹이면 이번 단계는 움직이지 않는다 (맞아서 밀린 자리만 따라간다). 풀린 것은 치운다 */
+  private holdFrozen(e: Enemy): boolean {
+    const f = this.frozen.get(e);
+    if (!f) return false;
+    // 처리됐거나, 옆 폭발이 옮겨붙은 서류 뭉치는 바로 풀린다
+    if (f.t <= 0 || e.dead || e.gone || (e instanceof Bomb && e.chainT >= 0)) {
+      this.thaw(e, f);
+      return false;
+    }
+    e.center.copy(e.obj.position).add(f.off);
+    return true;
+  }
+
+  private thaw(e: Enemy, f: Frost): void {
+    this.scene.remove(f.shell, f.mark);
+    this.frozen.delete(e);
+  }
+
+  /** 멈춤 시간을 줄이고 표시를 옮긴다 (판을 치워 장면에서 빠진 적도 여기서 정리된다) */
+  private updateFrost(dt: number): void {
+    for (const [e, f] of this.frozen) {
+      f.t -= dt;
+      if (f.t <= 0 || e.dead || e.gone || !e.obj.parent) {
+        this.thaw(e, f);
+        continue;
+      }
+      f.shell.position.copy(e.center);
+      f.shell.rotation.y += dt * 0.6;
+      f.mark.position.set(e.center.x, e.center.y + e.radius + 0.45, e.center.z);
+      f.mark.material.opacity = 0.6 + Math.sin(f.t * 8) * 0.4;
+    }
   }
 
   // ---------- 필살기: 전체 공지 발송 ----------
@@ -1569,6 +1677,16 @@ class Game implements Ctx {
 
   hurt(dmg: number, from: THREE.Vector3, kind: HurtKind = 'mail'): void {
     if (this.invuln > 0 || this.phase !== 'play' || this.stage === 'done') return;
+    // 연차 쿠폰(공결 확인서): 다음 한 번은 통째로 막는다 (피해·느려짐·흔들림 없음)
+    if (this.shieldT > 0) {
+      this.shieldT = 0;
+      this.invuln = SHIELD_GRACE;
+      this.note(this.mode === 'student' ? '공결 확인서로 막음!' : '연차 쿠폰으로 막음!');
+      this.sound('pop');
+      this.fx.ring(this.pos.x, 0.1, this.pos.z, 0.5, 2.6, 0.4, 0x9fd3ff);
+      this.buzz(20);
+      return;
+    }
     dmg *= this.diff.damage;
     this.hp = Math.max(0, this.hp - dmg);
     this.damageTaken += dmg;
@@ -1946,7 +2064,7 @@ class Game implements Ctx {
     const running = k.has('ShiftLeft') || k.has('ShiftRight') || this.stick.length() > 0.95;
     // 적이 없는 길에서는 조금 빨리 걷는다
     const onPath = this.stage === 'path' || this.stage === 'path2';
-    const speed = (running ? RUN : WALK) * (this.slow > 0 ? 0.55 : 1) * (onPath ? 1.35 : 1);
+    const speed = (running ? RUN : WALK) * (this.slow > 0 ? 0.55 : 1) * (onPath ? 1.35 : 1) * (this.shuttleT > 0 ? SHUTTLE_MUL : 1);
     const sin = Math.sin(this.yaw);
     const cos = Math.cos(this.yaw);
     // 앞 = (-sin, -cos), 오른쪽 = (cos, -sin)
@@ -2205,6 +2323,8 @@ class Game implements Ctx {
     if (this.slow > 0) this.slow -= dt;
     if (this.cooldown > 0) this.cooldown -= dt;
     if (this.buffT > 0) this.buffT -= dt;
+    if (this.shieldT > 0) this.shieldT -= dt;
+    if (this.shuttleT > 0) this.shuttleT -= dt;
     if (this.dropCd > 0) this.dropCd -= dt;
     if (this.freezeT > 0) this.freezeT -= dt;
     if (this.cardT > 0) {
@@ -2308,7 +2428,8 @@ class Game implements Ctx {
         e.noticeT -= dt;
         if (e.noticeT < 0) this.noticeHit(e);
       }
-      if (!e.gone) e.update(edt, this);
+      // 단톡방 공지 캡처로 멈춘 잡몹은 움직이지도 공격하지도 않는다
+      if (!e.gone && !this.holdFrozen(e)) e.update(edt, this);
     }
     // 끝난 적은 치운다 (자리 당겨 쓰기)
     let n = 0;
@@ -2324,6 +2445,7 @@ class Game implements Ctx {
     this.updateStamps(dt);
     this.updateSheets(edt);
     this.updatePickups(dt);
+    this.updateFrost(dt);
     this.props.update(dt);
     this.rescue.update(dt);
     this.fx.update(dt);
@@ -2390,6 +2512,11 @@ class Game implements Ctx {
     else wave = `${places[this.stage]} · 처리 ${this.processed}건`;
     this.setText('wave', wave);
     this.setText('buff', this.buffT > 0 ? `아메리카노 ${Math.ceil(this.buffT)}초 · 빨리 던지기` : '');
+    // 연차 쿠폰(공결 확인서)·셔틀버스 시간표
+    const perks: string[] = [];
+    if (this.shieldT > 0) perks.push(`${this.mode === 'student' ? '공결 확인서' : '연차 쿠폰'} · 한 번 막음 ${Math.ceil(this.shieldT)}초`);
+    if (this.shuttleT > 0) perks.push(`셔틀버스 시간표 · 빨라짐 ${Math.ceil(this.shuttleT)}초`);
+    this.setText('perks', perks.join('  ·  '));
     this.setText('weapon', this.arms.hud());
     if (this.props) this.props.syncUi(this.phase === 'play');
     // 보스 막대 = 결재 진행 (0% → 100%)

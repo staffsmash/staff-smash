@@ -171,13 +171,68 @@ export function createWeaponIcon(scene: Phaser.Scene, id: WeaponId): Phaser.Game
   return c;
 }
 
-/** 밟으면 바로 먹는(쓰는) 물건: 음식, 일거리, 식권(체력 모두 회복), 보조배터리(필살기 게이지 +50) */
-export type FoodKind = 'donkatsu' | 'gimbap' | 'americano' | 'work' | 'mealticket' | 'battery';
+/** 밟으면 바로 먹는(쓰는) 물건: 음식, 일거리, 식권(체력 모두 회복), 보조배터리(필살기 게이지 +50),
+ *  연차 쿠폰(학생: 공결 확인서 — 다음 한 번 막기), 셔틀버스 시간표(10초 빨리 걷기), 단톡방 공지 캡처(잡몹 2.5초 멈춤) */
+export type FoodKind =
+  | 'donkatsu'
+  | 'gimbap'
+  | 'americano'
+  | 'work'
+  | 'mealticket'
+  | 'battery'
+  | 'shield'
+  | 'shuttle'
+  | 'capture';
 
-/** 회복 아이템. 'work'(일거리)는 김밥처럼 생겼지만 서류 귀퉁이가 삐져나와 있다. */
-export function createFoodIcon(scene: Phaser.Scene, kind: FoodKind): Phaser.GameObjects.Container {
+/** 작은 글씨 (아이콘 안) */
+function iconText(scene: Phaser.Scene, x: number, y: number, text: string, color: string, size = 11): Phaser.GameObjects.Text {
+  return new Phaser.GameObjects.Text(scene, x, y, text, {
+    fontFamily: FONT,
+    fontSize: `${size}px`,
+    fontStyle: 'bold',
+    color,
+  }).setOrigin(0.5);
+}
+
+/** 회복 아이템. 'work'(일거리)는 김밥처럼 생겼지만 서류 귀퉁이가 삐져나와 있다. student: 학생 모드 모양 (공결 확인서) */
+export function createFoodIcon(scene: Phaser.Scene, kind: FoodKind, student = false): Phaser.GameObjects.Container {
   const c = scene.add.container(0, 0);
-  if (kind === 'mealticket') {
+  if (kind === 'shield' && student) {
+    // 공결 확인서: 흰 서류 한 장, 위쪽 남색 제목 띠, 글줄, 빨간 확인 도장
+    c.add(box(scene, 0, 0, 32, 40, 0xffffff));
+    c.add(box(scene, 0, -13, 32, 10, 0x1f3a6b, 0.5, 0.5, false));
+    c.add(iconText(scene, 0, -13, '공결', '#ffffff', 9));
+    for (let i = 0; i < 3; i++) c.add(box(scene, -4, -1 + i * 6, 18, 2, 0x9aa3ad, 0.5, 0.5, false));
+    const seal = new Phaser.GameObjects.Arc(scene, 8, 11, 6, 0, 360, false);
+    seal.isFilled = false;
+    seal.setStrokeStyle(2, 0xd0202f);
+    c.add(seal);
+  } else if (kind === 'shield') {
+    // 연차 쿠폰: 민트색 쿠폰, 점선 절취선, 오른쪽 초록 꼬리표
+    c.add(box(scene, 0, 0, 46, 24, 0xd9f5e3));
+    c.add(box(scene, 17, 0, 10, 22, 0x2f9e6a, 0.5, 0.5, false));
+    for (let i = 0; i < 4; i++) c.add(box(scene, 9, -8 + i * 5.5, 2, 3, 0x9aa3ad, 0.5, 0.5, false));
+    c.add(iconText(scene, -6, 0, '연차', '#1f7a55'));
+  } else if (kind === 'shuttle') {
+    // 셔틀버스 시간표: 흰 표지판, 위쪽 파란 띠에 노란 버스, 아래 시간 칸
+    c.add(box(scene, 0, 0, 46, 34, 0xffffff));
+    c.add(box(scene, 0, -10, 46, 14, 0x2f6fd1, 0.5, 0.5, false));
+    c.add(box(scene, -11, -10, 18, 9, 0xf5c542, 0.5, 0.5, false));
+    c.add(box(scene, -14, -11, 4, 3, INK, 0.5, 0.5, false));
+    c.add(box(scene, -8, -11, 4, 3, INK, 0.5, 0.5, false));
+    c.add(iconText(scene, 11, -10, '셔틀', '#ffffff', 9));
+    for (let i = 0; i < 2; i++) {
+      for (let j = 0; j < 3; j++) c.add(box(scene, -14 + j * 14, 4 + i * 7, 10, 3, 0x9aa3ad, 0.5, 0.5, false));
+    }
+  } else if (kind === 'capture') {
+    // 단톡방 공지 캡처: 짙은 휴대폰, 하늘색 화면, 위쪽 노란 "공지" 띠, 말풍선 둘
+    c.add(box(scene, 0, 0, 26, 42, 0x2b2f38));
+    c.add(box(scene, 0, 1, 20, 32, 0xbcd7f0, 0.5, 0.5, false));
+    c.add(box(scene, 0, -10, 20, 9, 0xf5c542, 0.5, 0.5, false));
+    c.add(iconText(scene, 0, -10, '공지', '#111318', 8));
+    c.add(box(scene, -3, 2, 12, 5, 0xffffff, 0.5, 0.5, false));
+    c.add(box(scene, 3, 10, 12, 5, 0xfff3c4, 0.5, 0.5, false));
+  } else if (kind === 'mealticket') {
     // 식권: 절취선이 있는 노란 종이표 + 파란 꼬리표
     c.add(box(scene, 0, 0, 46, 24, 0xfff3c4));
     c.add(box(scene, -18, 0, 8, 22, 0x2f6fd1, 0.5, 0.5, false));

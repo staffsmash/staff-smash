@@ -89,6 +89,12 @@ const HELPER_FLOOR = 0.05;
 /** 잡몹을 처리했을 때 떨어뜨릴 확률: 보조배터리, 먹을 것 (상자가 주된 공급원이다) */
 const DROP_BATTERY = 0.035;
 const DROP_FOOD = 0.04;
+/** 잡몹이 가끔 떨어뜨리는 것 (각각): 연차 쿠폰(학생: 공결 확인서), 셔틀버스 시간표, 단톡방 공지 캡처 */
+const DROP_PERK = 0.025;
+/** 연차 쿠폰(공결 확인서)이 기다려 주는 시간, 셔틀버스 시간표가 빠르게 해 주는 시간, 단톡방 공지 캡처로 잡몹이 멈추는 시간 (초) */
+const SHIELD_SEC = 30;
+const SHUTTLE_SEC = 10;
+const CAPTURE_SEC = 2.5;
 
 export interface StageData {
   run?: RunState;
@@ -1014,7 +1020,8 @@ export class StageScene extends Phaser.Scene {
           if (p.takeHit({ dmg: pr.dmg, dir, kb, knockdown: pr.knockdown })) {
             fx.hitSpark(this, p.x, p.y - p.z - 60);
             pr.destroy();
-          } else if (guarding) {
+          } else if (guarding || p.shieldPopT > 0) {
+            // 결재판으로 막았거나 연차 쿠폰(공결 확인서)에 막혔다
             pr.destroy();
           }
         }
@@ -1153,6 +1160,25 @@ export class StageScene extends Phaser.Scene {
         case 'battery':
           p.sp = Math.min(100, p.sp + 50);
           fx.floatText(this, p.x, p.y - 128, '보조배터리! 필살기 게이지 +50', '#f5c542', 18);
+          break;
+        case 'shield':
+          p.shieldT = SHIELD_SEC;
+          fx.floatText(
+            this,
+            p.x,
+            p.y - 128,
+            this.studentMode ? '공결 확인서! 다음 한 번은 안 맞아요' : '연차 쿠폰! 다음 한 번은 안 맞아요',
+            '#9fd3ff',
+            18,
+          );
+          break;
+        case 'shuttle':
+          p.shuttleT = SHUTTLE_SEC;
+          fx.floatText(this, p.x, p.y - 128, '셔틀버스 시간표! 10초 동안 빨라져요', '#ffd27f', 18);
+          break;
+        case 'capture':
+          this.freezeMobs(CAPTURE_SEC);
+          fx.floatText(this, p.x, p.y - 128, '단톡방 공지 캡처! 잡몹이 잠깐 멈춰요', '#9fd3ff', 18);
           break;
         case 'work':
           if (!p.startReport(1.6, '일거리였다… 검토 중')) continue;
@@ -1427,17 +1453,27 @@ export class StageScene extends Phaser.Scene {
     this.cameras.main.flash(120, 255, 255, 255);
   }
 
-  /** 잡몹을 처리하면 가끔 보조배터리나 먹을 것을 떨어뜨린다 */
+  /** 잡몹을 처리하면 가끔 보조배터리·먹을 것·연차 쿠폰(공결 확인서)·셔틀버스 시간표·단톡방 공지 캡처를 떨어뜨린다 */
   private randomDrop(e: Enemy): void {
-    const r = Math.random();
+    let r = Math.random();
     let kind: PickupKind | null = null;
     if (r < DROP_BATTERY) kind = 'battery';
-    else if (r < DROP_BATTERY + DROP_FOOD) kind = Math.random() < 0.6 ? 'gimbap' : 'americano';
+    else if ((r -= DROP_BATTERY) < DROP_FOOD) kind = Math.random() < 0.6 ? 'gimbap' : 'americano';
+    else if ((r -= DROP_FOOD) < DROP_PERK * 3) kind = r < DROP_PERK ? 'shield' : r < DROP_PERK * 2 ? 'shuttle' : 'capture';
     if (!kind) return;
     const left = this.cameras.main.scrollX;
     const x = Phaser.Math.Clamp(e.x, left + 40, left + GAME_W - 40);
     const y = Phaser.Math.Clamp(e.y, FLOOR_TOP + 6, FLOOR_BOTTOM - 6);
-    this.pickups.push(new Pickup(this, kind, x, y, 10).tossFrom(e.x, e.y, 30, 0.4, 50));
+    this.pickups.push(new Pickup(this, kind, x, y, 10, this.studentMode).tossFrom(e.x, e.y, 30, 0.4, 50));
+  }
+
+  /** 단톡방 공지 캡처: 살아 있는 잡몹을 모두 sec초 멈춘다 (중간보스·보스·사람은 그대로). 멈춘 수 */
+  freezeMobs(sec: number): number {
+    let n = 0;
+    for (const e of this.enemies) {
+      if (ORDINARY.has(e.kind) && e.freezeFor(sec)) n++;
+    }
+    return n;
   }
 
   throwWeapon(p: Player): void {

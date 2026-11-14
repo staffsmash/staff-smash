@@ -44,6 +44,12 @@ function shade(c: number, f: number): number {
   return (r << 16) | (g << 8) | b;
 }
 
+/** 두 색을 k만큼 섞는다 (0 = a, 1 = b) */
+function mix(a: number, b: number, k: number): number {
+  const ch = (s: number) => Math.round(((a >> s) & 255) * (1 - k) + ((b >> s) & 255) * k);
+  return (ch(16) << 16) | (ch(8) << 8) | ch(0);
+}
+
 export class Rig {
   readonly root: Container;
   readonly body: Container;
@@ -61,6 +67,7 @@ export class Rig {
   private shapes: { s: Phaser.GameObjects.Shape; color: number }[] = [];
   private cur: Pose = neutralPose();
   private flashT = 0;
+  private tint: number | null = null;
 
   constructor(scene: Phaser.Scene, spec: RigSpec) {
     this.scene = scene;
@@ -138,6 +145,29 @@ export class Rig {
     for (const { s } of this.shapes) s.setFillStyle(0xffffff);
   }
 
+  /** 색을 반쯤 섞는다 (단톡방 공지 캡처로 멈춘 잡몹: 푸르스름하게). null이면 원래 색 */
+  setTint(color: number | null): void {
+    this.tint = color;
+    if (this.flashT <= 0) this.paint();
+  }
+
+  /** 자세는 그대로 두고 피격 깜빡임만 처리한다 (멈춘 잡몹) */
+  hold(dt: number): void {
+    this.tickFlash(dt);
+  }
+
+  private paint(): void {
+    const t = this.tint;
+    for (const { s, color } of this.shapes) s.setFillStyle(t === null ? color : mix(color, t, 0.55));
+  }
+
+  private tickFlash(dt: number): void {
+    if (this.flashT > 0) {
+      this.flashT -= dt;
+      if (this.flashT <= 0) this.paint();
+    }
+  }
+
   /** 목표 자세로 부드럽게 옮긴다. sharp가 클수록 빠르게 따라간다. */
   update(dt: number, target: Pose, sharp = 16): void {
     const k = 1 - Math.exp(-sharp * dt);
@@ -155,11 +185,7 @@ export class Rig {
     this.armB.rotation = c.armB;
     this.body.rotation = c.body;
     this.body.y = c.bob;
-
-    if (this.flashT > 0) {
-      this.flashT -= dt;
-      if (this.flashT <= 0) for (const { s, color } of this.shapes) s.setFillStyle(color);
-    }
+    this.tickFlash(dt);
   }
 
   destroy(): void {
