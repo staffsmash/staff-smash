@@ -48,13 +48,29 @@ export interface ZoneDef {
   approval?: boolean;
 }
 
+/** 무기를 건네주는 자리: 교직원 모드는 경비원(인사하면 준다), 학생 모드는 도서 무인 대출기(대여하면 나온다).
+ *  items: 건네줄 무기 id 목록. 한 번에 하나를 무작위로 고르므로 같은 id를 여러 번 쓰면 더 자주 나온다. */
+export interface GiverDef {
+  x: number;
+  y: number;
+  items: string[];
+}
+
+/** 부수면 먹을 것이 나오는 상자 (교직원: 조기출근 박스, 학생: 수강편람). 적이 아니어서 구역 정리와 상관없다 */
+export interface BoxDef {
+  x: number;
+  y: number;
+}
+
 export interface StageDef {
   id: string;
   title: string;
   background: BackgroundDef;
   zones: ZoneDef[];
-  weapons: { id: string; x: number; y: number }[];
-  foods: { id: string; x: number; y: number }[];
+  /** 바닥에 미리 깔린 무기는 없다. 무기는 경비원·대출기에서 받는다 */
+  givers: GiverDef[];
+  /** 먹을 것은 상자를 부숴서 얻는다 */
+  boxes: BoxDef[];
 }
 
 /** 교직원 모드: 본관 → 사회과학관, 교수학습개발원 → 인문과학관, 국제학사 → 운동장 */

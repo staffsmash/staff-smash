@@ -37,9 +37,12 @@
       "supervisors": []
     }
   ],
-  "weapons": [
-    { "id": "stapler", "x": 660, "y": 470 },
-    { "id": "notice", "x": 1560, "y": 400 }
+  "givers": [
+    { "x": 700, "y": 334, "items": ["clipboard", "clipboard", "clipboard", "clipboard", "stapler", "notice", "idcard"] },
+    { "x": 2300, "y": 334, "items": ["clipboard", "clipboard", "clipboard", "clipboard", "stapler", "notice", "idcard"] }
   ],
-  "foods": [{ "id": "gimbap", "x": 2500, "y": 450 }]
+  "boxes": [
+    { "x": 1560, "y": 470 },
+    { "x": 2560, "y": 450 }
+  ]
 }

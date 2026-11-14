@@ -99,8 +99,17 @@ export function dust(scene: Phaser.Scene, x: number, y: number): void {
   }
 }
 
+/** 장면마다 마지막 안내 띠가 사라지는 시각 (scene.time.now 기준) */
+const bannerEnds = new WeakMap<Phaser.Scene, number>();
+
+/** 지금 안내 띠가 떠 있지 않은지 (덜 급한 안내를 겹치지 않게 띄울 때 쓴다) */
+export function bannerFree(scene: Phaser.Scene): boolean {
+  return scene.time.now >= (bannerEnds.get(scene) ?? 0);
+}
+
 /** 화면 위쪽 안내 띠 */
 export function banner(scene: Phaser.Scene, title: string, sub?: string, hold = 1600): void {
+  bannerEnds.set(scene, Math.max(bannerEnds.get(scene) ?? 0, scene.time.now + hold + 300));
   const c = scene.add.container(GAME_W / 2 + 40, 150).setDepth(1800);
   const bg = scene.add.rectangle(0, 0, 540, sub ? 88 : 60, 0x111827, 0.85).setStrokeStyle(2, 0xf5c542);
   const t = scene.add

@@ -374,6 +374,54 @@ export function addWindowProp(rig: Rig, prop: WindowProp): void {
   }
 }
 
+// ---------- 도서 무인 대출기·수강편람 (학생 모드: 무기·먹을 것을 얻는 곳) ----------
+
+/** "도서 무인 대출기": 남색 기계, 위쪽 화면, 카드 리더, 책이 나오는 구멍, 유리창 안의 책등 (원점 = 바닥 가운데).
+ *  화면은 getByName('screen')으로 찾아 대여할 때 깜빡인다. */
+export function createKiosk(scene: Phaser.Scene): Phaser.GameObjects.Container {
+  const c = scene.add.container(0, 0);
+  c.add(box(scene, 0, -42, 66, 84, HUFS_NAVY));
+  // 유리창 안의 책등
+  c.add(box(scene, 0, -24, 50, 26, 0xcfe3f2));
+  const spines = [0x7a1f2b, 0x13707a, GOLD, 0x1f3a6b, RED, 0x2f6b5a];
+  spines.forEach((col, i) => c.add(box(scene, -20 + i * 8, -22, 6, 20, col, 0.5, 0.5, false)));
+  // 책이 나오는 구멍, 카드 리더
+  c.add(box(scene, -6, -54, 40, 8, 0x111827));
+  c.add(box(scene, 24, -70, 10, 8, 0x374151));
+  c.add(box(scene, 24, -70, 6, 2, 0x5bd16b, 0.5, 0.5, false));
+  // 위쪽 화면 몸체와 화면 (책 그림)
+  c.add(box(scene, 0, -104, 72, 46, 0xe5e7eb));
+  const screen = box(scene, 0, -106, 54, 32, 0x9fd3ff).setName('screen');
+  c.add(screen);
+  c.add(box(scene, -7, -106, 12, 16, 0xffffff, 0.5, 0.5, false));
+  c.add(box(scene, 7, -106, 12, 16, 0xffffff, 0.5, 0.5, false));
+  c.add(box(scene, 0, -106, 2, 16, 0x1f3a6b, 0.5, 0.5, false));
+  return c;
+}
+
+/** 학생 모드 상자 "수강편람": 두꺼운 책자 세 권을 쌓은 더미 (원점 = 바닥 가운데) */
+export function createCatalogStack(scene: Phaser.Scene): Phaser.GameObjects.Container {
+  const c = scene.add.container(0, 0);
+  const books: [number, number, number, number][] = [
+    [0, -9, 64, 0x13707a],
+    [-3, -27, 60, 0x1f3a6b],
+    [2, -45, 62, 0x7a1f2b],
+  ];
+  for (const [x, y, w, col] of books) {
+    c.add(box(scene, x, y, w, 18, col));
+    c.add(box(scene, x + w / 2 - 5, y, 6, 12, 0xf4f0e0, 0.5, 0.5, false));
+  }
+  c.add(
+    new Phaser.GameObjects.Text(scene, -2, -45, '수강편람', {
+      fontFamily: FONT,
+      fontSize: '12px',
+      fontStyle: 'bold',
+      color: '#ffffff',
+    }).setOrigin(0.5),
+  );
+  return c;
+}
+
 // ---------- 투사체·낙하물 ----------
 
 /** 박반려·프레지던트 캉이 내리찍는 거대 도장 (Hazard 낙하물) */

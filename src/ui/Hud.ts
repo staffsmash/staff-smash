@@ -123,7 +123,7 @@ export class Hud {
     }
     const lines = [
       '이동  방향키·WASD      대시  같은 방향 두 번',
-      `${this.student ? '공격' : '처리'}  J      점프  K      줍기·던지기  L`,
+      `${this.student ? '공격' : '처리'}  J      점프  K      줍기·던지기·${this.student ? '대여' : '인사'}  L`,
       '필살기  I      일시정지  Esc      숨기기  H',
     ];
     const w = 292;

@@ -113,7 +113,8 @@ export class TouchPad {
     this.c.setTouchMove(qx, qy, run);
   }
 
-  draw(spReady: boolean, holding: boolean): void {
+  /** pickLabel: 줍기 버튼에 따로 쓸 이름 (경비원 앞 "인사", 대출기 앞 "대여") */
+  draw(spReady: boolean, holding: boolean, pickLabel: string | null = null): void {
     const g = this.g;
     g.clear();
     g.lineStyle(3, 0xffffff, 0.35);
@@ -128,8 +129,9 @@ export class TouchPad {
         alpha = spReady ? 0.7 : 0.18;
       }
       if (b.action === 'pickup') {
-        b.text.setText(holding ? '던지기' : '줍기');
-        if (holding) color = 0x9fd3ff;
+        b.text.setText(pickLabel ?? (holding ? '던지기' : '줍기'));
+        if (pickLabel) color = 0x7cfc9a;
+        else if (holding) color = 0x9fd3ff;
       }
       g.fillStyle(color, alpha);
       g.fillCircle(b.x, b.y, b.r);

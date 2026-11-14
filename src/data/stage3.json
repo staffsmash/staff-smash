@@ -38,11 +38,13 @@
       "supervisors": ["meeting", "hoho"]
     }
   ],
-  "weapons": [
-    { "id": "stapler", "x": 600, "y": 470 },
-    { "id": "notice", "x": 1400, "y": 400 },
-    { "id": "clipboard", "x": 2200, "y": 460 },
-    { "id": "idcard", "x": 3100, "y": 420 }
+  "givers": [
+    { "x": 1380, "y": 336, "items": ["notice", "clipboard", "stapler", "stapler"] },
+    { "x": 3420, "y": 336, "items": ["idcard", "clipboard", "notice", "stapler"] }
   ],
-  "foods": [{ "id": "donkatsu", "x": 2700, "y": 440 }]
+  "boxes": [
+    { "x": 620, "y": 470 },
+    { "x": 2240, "y": 450 },
+    { "x": 2700, "y": 430 }
+  ]
 }
