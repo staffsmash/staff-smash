@@ -33,6 +33,9 @@ import { Coin, Darkness, PenLine, Puddle } from '../entities/FloorGimmicks';
 import { Projectile } from '../entities/Projectile';
 import { Hazard } from '../entities/Hazard';
 import { Pickup, type PickupKind } from '../entities/Pickup';
+import { GIFT_COOLDOWN, GIVER_TEXT, Giver } from '../entities/Giver';
+import { Crate } from '../entities/Crate';
+import { Helper, type HelperLook } from '../entities/Helper';
 import { ReportTrap } from '../entities/ReportTrap';
 import { Supervisor, type SupervisorKind } from '../entities/Supervisor';
 import { WEAPONS, isWeaponId, weaponName, type WeaponId } from '../entities/weapons';
@@ -53,8 +56,9 @@ import {
 } from '../entities/studentRigs';
 import { TYPE_LABEL } from '../data/names';
 import { stagesFor, type StageDef, type ZoneDef } from '../data/stages';
-import { heroById } from '../data/heroes';
-import { studentHeroById } from '../data/students';
+import { HEROES, heroById } from '../data/heroes';
+import { STUDENT_HEROES, studentHeroById } from '../data/students';
+import { helperBanner, helperLines } from '../data/helpers';
 import { skillById } from '../data/skills';
 import { spellById, spellLabel } from '../data/spells';
 import { gradeStage, type StageStats } from '../grade';
@@ -70,6 +74,21 @@ const TRIGGER_X = 330;
 const STUDENT_KINDS: StudentKind[] = ['wrongNumber', 'lateDoc', 'tantrum', 'graduation', 'presidentMail'];
 /** 학생 모드 보스 (처리되면 남은 잡몹이 함께 물러난다) */
 const STUDENT_BOSSES = ['banryeoBoss', 'bansaBoss', 'presidentBoss'];
+/** 잡몹 (조력자가 한꺼번에 처리해 주고, 처리하면 가끔 무언가를 떨어뜨린다). 나머지는 중간보스·보스다 */
+const ORDINARY = new Set(['mail', 'phone', 'bubble', 'docbomb', 'queue']);
+/** 조력자 이벤트: 맞고 남은 체력이 이 비율 이하로 떨어지면 HELPER_CHANCE 확률로 온다 (스테이지마다 한 번) */
+const HELPER_HP = 0.25;
+const HELPER_CHANCE = 0.6;
+/** 조력자가 도착해 효과가 나는 시각(초), 회복량(최대 체력 비율), 무적 시간(초) */
+const HELPER_ARRIVE = 0.9;
+const HELPER_HEAL = 0.35;
+const HELPER_INVULN = 2;
+/** 조력자가 중간보스·보스에게 깎는 체력(최대 체력 비율)과 그 아래로는 깎지 않는 바닥 */
+const HELPER_CHIP = 0.1;
+const HELPER_FLOOR = 0.05;
+/** 잡몹을 처리했을 때 떨어뜨릴 확률: 보조배터리, 먹을 것 (상자가 주된 공급원이다) */
+const DROP_BATTERY = 0.035;
+const DROP_FOOD = 0.04;
 
 export interface StageData {
   run?: RunState;
@@ -115,6 +134,20 @@ export class StageScene extends Phaser.Scene {
   private projectiles: Projectile[] = [];
   private hazards: Hazard[] = [];
   private pickups: Pickup[] = [];
+  private givers: Giver[] = [];
+  private crates: Crate[] = [];
+  private helpers: Helper[] = [];
+  /** 조력자 이벤트: 이번 스테이지에 이미 왔는지, 온 뒤 지난 시간(-1 = 진행 중 아님) */
+  private helperUsed = false;
+  private helperT = -1;
+  /** 경비원(대출기) 사용법 안내를 이번 스테이지에 보여 줬는지 */
+  private giverHinted = false;
+  /** 경비원이 기믹 무기를 던져 주러 오는 중 */
+  private supplyPending = false;
+  /** 던진 무기마다 이미 맞힌 상자·경비원 (던진 무기의 hitSet이 열쇠다) */
+  private touched = new WeakMap<object, Set<object>>();
+  /** 상자·경비원이 마지막으로 맞은 휘두르기 번호 (Player.swing) */
+  private swingHits = new Map<object, number>();
   private traps: ReportTrap[] = [];
   private sups: Supervisor[] = [];
   private meetings: MeetingCircle[] = [];
@@ -174,6 +207,15 @@ export class StageScene extends Phaser.Scene {
     this.projectiles = [];
     this.hazards = [];
     this.pickups = [];
+    this.givers = [];
+    this.crates = [];
+    this.helpers = [];
+    this.helperUsed = false;
+    this.helperT = -1;
+    this.giverHinted = false;
+    this.supplyPending = false;
+    this.touched = new WeakMap();
+    this.swingHits = new Map();
     this.traps = [];
     this.sups = [];
     this.meetings = [];
@@ -239,10 +281,9 @@ export class StageScene extends Phaser.Scene {
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.controls.destroy());
     if (FORCE_TOUCH || this.sys.game.device.input.touch) this.pad = new TouchPad(this, this.controls);
 
-    for (const w of this.stage.weapons) {
-      if (isWeaponId(w.id)) this.pickups.push(new Pickup(this, w.id, w.x, w.y, 0, st));
-    }
-    for (const f of this.stage.foods) this.pickups.push(new Pickup(this, f.id as PickupKind, f.x, f.y));
+    // 바닥에 미리 깔린 무기·음식은 없다: 무기는 경비원(대출기)에게서, 먹을 것은 상자를 부숴서 얻는다
+    for (const g of this.stage.givers) this.givers.push(new Giver(this, st ? 'kiosk' : 'guard', g.x, g.y, g.items));
+    for (const b of this.stage.boxes) this.crates.push(new Crate(this, b.x, b.y, st));
 
     const hero = st ? studentHeroById(this.run.hero) : heroById(this.run.hero);
     this.player = new Player(
@@ -340,7 +381,8 @@ export class StageScene extends Phaser.Scene {
       const hw = this.player.weapon;
       // 사원증을 든 채 다른 물건 위에 서 있으면 버튼은 "줍기"(바꿔 들기)
       const holding = hw !== null && !hw.inFlight && !(hw.def.boomerang && this.pickableAt(this.player));
-      this.pad.draw(this.player.sp >= 100, holding);
+      const greet = this.greetTarget(this.player) ? (this.studentMode ? '대여' : '인사') : null;
+      this.pad.draw(this.player.sp >= 100, holding, greet);
     }
     this.drawDebug(dt);
   }
@@ -377,6 +419,8 @@ export class StageScene extends Phaser.Scene {
     this.updateProjectiles(dt);
     this.updateHazards(dt);
     this.updatePickups(dt);
+    this.updateProps(dt);
+    this.updateHelpers(dt);
     for (const t of this.traps) t.update(dt, this.player);
     this.traps = this.traps.filter((t) => !t.removed);
     for (const s of this.sups) s.update(dt, this.player);
@@ -468,6 +512,7 @@ export class StageScene extends Phaser.Scene {
     if (!need) return;
     const anyThrowable = need === 'stapler';
     const exists =
+      this.supplyPending ||
       this.pickups.some((p) => (anyThrowable ? p.isWeapon : p.kind === need) && p.x >= z.left && !p.removed) ||
       (anyThrowable ? this.player.weapon !== null : this.player.weapon?.id === need) ||
       this.projectiles.some((p) => p.owner === 'player' && !p.removed);
@@ -480,11 +525,59 @@ export class StageScene extends Phaser.Scene {
       this.supplyT = 3;
       const x = z.left + Phaser.Math.Between(180, 780);
       const y = Phaser.Math.Between(FLOOR_TOP + 20, FLOOR_BOTTOM - 20);
-      this.pickups.push(new Pickup(this, need, x, y, 0, this.studentMode));
-      const text =
-        need === 'notice' ? '안내문 도착!' : need === 'rulebook' ? '규정집 도착! 던져 보세요' : '텀블러 도착! 던져 보세요';
-      fx.floatText(this, x, y - 60, text, '#9fd3ff', 18);
+      this.deliverSupply(need, x, y);
     }
+  }
+
+  /** 기믹 무기 공급. 교직원 모드: 구역의 경비원이 (x, y)로 던져 준다 (없으면 화면 끝에서 들어와서).
+   *  학생 모드: 구역의 도서 무인 대출기 앞으로 튀어나온다 (대출기가 없으면 (x, y)에 놓인다). */
+  private deliverSupply(need: WeaponId, x: number, y: number): void {
+    const giver = this.givers.find((g) => !g.courier && g.inView());
+    if (this.studentMode) {
+      const text = need === 'notice' ? '안내문 도착!' : need === 'rulebook' ? '규정집 도착! 던져 보세요' : '텀블러 도착! 던져 보세요';
+      if (giver) {
+        const left = this.cameras.main.scrollX;
+        const side = this.player.x >= giver.x ? 1 : -1;
+        const tx = Phaser.Math.Clamp(giver.x + side * Phaser.Math.Between(60, 120), left + 50, left + GAME_W - 50);
+        const ty = Phaser.Math.Clamp(giver.y + Phaser.Math.Between(40, 90), FLOOR_TOP + 10, FLOOR_BOTTOM - 10);
+        giver.blink();
+        this.tossItem(need, giver, tx, ty, 0);
+        fx.floatText(this, tx, ty - 60, text, '#9fd3ff', 18);
+      } else {
+        this.pickups.push(new Pickup(this, need, x, y, 0, true));
+        fx.floatText(this, x, y - 60, text, '#9fd3ff', 18);
+      }
+      return;
+    }
+    const toss = (g: Giver) => {
+      g.tossPose(x);
+      this.tossItem(need, g, x, y, 0);
+      fx.floatText(this, g.x, g.y - g.height - 34, GIVER_TEXT.guardToss, '#9fd3ff', 18);
+    };
+    if (giver) {
+      toss(giver);
+      return;
+    }
+    // 이 구역에 경비원이 없으면 가까운 화면 끝에서 들어와 던져 주고 나간다
+    const left = this.cameras.main.scrollX;
+    const fromRight = x - left > GAME_W / 2;
+    const fromX = fromRight ? left + GAME_W + 50 : left - 50;
+    const stopX = fromRight ? left + GAME_W - 110 : left + 110;
+    this.supplyPending = true;
+    const courier: Giver = Giver.courierIn(this, fromX, FLOOR_TOP + 12, stopX, () => {
+      this.supplyPending = false;
+      toss(courier);
+    });
+    this.givers.push(courier);
+  }
+
+  /** 경비원(대출기)이 물건을 (tx, ty)로 던져 준다 */
+  private tossItem(kind: PickupKind, g: Giver, tx: number, ty: number, ttl: number): Pickup {
+    const h = g.handPos;
+    const d = Math.hypot(tx - h.x, (ty - h.y) * 2);
+    const it = new Pickup(this, kind, tx, ty, ttl, this.studentMode).tossFrom(h.x, h.y, h.z, 0.35 + d / 1100, 40 + d * 0.12);
+    this.pickups.push(it);
+    return it;
   }
 
   private startFight(): void {
@@ -795,9 +888,84 @@ export class StageScene extends Phaser.Scene {
         if (this.studentMode && e.persuadable && Math.random() < 0.3) this.persuadeText(e);
       }
     }
+    this.meleeProps(p, def);
     if (this.debug) this.debugBoxes.push({ x: p.x, y: p.y, facing: p.facing, reach: def.reach, ttl: 0.12 });
     if (hits > 0) this.addCombo(hits, def.knockdown);
     return hits;
+  }
+
+  /** 던질 때 같은 상자·경비원은 한 번만 맞는다. key = 그 던진 무기의 hitSet */
+  private touchOnce(key: object, target: object): boolean {
+    let set = this.touched.get(key);
+    if (!set) {
+      set = new Set();
+      this.touched.set(key, set);
+    }
+    if (set.has(target)) return false;
+    set.add(target);
+    return true;
+  }
+
+  /** 플레이어의 공격이 상자(부서진다)나 경비원(인사부터 하라며 무기를 안 준다)에 닿았는지. 한 번 휘두르기에 한 번만 */
+  private meleeProps(p: Player, def: AttackDef): void {
+    if (p.z > def.zReach) return;
+    const inReach = (x: number, y: number, halfW: number) => {
+      const dx = (x - p.x) * p.facing;
+      return Math.abs(y - p.y) <= DEPTH_RANGE && dx >= -8 && dx <= def.reach + halfW * 0.5;
+    };
+    const fresh = (target: object) => {
+      if (this.swingHits.get(target) === p.swing) return false;
+      this.swingHits.set(target, p.swing);
+      return true;
+    };
+    for (const c of this.crates) {
+      if (!c.removed && inReach(c.x, c.y, c.halfW) && fresh(c)) this.hitCrate(c, def.dmg, p.facing);
+    }
+    for (const g of this.givers) {
+      if (g.kind === 'guard' && !g.removed && inReach(g.x, g.y, g.halfW) && fresh(g)) g.rudeHit();
+    }
+  }
+
+  /** 던진 무기가 상자·경비원에 닿았는지. 부딪힌 무기는 떨어진다 (사원증은 꿰뚫고, 서류 뭉치는 터진다) */
+  private projectileProps(pr: Projectile): void {
+    const dir = Math.sign(pr.vx) || 1;
+    const hits = (x: number, y: number, halfW: number, height: number) =>
+      Math.abs(pr.y - y) <= DEPTH_RANGE && Math.abs(pr.x - x) <= pr.halfW + halfW && pr.z <= height + 10;
+    const stop = (): boolean => {
+      if (pr.explodes) {
+        this.explode(pr.x, pr.y, 90, { player: 0, enemies: 3 }, this.studentMode ? '따르릉!' : '펑!');
+        pr.destroy();
+        return true;
+      }
+      if (!pr.returnTo) {
+        pr.destroy();
+        return true;
+      }
+      return false;
+    };
+    for (const c of this.crates) {
+      if (c.removed || !hits(c.x, c.y, c.halfW, c.height) || !this.touchOnce(pr.hitSet, c)) continue;
+      this.hitCrate(c, pr.dmg, dir);
+      if (stop()) return;
+    }
+    for (const g of this.givers) {
+      if (g.kind !== 'guard' || g.removed || !hits(g.x, g.y, g.halfW, g.height) || !this.touchOnce(pr.hitSet, g)) continue;
+      g.rudeHit();
+      if (stop()) return;
+    }
+  }
+
+  /** 상자를 친다. 부서지면 식권(25%)이나 먹을 것이 튀어나온다 */
+  private hitCrate(c: Crate, dmg: number, dir: number): void {
+    if (!c.hit(dmg, dir)) return;
+    const st = this.studentMode;
+    fx.floatText(this, c.x, c.y - 84, st ? '수강편람 사이에서 뭔가 떨어졌다!' : '조기출근 박스 개봉!', '#ffe066', 18);
+    const r = Math.random();
+    const kind: PickupKind = r < 0.25 ? 'mealticket' : r < 0.5 ? 'donkatsu' : r < 0.8 ? 'gimbap' : 'americano';
+    const left = this.cameras.main.scrollX;
+    const tx = Phaser.Math.Clamp(c.x + dir * 36, left + 40, left + GAME_W - 40);
+    const ty = Phaser.Math.Clamp(c.y + 8, FLOOR_TOP + 6, FLOOR_BOTTOM - 6);
+    this.pickups.push(new Pickup(this, kind, tx, ty).tossFrom(c.x, c.y, 34, 0.45, 60));
   }
 
   /** 학생 모드: 사람을 맞히면 가끔 "설득" 말이 떠오른다 */
@@ -886,6 +1054,7 @@ export class StageScene extends Phaser.Scene {
           break;
         }
       }
+      if (!pr.removed) this.projectileProps(pr);
     }
     this.projectiles = this.projectiles.filter((x) => !x.removed);
   }
@@ -961,7 +1130,7 @@ export class StageScene extends Phaser.Scene {
     const p = this.player;
     for (const it of this.pickups) {
       it.update(dt);
-      if (it.removed || it.isWeapon) continue;
+      if (it.removed || it.isWeapon || !it.landed) continue;
       const touching = Math.abs(it.x - p.x) < 34 && Math.abs(it.y - p.y) < 18 && p.z < 20 && p.targetable;
       if (!touching) continue;
       switch (it.kind) {
@@ -976,6 +1145,14 @@ export class StageScene extends Phaser.Scene {
         case 'americano':
           p.coffeeT = 10;
           fx.floatText(this, p.x, p.y - 128, this.studentMode ? '아메리카노! 공격 속도 UP' : '아메리카노! 처리 속도 UP', '#ffd27f', 18);
+          break;
+        case 'mealticket':
+          p.hp = p.maxHp;
+          fx.floatText(this, p.x, p.y - 128, '식권! 체력 모두 회복', '#7CFC9A', 18);
+          break;
+        case 'battery':
+          p.sp = Math.min(100, p.sp + 50);
+          fx.floatText(this, p.x, p.y - 128, '보조배터리! 필살기 게이지 +50', '#f5c542', 18);
           break;
         case 'work':
           if (!p.startReport(1.6, '일거리였다… 검토 중')) continue;
@@ -1020,7 +1197,7 @@ export class StageScene extends Phaser.Scene {
       fx.floatText(this, p.x, p.y - 124, text, '#ffe066', 16);
       return true;
     }
-    const it = this.pickups.find((i) => i.isWeapon && Math.abs(i.x - p.x) < 44 && Math.abs(i.y - p.y) < 24);
+    const it = this.pickups.find((i) => i.isWeapon && i.landed && Math.abs(i.x - p.x) < 44 && Math.abs(i.y - p.y) < 24);
     if (!it || !isWeaponId(it.kind)) return false;
     p.equip(it.kind);
     it.destroy();
@@ -1032,7 +1209,7 @@ export class StageScene extends Phaser.Scene {
   pickableAt(p: Player): boolean {
     return (
       this.enemies.some((e) => e instanceof DocBomb && e.pickable && Math.abs(e.x - p.x) < 54 && Math.abs(e.y - p.y) < 26) ||
-      this.pickups.some((i) => i.isWeapon && !i.removed && Math.abs(i.x - p.x) < 44 && Math.abs(i.y - p.y) < 24)
+      this.pickups.some((i) => i.isWeapon && i.landed && !i.removed && Math.abs(i.x - p.x) < 44 && Math.abs(i.y - p.y) < 24)
     );
   }
 
@@ -1055,6 +1232,212 @@ export class StageScene extends Phaser.Scene {
     const cx = Phaser.Math.Clamp(x, left + 40, left + GAME_W - 40);
     const cy = Phaser.Math.Clamp(y, FLOOR_TOP + 6, FLOOR_BOTTOM - 6);
     this.pickups.push(new Pickup(this, 'idcard', cx, cy, 0, this.studentMode));
+  }
+
+  // ---------- 경비원 · 도서 무인 대출기 · 상자 ----------
+
+  /** 인사(대여)할 경비원·대출기: 가깝고, 발밑에 주울 것이 없고, 무기를 들었으면 그쪽을 보고 있을 때 */
+  private greetTarget(p: Player): Giver | null {
+    if (p.state !== 'idle' && p.state !== 'walk') return null;
+    if (this.pickableAt(p)) return null;
+    let best: Giver | null = null;
+    for (const g of this.givers) {
+      if (!g.near(p)) continue;
+      const facingIt = Math.abs(g.x - p.x) < 16 || Math.sign(g.x - p.x) === p.facing;
+      if (p.weapon && !p.weapon.inFlight && !facingIt) continue;
+      if (!best || Math.abs(g.x - p.x) < Math.abs(best.x - p.x)) best = g;
+    }
+    return best;
+  }
+
+  /** L(줍기 버튼): 경비원에게 인사하면 무기를 준다 / 대출기에서 대여하면 무기가 나온다 */
+  tryGreet(p: Player): boolean {
+    const g = this.greetTarget(p);
+    if (!g) return false;
+    const st = this.studentMode;
+    p.startGreet(g.x >= p.x ? 1 : -1, st ? null : GIVER_TEXT.hello);
+    g.face(p.x);
+    if (st) {
+      if (g.cooldown > 0) {
+        g.later(0.2, () => g.say(GIVER_TEXT.kioskCooldown, 1.3));
+        return true;
+      }
+      g.cooldown = GIFT_COOLDOWN;
+      g.later(0.3, () => {
+        g.blink();
+        g.say(GIVER_TEXT.kioskGive, 1.6);
+        this.giveWeapon(g);
+      });
+      return true;
+    }
+    if (g.refuseT > 0) {
+      g.later(0.5, () => g.say(GIVER_TEXT.guardRefuse, 1.6));
+      return true;
+    }
+    if (g.cooldown > 0) {
+      g.later(0.5, () => g.say(GIVER_TEXT.guardCooldown, 1.4));
+      return true;
+    }
+    g.cooldown = GIFT_COOLDOWN;
+    g.later(0.45, () => {
+      if (g.refuseT > 0) {
+        // 인사하고 나서 바로 건드렸다
+        g.cooldown = 0;
+        return;
+      }
+      g.bow();
+      g.say(GIVER_TEXT.guardGive, 2.0);
+      this.giveWeapon(g);
+    });
+    return true;
+  }
+
+  /** 무기를 건넨다: 손이 비어 있으면 바로 들려 주고, 아니면 발밑에 떨어뜨린다 */
+  private giveWeapon(g: Giver): void {
+    const p = this.player;
+    const st = this.studentMode;
+    const id = g.pickItem();
+    if (!p.weapon && p.state !== 'ko') {
+      const h = g.handPos;
+      const icon = weaponIcon(this, id, st).setPosition(h.x, h.y - h.z).setDepth(1500);
+      this.tweens.add({ targets: icon, x: p.x, y: p.y - 60, scale: 0.7, duration: 220, ease: 'Sine.Out', onComplete: () => icon.destroy() });
+      p.equip(id);
+      fx.floatText(this, p.x, p.y - 124, `${weaponName(WEAPONS[id], st)} 장착!`, '#9fd3ff', 18);
+      return;
+    }
+    const left = this.cameras.main.scrollX;
+    const dir = g.x >= p.x ? 1 : -1;
+    const tx = Phaser.Math.Clamp(p.x + dir * 34, left + 40, left + GAME_W - 40);
+    const ty = Phaser.Math.Clamp(p.y + 6, FLOOR_TOP + 6, FLOOR_BOTTOM - 6);
+    this.tossItem(id, g, tx, ty, 0);
+  }
+
+  private updateProps(dt: number): void {
+    const p = this.player;
+    for (const g of this.givers) g.update(dt, p);
+    this.givers = this.givers.filter((g) => !g.removed);
+    if (this.supplyPending && !this.givers.some((g) => g.courier)) this.supplyPending = false;
+    for (const c of this.crates) c.update(dt);
+    this.crates = this.crates.filter((c) => !c.removed);
+    // 처음 경비원(대출기)이 보이면 쓰는 법을 알려 준다 (다른 안내 띠와 겹치지 않게)
+    if (!this.giverHinted && this.elapsed > 2.8 && fx.bannerFree(this)) {
+      const g = this.givers.find((x) => !x.courier && x.inView());
+      if (g) {
+        this.giverHinted = true;
+        const key = this.pad ? '(줍기 버튼)' : '(L)';
+        const sub = this.studentMode
+          ? `도서 무인 대출기에서 대여하면${key} 무기가 나옵니다`
+          : `경비원에게 인사하면${key} 무기를 줍니다`;
+        fx.banner(this, g.name, sub, 2800);
+      }
+    }
+  }
+
+  // ---------- 조력자 이벤트 ----------
+
+  /** 맞고 체력이 바닥(최대의 25% 이하)으로 떨어지면 60% 확률로 조력자가 온다. 스테이지마다 한 번, 연출 중에는 안 온다 */
+  private maybeCallHelpers(dmg: number): void {
+    const p = this.player;
+    const lim = p.maxHp * HELPER_HP;
+    if (this.helperUsed || p.hp <= 0 || p.hp > lim || p.hp + dmg <= lim) return;
+    if (this.over || this.finishing || this.bossDefeated || this.specialT >= 0 || this.zoneState === 'done') return;
+    if (Math.random() >= HELPER_CHANCE) return;
+    this.callHelpers();
+  }
+
+  /** 다른 주인공 2~3명(교직원: 동료 직원, 학생: 친구)이 화면 끝에서 달려온다 */
+  callHelpers(): void {
+    const st = this.studentMode;
+    const p = this.player;
+    this.helperUsed = true;
+    this.helperT = 0;
+    p.invuln = Math.max(p.invuln, HELPER_ARRIVE + 0.3);
+    const lines = helperLines(st, (st ? studentHeroById(this.run.hero) : heroById(this.run.hero)).name);
+    const pool: { name: string; look: HelperLook }[] = st
+      ? STUDENT_HEROES.filter((h) => h.id !== this.run.hero).map((h) => ({ name: h.name, look: { student: true, look: h.look } }))
+      : HEROES.filter((h) => h.id !== this.run.hero).map((h) => ({ name: h.name, look: { student: false, look: h.look } }));
+    Phaser.Utils.Array.Shuffle(pool);
+    const n = Math.min(pool.length, Math.random() < 0.5 ? 2 : 3);
+    const left = this.cameras.main.scrollX;
+    const first = p.x - left < GAME_W / 2 ? 1 : -1;
+    const names: string[] = [];
+    for (let i = 0; i < n; i++) {
+      const side = i % 2 === 0 ? first : -first;
+      const dist = i < 2 ? 130 : 240;
+      const line = i < 2 ? lines[i] : lines[Math.floor(Math.random() * 2)];
+      this.helpers.push(
+        new Helper(this, {
+          look: pool[i].look,
+          name: pool[i].name,
+          line,
+          fromX: side > 0 ? left + GAME_W + 60 : left - 60,
+          y: p.y + [-40, 40, 0][i],
+          targetX: Phaser.Math.Clamp(p.x + side * dist, left + 60, left + GAME_W - 60),
+          arriveIn: HELPER_ARRIVE - 0.05,
+        }),
+      );
+      names.push(pool[i].name);
+    }
+    fx.banner(this, helperBanner(st), names.join(' · '), 2000);
+  }
+
+  private updateHelpers(dt: number): void {
+    for (const h of this.helpers) h.update(dt, this.player.x);
+    this.helpers = this.helpers.filter((h) => !h.removed);
+    if (this.helperT < 0) return;
+    this.helperT += dt;
+    if (this.helperT >= HELPER_ARRIVE) {
+      this.helperT = -1;
+      this.helperEffect();
+    }
+  }
+
+  /** 조력자 도착: 화면 안 잡몹은 모두 처리, 중간보스·보스는 조금만 깎고(끝내 주지는 않는다), 체력 회복 + 잠깐 무적 */
+  private helperEffect(): void {
+    const p = this.player;
+    const st = this.studentMode;
+    const left = this.cameras.main.scrollX;
+    let processed = 0;
+    for (const e of [...this.enemies]) {
+      if (e.dead || e.removed || e.x < left - 10 || e.x > left + GAME_W + 10) continue;
+      const top = e.y - e.z - Math.min(e.height, 70) * 0.6;
+      if (ORDINARY.has(e.kind)) {
+        fx.stampMark(this, e.x, top, st ? '통과' : '처리');
+        if (e instanceof DocBomb) e.destroy();
+        else e.takeHit({ dmg: 99, dir: e.x >= p.x ? 1 : -1, kb: 0, knockdown: true, force: true });
+        processed++;
+        continue;
+      }
+      const floor = Math.max(1, Math.ceil(e.maxHp * HELPER_FLOOR));
+      if (e.hp > floor) {
+        e.hp = Math.max(floor, e.hp - Math.ceil(e.maxHp * HELPER_CHIP));
+        e.rig.flash();
+        fx.stampMark(this, e.x, top, this.hitLabel(e));
+      }
+    }
+    if (processed > 0) {
+      this.combo += processed;
+      this.comboT = 1.2;
+      this.maxCombo = Math.max(this.maxCombo, this.combo);
+    }
+    const heal = Math.round(p.maxHp * HELPER_HEAL);
+    p.heal(heal);
+    p.invuln = Math.max(p.invuln, HELPER_INVULN);
+    fx.floatText(this, p.x, p.y - 130, `체력 +${heal}`, '#7CFC9A', 20);
+    this.cameras.main.flash(120, 255, 255, 255);
+  }
+
+  /** 잡몹을 처리하면 가끔 보조배터리나 먹을 것을 떨어뜨린다 */
+  private randomDrop(e: Enemy): void {
+    const r = Math.random();
+    let kind: PickupKind | null = null;
+    if (r < DROP_BATTERY) kind = 'battery';
+    else if (r < DROP_BATTERY + DROP_FOOD) kind = Math.random() < 0.6 ? 'gimbap' : 'americano';
+    if (!kind) return;
+    const left = this.cameras.main.scrollX;
+    const x = Phaser.Math.Clamp(e.x, left + 40, left + GAME_W - 40);
+    const y = Phaser.Math.Clamp(e.y, FLOOR_TOP + 6, FLOOR_BOTTOM - 6);
+    this.pickups.push(new Pickup(this, kind, x, y, 10).tossFrom(e.x, e.y, 30, 0.4, 50));
   }
 
   throwWeapon(p: Player): void {
@@ -1103,6 +1486,10 @@ export class StageScene extends Phaser.Scene {
         if (e.takeHit({ dmg: dmg.enemies, dir: e.x >= x ? 1 : -1, kb: 0, knockdown: true, thrown: true })) hits++;
       }
       if (hits) this.addCombo(hits, true);
+    }
+    // 폭발은 상자도 부순다
+    for (const c of this.crates) {
+      if (!c.removed && Math.abs(c.x - x) <= r + c.halfW && Math.abs(c.y - y) <= r * 0.45) this.hitCrate(c, 2, c.x >= x ? 1 : -1);
     }
   }
 
@@ -1529,6 +1916,7 @@ export class StageScene extends Phaser.Scene {
       return;
     }
     if (e.kind === 'chonghak') return;
+    if (ORDINARY.has(e.kind) && !this.bossDefeated) this.randomDrop(e);
     for (const s of this.sups) if (s.tryRecheck(e)) break;
   }
 
@@ -1542,6 +1930,7 @@ export class StageScene extends Phaser.Scene {
     this.comboT = 0;
     this.hitstop = 0.06;
     this.cameras.main.shake(100, 0.006);
+    this.maybeCallHelpers(dmg);
   }
 
   onPlayerKO(): void {

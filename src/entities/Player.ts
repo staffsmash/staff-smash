@@ -78,6 +78,8 @@ export type PlayerState =
   | 'report'
   | 'meeting'
   | 'frozen'
+  /** 경비원에게 인사(교직원) · 대출기 누르기(학생) */
+  | 'greet'
   | 'ko';
 
 export interface HeldWeapon {
@@ -123,8 +125,12 @@ export class Player extends Fighter {
   private walkPhase = 0;
   private threw = false;
   private hitSet = new Set<Fighter>();
+  /** 휘두를 때마다 1씩 는다 (상자·경비원이 한 번 휘두르기에 한 번만 맞게 스테이지가 쓴다) */
+  swing = 0;
   private readonly props: Record<PropId, Phaser.GameObjects.Container>;
   private readonly scene: StageScene;
+  private speech: Phaser.GameObjects.Text | null = null;
+  private speechT = 0;
 
   constructor(scene: StageScene, x: number, y: number, hero: PlayerLook) {
     const rig: Rig = hero.student ? createStudentHeroRig(scene, hero.look) : createStaffRig(scene, hero.look);
@@ -234,6 +240,7 @@ export class Player extends Fighter {
         if (!this.jumpAttacking && c.consume('attack')) {
           this.jumpAttacking = true;
           this.hitSet.clear();
+          this.swing++;
         }
         if (this.jumpAttacking && this.z < 95) this.scene.resolvePlayerAttack(this, JUMP_ATTACK, this.hitSet);
         break;
@@ -276,6 +283,11 @@ export class Player extends Fighter {
           fx.floatText(this.scene, this.x, this.y - 128, '회의 끝! 복귀', '#ffe066', 20);
         }
         break;
+      case 'greet':
+        this.vx = 0;
+        this.vy = 0;
+        if (this.stateT >= 0.55) this.set('idle');
+        break;
       case 'special':
       case 'ko':
         this.vx = 0;
@@ -301,6 +313,29 @@ export class Player extends Fighter {
     this.sync();
     this.rig.root.setVisible(this.state !== 'meeting');
     this.shadow.setVisible(this.state !== 'meeting');
+    if (this.speech) {
+      this.speechT -= dt;
+      this.speech
+        .setPosition(this.x, this.y - this.z - this.height - 14)
+        .setVisible(this.speechT > 0 && this.state !== 'meeting');
+    }
+  }
+
+  /** 머리 위 말풍선 */
+  say(text: string, sec = 1.2): void {
+    if (!this.speech) this.speech = fx.speechText(this.scene, text);
+    else this.speech.setText(text);
+    this.speechT = sec;
+  }
+
+  /** 경비원에게 꾸벅 인사하거나(교직원) 대출기 버튼을 누른다(학생). dir = 상대가 있는 쪽 */
+  startGreet(dir: number, line: string | null): void {
+    this.set('greet');
+    this.stateT = 0;
+    this.vx = 0;
+    this.vy = 0;
+    this.facing = dir >= 0 ? 1 : -1;
+    if (line) this.say(line, 1.1);
   }
 
   private updateFree(c: Controls, dt: number): void {
@@ -314,6 +349,8 @@ export class Player extends Fighter {
     if (c.consume('pickup')) {
       // 사원증(학생증)은 던져도 손으로 돌아오므로, 발밑에 다른 물건이 있으면 내려놓고 바꿔 든다
       if (this.weapon?.def.boomerang && this.scene.swapCard(this)) return;
+      // 발밑에 주울 것이 없고 경비원(대출기) 앞이면 인사(대여)한다
+      if (this.scene.tryGreet(this)) return;
       if (this.weapon && !this.weapon.inFlight) {
         this.startThrow();
         return;
@@ -381,6 +418,7 @@ export class Player extends Fighter {
     this.combo = i;
     this.buffered = false;
     this.hitSet.clear();
+    this.swing++;
     this.vx = i === 2 ? this.facing * 90 : 0;
     this.vy = 0;
   }
@@ -416,6 +454,7 @@ export class Player extends Fighter {
     this.stateT = 0;
     this.buffered = false;
     this.hitSet.clear();
+    this.swing++;
     this.vx = this.weapon.id === 'notice' ? this.facing * 60 : 0;
     this.vy = 0;
     this.weapon.dur--;
@@ -709,6 +748,20 @@ export class Player extends Fighter {
         p.armF = -2.95;
         p.armB = -2.95;
         p.bob = -4;
+        break;
+      case 'greet':
+        if (this.student) {
+          // 대출기 버튼 누르기
+          sharp = 24;
+          p.armF = this.stateT < 0.25 ? -1.2 : -1.5;
+          p.body = 0.06;
+        } else {
+          // 꾸벅 인사
+          sharp = 12;
+          p.body = this.stateT < 0.4 ? 0.45 : 0.05;
+          p.armF = 0.1;
+          p.armB = -0.1;
+        }
         break;
       case 'frozen':
         // 깜짝 놀라 굳었다

@@ -171,12 +171,40 @@ export function createWeaponIcon(scene: Phaser.Scene, id: WeaponId): Phaser.Game
   return c;
 }
 
-export type FoodKind = 'donkatsu' | 'gimbap' | 'americano' | 'work';
+/** 밟으면 바로 먹는(쓰는) 물건: 음식, 일거리, 식권(체력 모두 회복), 보조배터리(필살기 게이지 +50) */
+export type FoodKind = 'donkatsu' | 'gimbap' | 'americano' | 'work' | 'mealticket' | 'battery';
 
 /** 회복 아이템. 'work'(일거리)는 김밥처럼 생겼지만 서류 귀퉁이가 삐져나와 있다. */
 export function createFoodIcon(scene: Phaser.Scene, kind: FoodKind): Phaser.GameObjects.Container {
   const c = scene.add.container(0, 0);
-  if (kind === 'donkatsu') {
+  if (kind === 'mealticket') {
+    // 식권: 절취선이 있는 노란 종이표 + 파란 꼬리표
+    c.add(box(scene, 0, 0, 46, 24, 0xfff3c4));
+    c.add(box(scene, -18, 0, 8, 22, 0x2f6fd1, 0.5, 0.5, false));
+    for (let i = 0; i < 4; i++) c.add(box(scene, -11, -8 + i * 5.5, 2, 3, 0x9aa3ad, 0.5, 0.5, false));
+    c.add(
+      new Phaser.GameObjects.Text(scene, 5, 0, '식권', {
+        fontFamily: FONT,
+        fontSize: '11px',
+        fontStyle: 'bold',
+        color: '#b3262d',
+      }).setOrigin(0.5),
+    );
+  } else if (kind === 'battery') {
+    // 보조배터리: 짙은 몸체, 초록 충전 칸 세 개, 위로 삐져나온 케이블
+    const cable = new Phaser.GameObjects.Graphics(scene);
+    cable.lineStyle(3, 0xe5e7eb, 1);
+    cable.beginPath();
+    cable.moveTo(0, -17);
+    cable.lineTo(0, -23);
+    cable.lineTo(9, -26);
+    cable.lineTo(15, -20);
+    cable.strokePath();
+    c.add(cable);
+    c.add(box(scene, 0, 2, 24, 34, 0x2b2f38));
+    for (let i = 0; i < 3; i++) c.add(box(scene, 0, 11 - i * 8, 14, 5, 0x5bd16b, 0.5, 0.5, false));
+    c.add(box(scene, 0, -16, 10, 4, 0x9aa3ad));
+  } else if (kind === 'donkatsu') {
     c.add(box(scene, 0, 4, 52, 12, 0xffffff));
     c.add(box(scene, 0, -2, 40, 14, 0xb8742e));
     c.add(box(scene, 10, -4, 12, 4, 0x7a3e12, 0.5, 0.5, false));
@@ -667,6 +695,68 @@ function createOtherSupervisorRig(scene: Phaser.Scene, look: 'bujae' | 'molla' |
   rig.head.add(rig.part(13, -19, 3, 4, INK, 0.5, 0, false));
   rig.head.add(rig.part(9, -8, look === 'hoho' ? 12 : 8, 2, 0x8a3b2b, 0.5, 0, false));
   return rig;
+}
+
+// ---------- 경비원 (교직원 모드: 인사하면 무기를 준다) ----------
+
+const GUARD_NAVY = 0x1f2a44;
+
+/** 경비원 (이름 없는 가상 인물): 남색 제복과 모자, 금색 모표·가슴 배지 */
+export function createGuardRig(scene: Phaser.Scene): Rig {
+  const rig = new Rig(scene, {
+    legW: 15,
+    legH: 36,
+    legGap: 14,
+    legColor: 0x1a2236,
+    shoeColor: 0x111111,
+    torsoW: 38,
+    torsoH: 40,
+    torsoColor: GUARD_NAVY,
+    armW: 12,
+    armH: 31,
+    armColor: GUARD_NAVY,
+    handColor: SKIN,
+    headW: 32,
+    headH: 31,
+    headColor: SKIN,
+    outline: INK,
+  });
+  // 셔츠 깃·넥타이, 가슴 배지, 허리띠 (몸통 위쪽 끝 = -40)
+  rig.torso.add(rig.part(0, -40, 14, 6, 0xdfe6f2, 0.5, 0, false));
+  rig.torso.add(rig.part(0, -36, 5, 18, 0x111827, 0.5, 0, false));
+  rig.torso.add(rig.part(11, -32, 7, 8, 0xd9b44a, 0.5, 0, false));
+  rig.torso.add(rig.part(0, -9, 38, 5, 0x111111, 0.5, 0, false));
+  rig.torso.add(rig.part(3, -9, 6, 5, 0xc9ced4, 0.5, 0, false));
+  // 어깨 견장
+  for (const arm of [rig.armF, rig.armB]) arm.add(rig.part(0, 0, 12, 4, 0xd9b44a, 0.5, 0, false));
+  // 모자: 몸통 + 검은 띠 + 앞(+x)으로 나온 챙 + 금색 모표 (머리 위쪽 끝 = -31)
+  rig.head.add(rig.part(-14, -24, 6, 10, 0x2a2420, 0.5, 0, false));
+  rig.head.add(rig.part(-1, -41, 36, 14, GUARD_NAVY, 0.5, 0));
+  rig.head.add(rig.part(-1, -31, 36, 4, 0x111827, 0.5, 0, false));
+  rig.head.add(rig.part(16, -29, 16, 4, 0x111111, 0.5, 0));
+  rig.head.add(rig.part(6, -39, 6, 6, 0xd9b44a, 0.5, 0, false));
+  rig.head.add(rig.part(4, -19, 4, 5, INK, 0.5, 0, false));
+  rig.head.add(rig.part(12, -19, 4, 5, INK, 0.5, 0, false));
+  rig.head.add(rig.part(8, -8, 8, 2, 0x8a3b2b, 0.5, 0, false));
+  return rig;
+}
+
+/** 교직원 모드 상자 "조기출근 박스": 테이프 붙인 골판지 상자 + 흰 라벨 (원점 = 바닥 가운데) */
+export function createEarlyBox(scene: Phaser.Scene): Phaser.GameObjects.Container {
+  const c = scene.add.container(0, 0);
+  c.add(box(scene, 0, -22, 60, 44, 0xc8955a));
+  c.add(box(scene, 0, -41, 60, 6, 0xb07a40, 0.5, 0.5, false));
+  c.add(box(scene, 0, -36, 12, 16, 0xe2cf9a, 0.5, 0.5, false));
+  c.add(box(scene, 0, -17, 48, 17, 0xffffff));
+  c.add(
+    new Phaser.GameObjects.Text(scene, 0, -17, '조기출근', {
+      fontFamily: FONT,
+      fontSize: '12px',
+      fontStyle: 'bold',
+      color: '#1d1d22',
+    }).setOrigin(0.5),
+  );
+  return c;
 }
 
 // ---------- 잡몹 ----------
