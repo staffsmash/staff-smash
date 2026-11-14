@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Sfx, type SfxName } from './audio';
 import type { Rect } from './blocks';
+import { addBoardButton, attachRecordForm } from './board';
 import { BODY_DMG, BOSS_HINTS, BOSS_NAMES, Bogo, Chonggwal, Meeting, PersonBoss, President, SERVER_SPOT, WEAK_DMG } from './bosses';
 import { Bomb, Bubble, Mail, Phone, type Ctx, type Enemy, type HurtKind, type Kind, type SheetKind } from './enemies';
 import { FIELD_ENTER_Z, FC } from './field';
@@ -783,11 +784,12 @@ class Game implements Ctx {
         ${this.stu.modeButtons()}
         <button id="setBtn" class="ghost" type="button">설정</button>
         <a class="btn" href="./">본편(2D)으로</a>
-        <p class="foot">비공식 게임 · 기록은 이 브라우저에만 저장됩니다</p>
+        <p class="foot">비공식 게임 · 닉네임 기록판</p>
       </div>`);
     bindSettings(o, this.settings, (key) => this.applySetting(key));
     this.stu.bindTitle();
     $('setBtn').addEventListener('click', () => this.showSettings('title'));
+    addBoardButton(o);
   }
 
   private showSettings(from: 'title' | 'pause'): void {
@@ -1802,7 +1804,7 @@ class Game implements Ctx {
     const where = AREA_NAMES[areaOf(this.stage)];
     this.freezeT = 0;
     if (this.mode === 'student') return this.stu.gameOver();
-    this.overlay(`
+    const o = this.overlay(`
       <div class="panel">
         <h1 style="color:#ff6b6b">야근 확정</h1>
         <p>${where}에서 민원에 묻혀 퇴근하지 못했습니다.</p>
@@ -1817,6 +1819,8 @@ class Game implements Ctx {
       this.resetRun();
       this.showTitle();
     });
+    // 닉네임 기록판 (src/fps/board.ts)
+    attachRecordForm(o, { mode: 'fps-staff', stage: this.areaStats.length, cleared: false, elapsed: this.elapsed, hero: '김국제', diff: this.runDiff });
   }
 
   /** 근무평정: 처리 시간 40 + 받은 민원 피해 30 + 명중률 30 (본편 2D와 같은 S~D 구간) */
@@ -1858,7 +1862,7 @@ class Game implements Ctx {
     const bestTxt = rec.isNew
       ? `<span class="newbest">새 최고 기록!</span>${rec.prev ? ` 이전 ${rec.prev.grade} · ${timeText(rec.prev.time)}` : ''}`
       : `최고 기록 ${rec.best.grade} · ${timeText(rec.best.time)}`;
-    this.overlay(`
+    const o = this.overlay(`
       <div class="panel result">
         <h1><img class="emblem inline" src="hufs/emblem-mono.png" alt=""> 퇴근 승인! 오늘 업무 끝</h1>
         <p class="big">${clockText(clock)} 퇴근 · ${offText}</p>
@@ -1879,6 +1883,8 @@ class Game implements Ctx {
       this.resetRun();
       this.showTitle();
     });
+    // 닉네임 기록판 (src/fps/board.ts)
+    attachRecordForm(o, { mode: 'fps-staff', stage: this.areaStats.length, cleared: true, elapsed: this.elapsed, hero: '김국제', diff: this.runDiff });
   }
 
   // ---------- 매 프레임 ----------
