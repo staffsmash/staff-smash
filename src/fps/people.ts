@@ -12,6 +12,7 @@ import { clipPaperTex, faceTex, mailTex, stampMarkTex } from './textures';
 // 사람 보스는 다치지 않는다: 맞으면 몸이 아니라 들고 있는 결재판에 도장 자국과 반짝임이 생긴다.
 // 머리 위 이름표·말풍선은 speech.ts의 HeadTag (화면에서 늘 같은 크기, 자막도 같이).
 // 모형은 처음에 한 번만 만들고(미리 그리기) 판마다 다시 쓴다.
+// 조력자(동료 직원·친구)와 경비원도 같은 블록 사람이다 (perks.ts — 후드티·백팩·앞치마·근무모 등은 Look의 선택 항목).
 
 export type Who = 'chonggwal' | 'bogo' | 'meeting' | 'president';
 
@@ -38,6 +39,25 @@ export interface Look {
   /** 왼손에 드는 것 ('none' = 따로 붙인다: 학생 모드 창구 직원) */
   left: 'keys' | 'report' | 'megaphone' | 'stamp' | 'none';
   scale: number;
+  // 아래는 조력자(동료 직원·친구)와 경비원용 (perks.ts, 2026-11-14)
+  /** 눈썹 색 (비우면 원래대로) */
+  brow?: number;
+  /** 넥타이 없음 (학생·앞치마) */
+  noTie?: boolean;
+  /** 후드티: 목 뒤 모자·끈 두 줄·앞주머니 */
+  hoodie?: boolean;
+  /** 앞이 열린 재킷 안 티셔츠 색 */
+  tee?: number;
+  /** 백팩 색 (등 + 어깨끈) */
+  bag?: number;
+  /** 흰 이어폰 */
+  earphones?: boolean;
+  /** 앞치마 (김학생식당) */
+  apron?: boolean;
+  /** 모자 색 (경비원 근무모) */
+  cap?: number;
+  /** 운동화 색 */
+  shoes?: number;
 }
 
 const SKIN = 0xf1c7a0;
@@ -126,7 +146,7 @@ export class Person {
     this.faceMat = new THREE.MeshLambertMaterial({
       map: faceTex({
         skin: hex(L.skin),
-        brow: hex(who === 'chonggwal' ? L.hair : who === 'president' ? L.hair : 0x6b6b6b),
+        brow: hex(L.brow ?? (who === 'chonggwal' ? L.hair : who === 'president' ? L.hair : 0x6b6b6b)),
         glasses: L.glasses,
         mustache: L.mustache ? hex(L.mustache) : undefined,
         smile: L.smile,
@@ -147,12 +167,26 @@ export class Person {
     ] as [THREE.Group, number][]) {
       leg.position.set(x, 0.86, 0);
       this.part(leg, 0.27, 0.78, 0.29, 0, -0.39, 0, lambert(L.pants));
-      this.part(leg, 0.29, 0.12, 0.38, 0, -0.8, 0.04, ink);
+      this.part(leg, 0.29, 0.12, 0.38, 0, -0.8, 0.04, L.shoes !== undefined ? lambert(L.shoes) : ink);
       this.body.add(leg);
     }
     // 몸통 (0.86 ~ 1.62)
     this.part(this.body, 0.7, 0.78, 0.4, 0, 1.24, 0, top);
-    if (L.jacket) {
+    if (L.hoodie) {
+      // 후드티: 목 뒤 모자, 흰 끈 두 줄, 앞주머니, 아랫단
+      const dk = lambert(darken(L.top));
+      this.part(this.body, 0.52, 0.2, 0.16, 0, 1.6, -0.22, dk);
+      this.part(this.body, 0.03, 0.24, 0.02, -0.07, 1.46, 0.205, lambert(0xf4f4f4));
+      this.part(this.body, 0.03, 0.2, 0.02, 0.07, 1.48, 0.205, lambert(0xf4f4f4));
+      this.part(this.body, 0.42, 0.18, 0.02, 0, 1.03, 0.205, dk);
+      this.part(this.body, 0.72, 0.06, 0.42, 0, 0.88, 0, dk);
+    } else if (L.tee !== undefined) {
+      // 앞이 열린 재킷 + 티셔츠
+      const dk = lambert(darken(L.top));
+      this.part(this.body, 0.24, 0.76, 0.02, 0, 1.25, 0.205, lambert(L.tee));
+      this.part(this.body, 0.05, 0.76, 0.03, -0.14, 1.25, 0.21, dk);
+      this.part(this.body, 0.05, 0.76, 0.03, 0.14, 1.25, 0.21, dk);
+    } else if (L.jacket) {
       // 셔츠 V + 옷깃
       this.part(this.body, 0.22, 0.34, 0.02, 0, 1.45, 0.205, lambert(0xffffff));
       this.part(this.body, 0.08, 0.36, 0.03, -0.12, 1.44, 0.21, lambert(darken(L.top))).rotation.z = 0.35;
@@ -170,8 +204,23 @@ export class Person {
       this.part(this.body, 0.03, 0.6, 0.02, 0.09, 1.25, 0.205, lambert(darken(L.top)));
     }
     if (L.beltKeys) this.keyBunch(this.body, -0.28, 0.84, 0.23, 0.06);
-    this.part(this.body, 0.09, 0.07, 0.03, 0, 1.58, 0.225, lambert(L.tie));
-    this.part(this.body, 0.08, 0.4, 0.03, 0, 1.36, 0.225, lambert(L.tie));
+    if (L.apron) {
+      // 앞치마 (위끝에 넥타이 색 띠)
+      this.part(this.body, 0.56, 0.62, 0.02, 0, 1.13, 0.215, lambert(0xfff3d6));
+      this.part(this.body, 0.3, 0.05, 0.03, 0, 1.45, 0.22, lambert(L.tie));
+    } else if (!L.noTie) {
+      this.part(this.body, 0.09, 0.07, 0.03, 0, 1.58, 0.225, lambert(L.tie));
+      this.part(this.body, 0.08, 0.4, 0.03, 0, 1.36, 0.225, lambert(L.tie));
+    }
+    if (L.bag !== undefined) {
+      // 백팩: 등에 메고 어깨끈이 앞으로 보인다
+      const strap = lambert(darken(L.bag));
+      this.part(this.body, 0.56, 0.6, 0.22, 0, 1.2, -0.31, lambert(L.bag));
+      this.part(this.body, 0.5, 0.08, 0.24, 0, 1.47, -0.31, strap);
+      this.part(this.body, 0.4, 0.2, 0.06, 0, 1.06, -0.44, strap);
+      this.part(this.body, 0.06, 0.5, 0.03, -0.22, 1.36, 0.21, strap);
+      this.part(this.body, 0.06, 0.5, 0.03, 0.22, 1.36, 0.21, strap);
+    }
     if (L.tieDots) for (const [dx, dy] of [[-0.015, 1.47], [0.015, 1.39], [-0.015, 1.31], [0.015, 1.23]]) this.part(this.body, 0.018, 0.018, 0.01, dx, dy, 0.24, lambert(0xcfe3ff));
     if (L.badge) this.part(this.body, 0.05, 0.05, 0.02, -0.2, 1.52, 0.215, lambert(0xd9b44a));
     if (L.lanyard) {
@@ -267,6 +316,17 @@ export class Person {
         this.part(h, 0.56, 0.3, 0.07, 0, 0.36, -0.27, hair);
         this.part(h, 0.03, 0.03, 0.18, -0.12, 0.63, 0.1, lambert(0x4a3a30));
         break;
+    }
+    if (this.look.cap !== undefined) {
+      // 근무모: 둥근 윗부분 + 검은 챙 + 금색 모표
+      this.part(h, 0.58, 0.18, 0.56, 0, 0.6, -0.01, lambert(this.look.cap));
+      this.part(h, 0.5, 0.04, 0.2, 0, 0.53, 0.34, lambert(0x15171c));
+      this.part(h, 0.12, 0.09, 0.02, 0, 0.62, 0.28, lambert(0xd9b44a));
+    }
+    if (this.look.earphones) {
+      const w = lambert(0xf4f4f4);
+      for (const s of [-1, 1]) this.part(h, 0.06, 0.1, 0.1, s * 0.28, 0.24, 0.04, w);
+      this.part(h, 0.02, 0.26, 0.02, -0.28, 0.06, 0.06, w);
     }
   }
 

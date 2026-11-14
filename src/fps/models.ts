@@ -5,8 +5,10 @@ import {
   bombSideTex,
   bubbleTex,
   bulkTex,
+  canvasTex,
   docTex,
   drawTimer,
+  FONT,
   glowTex,
   labelTex,
   mailTex,
@@ -18,13 +20,44 @@ import {
 
 // 적·물건·도장의 블록 모형. 모양(geometry)과 재질은 종류마다 하나씩 만들어 함께 쓴다.
 
-export type FoodKind = 'donkatsu' | 'gimbap' | 'americano';
+/** 줍는 물건: 음식 셋 + 식권(체력 모두 회복) + 보조배터리(필살기 게이지 +50) */
+export type FoodKind = 'donkatsu' | 'gimbap' | 'americano' | 'ticket' | 'battery';
 
 export const FOOD_NAMES: Record<FoodKind, string> = {
   donkatsu: '학식 돈가스',
   gimbap: '삼각김밥',
   americano: '아메리카노',
+  ticket: '식권',
+  battery: '보조배터리',
 };
+
+/** 식권 앞뒤 그림 (크림색 종이, 빨간 띠, 절취선) */
+function mealTicketTex(): THREE.CanvasTexture {
+  return canvasTex(256, 148, (g) => {
+    g.fillStyle = '#fff6dc';
+    g.fillRect(0, 0, 256, 148);
+    g.fillStyle = '#d0202f';
+    g.fillRect(0, 0, 256, 26);
+    g.fillRect(0, 122, 256, 26);
+    g.strokeStyle = '#b8a77e';
+    g.lineWidth = 4;
+    g.setLineDash([10, 8]);
+    g.beginPath();
+    g.moveTo(196, 30);
+    g.lineTo(196, 118);
+    g.stroke();
+    g.setLineDash([]);
+    g.fillStyle = '#7a1320';
+    g.font = `bold 66px ${FONT}`;
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText('식권', 100, 76);
+    g.fillStyle = '#f5c542';
+    g.beginPath();
+    g.arc(226, 74, 16, 0, Math.PI * 2);
+    g.fill();
+  });
+}
 
 const lam = (color: number) => new THREE.MeshLambertMaterial({ color });
 
@@ -244,10 +277,23 @@ export class Models {
       item.add(rice);
       add(item, new THREE.BoxGeometry(0.36, 0.26, 0.26), lam(0x1f2a24), 0, -0.12, 0);
       add(item, new THREE.BoxGeometry(0.12, 0.08, 0.27), lam(0xd0202f), 0, 0.08, 0);
-    } else {
+    } else if (kind === 'americano') {
       add(item, new THREE.CylinderGeometry(0.2, 0.15, 0.5, 12), lam(0xf4f4f4), 0, 0, 0);
       add(item, new THREE.CylinderGeometry(0.205, 0.185, 0.18, 12), lam(0x8a5a2b), 0, 0.02, 0);
       add(item, new THREE.CylinderGeometry(0.22, 0.22, 0.07, 12), lam(0x2b2b2b), 0, 0.28, 0);
+    } else if (kind === 'ticket') {
+      // 식권: 세워 든 종이 한 장 (앞뒤 같은 그림)
+      const face = new THREE.MeshLambertMaterial({ map: mealTicketTex() });
+      const edge = lam(0xefe4c4);
+      add(item, new THREE.BoxGeometry(0.72, 0.42, 0.03), [edge, edge, edge, edge, face, face], 0, 0, 0);
+    } else {
+      // 보조배터리: 짙은 몸통 + 초록 충전 칸 넷(앞뒤) + 위쪽 단자와 흰 선
+      add(item, new THREE.BoxGeometry(0.3, 0.48, 0.13), lam(0x2b2f38), 0, 0, 0);
+      const led = new THREE.MeshBasicMaterial({ color: 0x5bd16b });
+      const bar = new THREE.BoxGeometry(0.17, 0.055, 0.01);
+      for (const z of [0.07, -0.07]) for (let i = 0; i < 4; i++) add(item, bar, led, 0, -0.14 + i * 0.085, z);
+      add(item, new THREE.BoxGeometry(0.1, 0.035, 0.07), lam(0x9aa3ad), 0, 0.255, 0);
+      add(item, new THREE.BoxGeometry(0.04, 0.16, 0.04), lam(0xf4f4f4), 0.06, 0.32, 0);
     }
     const glow = new THREE.Mesh(this.glowGeo, this.glow);
     glow.rotation.x = -Math.PI / 2;
@@ -260,7 +306,7 @@ export class Models {
   }
 }
 
-function add(parent: THREE.Object3D, geo: THREE.BufferGeometry, mat: THREE.Material, x: number, y: number, z: number): THREE.Mesh {
+function add(parent: THREE.Object3D, geo: THREE.BufferGeometry, mat: THREE.Material | THREE.Material[], x: number, y: number, z: number): THREE.Mesh {
   const m = new THREE.Mesh(geo, mat);
   m.position.set(x, y, z);
   m.castShadow = true;

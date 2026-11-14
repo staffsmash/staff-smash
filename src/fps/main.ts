@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { armName, Arms, ARMS, BOOMERANG_TURN, type ArmDef, type ArmId } from './arms';
 import { Sfx, type SfxName } from './audio';
 import type { Rect } from './blocks';
 import { BODY_DMG, BOSS_HINTS, BOSS_NAMES, Bogo, Chonggwal, Meeting, PersonBoss, President, SERVER_SPOT, WEAK_DMG } from './bosses';
@@ -6,8 +7,10 @@ import { Bomb, Bubble, Mail, Phone, type Ctx, type Enemy, type HurtKind, type Ki
 import { FIELD_ENTER_Z, FC } from './field';
 import { Fx } from './fx';
 import { Hazards, RING_H } from './hazards';
+import { Rescue } from './helpers';
 import { Models, type FoodKind } from './models';
 import { Person, peopleKit, type Who } from './people';
+import { Props, type PerkHost } from './props';
 import {
   bestLine,
   bindSettings,
@@ -21,6 +24,7 @@ import {
   type Settings,
 } from './settings';
 import { clearSubtitle, prepareSpeech, speechTextures, speechView, updateSubtitle } from './speech';
+import { DocTower } from './student/enemies';
 import { StudentMode, type StudentHost } from './student/mode';
 import { loadLogos } from './textures';
 import { buildWorld, type World } from './world';
@@ -30,6 +34,8 @@ import { buildWorld, type World } from './world';
 // 김총괄(본관 앞) → 김보고 처장(사회과학관 앞) → 회의소집 부총장(대운동장) → 총장 프레지던트 캉(해 질 녘 본관 앞)의
 // 결재를 받으면 퇴근. 잡몹은 사물이고, 보스만 사람이다(사람 보스는 다치지 않고 결재판에 도장을 받는다).
 // 본편(2D)과 따로 도는 시험용 페이지다. 프레지던트 캉을 제외한 인물은 모두 가상이다.
+// 2026-11-14: 무기(arms.ts — 경비원·도서 무인 대출기에서 받는다), 부수는 상자·경비원·대출기(props.ts),
+// 조력자 이벤트(helpers.ts), 식권·보조배터리.
 
 const params = new URLSearchParams(location.search);
 const DEBUG = params.has('debug');
@@ -125,6 +131,17 @@ interface Stamp {
   vel: THREE.Vector3;
   life: number;
   on: boolean;
+  /** 'stamp' = 도장(학생: 서류 비행기), 아니면 무기 모형 ("stapler:0" 등) */
+  key: string;
+  /** 던진 무기 (null = 도장) */
+  arm: ArmDef | null;
+  /** 꿰뚫기·부메랑: 이미 맞힌 것 (부메랑은 돌아올 때 비운다) */
+  seen: Set<object>;
+  /** 명중률: 한 번 던진 것은 한 번만 센다 */
+  scored: boolean;
+  /** 부메랑이 돌아오는 중 */
+  back: boolean;
+  t: number;
 }
 
 interface Sheet {
@@ -194,7 +211,10 @@ const _dir = new THREE.Vector3();
 const _q = new THREE.Quaternion();
 const _e = new THREE.Euler(0, 0, 0, 'YXZ');
 const _prev = new THREE.Vector3();
+const _r = new THREE.Vector3();
 const ZERO = new THREE.Vector3();
+/** 교직원 모드 주인공 이름 (조력자가 부르는 이름) */
+const STAFF_NAME = '김국제';
 
 const blankCounts = (): Record<Kind, number> => ({ mail: 0, bulk: 0, phone: 0, bubble: 0, bomb: 0, boss: 0 });
 const isBoss = (e: Enemy) => e.kind === 'boss';
@@ -289,6 +309,12 @@ class Game implements Ctx {
   stick = new THREE.Vector2();
   /** 시험용 (?debug): 매 게임 단계마다 먼저 불린다 */
   botHook: ((dt: number) => void) | null = null;
+  /** 손에 든 무기 (경비원·도서 무인 대출기에서 받는다, arms.ts) */
+  readonly arms: Arms;
+  /** 경비원·도서 무인 대출기·부수는 상자 (props.ts) */
+  props!: Props;
+  /** 조력자 이벤트 (helpers.ts) */
+  rescue!: Rescue;
   private seen = new Set<string>();
   private last = performance.now();
   private viewmodel = new THREE.Group();
@@ -325,6 +351,7 @@ class Game implements Ctx {
     this.fx = new Fx(this.scene);
     this.scene.add(this.camera);
     this.buildViewmodel();
+    this.arms = new Arms(this.viewmodel);
     this.resize();
     window.addEventListener('resize', () => this.resize());
     if (TOUCH) document.body.classList.add('touch');
@@ -368,6 +395,9 @@ class Game implements Ctx {
     this.rack.visible = false;
     this.scene.add(this.rack);
     this.stu = new StudentMode(this, this.studentHost());
+    const perk = this.perkHost();
+    this.props = new Props(perk);
+    this.rescue = new Rescue(perk);
     this.bounds = [this.world.yard];
     this.world.setDusk(0);
     this.warmup();
@@ -402,6 +432,9 @@ class Game implements Ctx {
       m.food('donkatsu').obj,
       m.food('gimbap').obj,
       m.food('americano').obj,
+      m.food('ticket').obj,
+      m.food('battery').obj,
+      ...this.arms.warmItems(),
       m.sheet('paper'),
       m.sheet('rental'),
       m.sheet('meeting'),
@@ -426,6 +459,8 @@ class Game implements Ctx {
     });
     this.rack.visible = true;
     const unwarm = this.stu.warm(g);
+    const unwarmProps = this.props.warm(g);
+    const unwarmRescue = this.rescue.warm(g);
     this.scene.add(g);
     const p = _v.set(0, 1.6, 6);
     this.fx.confetti(p, 4, 1);
@@ -474,6 +509,8 @@ class Game implements Ctx {
     for (const t of this.stu.textures) this.renderer.initTexture(t);
     this.renderer.render(this.scene, this.camera);
     unwarm();
+    unwarmProps();
+    unwarmRescue();
     this.scene.remove(g);
     for (const pp of ppl) {
       g.remove(pp.root);
@@ -517,6 +554,45 @@ class Game implements Ctx {
     };
   }
 
+  /** 경비원·대출기·상자·조력자(props.ts, helpers.ts)가 빌려 쓰는 Game 안쪽 기능 */
+  private perkHost(): PerkHost {
+    const g = this;
+    return {
+      touch: TOUCH,
+      scene: this.scene,
+      models: this.models,
+      fx: this.fx,
+      get mode() {
+        return g.mode;
+      },
+      get stage() {
+        return g.stage;
+      },
+      get playing() {
+        return g.phase === 'play';
+      },
+      get pos() {
+        return g.pos;
+      },
+      get yaw() {
+        return g.yaw;
+      },
+      get area() {
+        return g.area;
+      },
+      areaNo: () => (g.mode === 'student' ? g.stu.areaNo : areaOf(g.stage)),
+      playerName: () => (g.mode === 'student' ? g.stu.heroName : STAFF_NAME),
+      heroId: () => g.stu.heroId,
+      note: (text, time) => g.note(text, time),
+      hint: (key, text, time) => g.hint(key, text, time),
+      banner: (title, sub) => g.banner(title, sub),
+      sound: (name, at, vol) => g.sound(name, at, vol),
+      spawnPickup: (kind, x, z) => g.spawnPickup(kind, x, z),
+      equip: (id) => g.equip(id),
+      rescueHit: () => g.rescueHit(),
+    };
+  }
+
   /** 화면 오른쪽 아래 주무관의 팔과 도장 */
   private buildViewmodel(): void {
     const sleeve = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, 0.6), new THREE.MeshLambertMaterial({ color: 0x9cc3e6 }));
@@ -550,6 +626,7 @@ class Game implements Ctx {
       if (e.repeat) return;
       if ((e.code === 'Escape' || e.code === 'KeyP') && this.phase === 'play' && !document.pointerLockElement) this.pause();
       if (e.code === 'KeyQ') this.special();
+      if (e.code === 'KeyE' && this.phase === 'play') this.props.interact();
       if (e.code === 'KeyM') this.toggleMute();
       if (e.code === 'Space' && this.phase === 'play') this.jump();
       if ((e.code === 'Enter' || e.code === 'Space') && (this.phase === 'clear' || this.phase === 'over')) {
@@ -928,6 +1005,9 @@ class Game implements Ctx {
     $('bossbox').classList.remove('on');
     $('areacard').classList.remove('on');
     for (const id of ['stamp1', 'stamp2']) $(id).classList.remove('on');
+    this.props.clear();
+    this.rescue.clear();
+    this.arms.clear();
     this.stu.reset();
     this.phase = 'title';
   }
@@ -1338,10 +1418,23 @@ class Game implements Ctx {
     let chance = 0.15 + this.diff.drop;
     if (this.hp <= 4) chance += 0.15;
     if (kind === 'bulk' || kind === 'bomb') chance += 0.1;
-    if (Math.random() > chance) return;
+    // 음식은 이제 상자에서도 나오므로 민원이 떨어뜨리는 것은 절반쯤으로
+    if (Math.random() > chance * 0.5) return;
     this.dropCd = 7;
     const r = Math.random();
-    const food: FoodKind = this.hp <= 4 ? (r < 0.5 ? 'donkatsu' : 'gimbap') : r < 0.45 ? 'gimbap' : r < 0.75 ? 'americano' : 'donkatsu';
+    // 가끔 보조배터리 (필살기 게이지가 다 찼으면 음식)
+    const food: FoodKind =
+      this.sp < SP_MAX - 10 && Math.random() < 0.2
+        ? 'battery'
+        : this.hp <= 4
+          ? r < 0.5
+            ? 'donkatsu'
+            : 'gimbap'
+          : r < 0.45
+            ? 'gimbap'
+            : r < 0.75
+              ? 'americano'
+              : 'donkatsu';
     const spot = this.freeSpot(at.x, at.z);
     this.spawnPickup(food, spot.x, spot.z);
   }
@@ -1404,6 +1497,12 @@ class Game implements Ctx {
     } else if (p.kind === 'gimbap') {
       this.hp = Math.min(MAX_HP, this.hp + 2);
       this.note('삼각김밥! 체력 +2');
+    } else if (p.kind === 'ticket') {
+      this.hp = MAX_HP;
+      this.note('식권! 체력 모두 회복');
+    } else if (p.kind === 'battery') {
+      this.addSp(SP_MAX * 0.5);
+      this.note('보조배터리! 필살기 게이지 +50');
     } else {
       this.buffT = BUFF_T;
       this.note(this.mode === 'student' ? '아메리카노! 공격 속도 UP' : '아메리카노! 8초 동안 도장을 빨리 던집니다');
@@ -1491,7 +1590,59 @@ class Game implements Ctx {
     if (this.hp <= 0.001) {
       this.hp = 0;
       this.gameOver();
+      return;
     }
+    if (this.hp <= MAX_HP * 0.25) this.maybeRescue();
+  }
+
+  // ---------- 조력자 · 무기 ----------
+
+  /** 체력 25% 이하: 60% 확률로 동료·친구가 도우러 온다 (구역마다 한 번, 카드·연출·엔딩 중에는 안 온다) */
+  private maybeRescue(): void {
+    if (this.cardT > 0 || this.seqT > 0 || this.stage === 'toFinal' || this.stage === 'done') return;
+    if (this.mode === 'student' && this.stu.busy) return;
+    const key = `${this.mode}:${this.mode === 'student' ? this.stu.areaNo : areaOf(this.stage)}`;
+    if (!this.rescue.canStart(key) || Math.random() >= 0.6) return;
+    // 뛰어 들어오는 동안은 맞지 않는다 (도착하면 2초 무적)
+    this.invuln = Math.max(this.invuln, 1.4);
+    this.rescue.start(key);
+  }
+
+  /** 조력자 도착: 잡몹 모두 처리, 체력 +35%, 2초 무적, 사람 보스·창구 직원은 진행 +10% (5%는 남긴다) */
+  private rescueHit(): void {
+    for (const e of this.enemies) {
+      // 박반려 처장의 서류 탑은 보스 기믹이라 그대로 둔다
+      if (!e.targetable || isBoss(e) || e instanceof DocTower) continue;
+      this.fx.mark(e.center, 1.3);
+      if (e instanceof Bomb) {
+        e.dead = true;
+        e.die();
+        this.onProcessed(e);
+      } else this.damage(e, 99, 'special');
+    }
+    this.hp = Math.min(MAX_HP, this.hp + MAX_HP * 0.35);
+    this.invuln = Math.max(this.invuln, 2);
+    const b = this.boss;
+    if (b && !b.dead && b.state !== 'sleep') {
+      const floor = b.maxHp * 0.05;
+      if (b.hp > floor) {
+        b.hp = Math.max(floor, b.hp - b.maxHp * 0.1);
+        b.person.stampMark(true);
+        this.fx.confetti(b.person.clipCenter, 12, 2.4, 0xf5c542, 1, 0.5);
+      }
+    }
+    this.sound('special', undefined, 0.6);
+    this.buzz([30, 30, 60]);
+  }
+
+  /** 무기를 손에 든다 (경비원·도서 무인 대출기) */
+  equip(id: ArmId): void {
+    const student = this.mode === 'student';
+    const a = ARMS[id];
+    this.arms.equip(id, student);
+    this.cooldown = 0;
+    this.note(`${armName(id, student)} 획득! ${a.perk} ${a.uses}회`, 2.2);
+    this.sound('pickup');
   }
 
   /** 잠깐 멈춤 (강의실 열쇠·"보고해!"): 움직이지도 던지지도 못한다. 이미 멈춰 있으면 false */
@@ -1519,35 +1670,56 @@ class Game implements Ctx {
 
   fire(): void {
     if (this.cooldown > 0 || this.phase !== 'play' || this.freezeT > 0) return;
-    this.curCd = this.buffT > 0 ? FIRE_CD_FAST : FIRE_CD;
+    // 손에 든 무기가 있으면 그 무기를 던진다 (arms.ts)
+    const arm = this.arms.def;
+    const fast = this.buffT > 0;
+    this.curCd = arm ? (fast ? arm.cdFast : arm.cd) : fast ? FIRE_CD_FAST : FIRE_CD;
     this.cooldown = this.curCd;
     this.swing = 1;
     this.thrown++;
-    this.sound('throw', undefined, 0.8);
+    this.sound('throw', undefined, arm ? 0.65 : 0.8);
     // 렌더 전에 불려도 맞도록 카메라 행렬 대신 yaw/pitch로 방향을 만든다
     _q.setFromEuler(_e.set(this.pitch, this.yaw, 0, 'YXZ'));
     const dir = _dir.set(0, 0, -1).applyQuaternion(_q);
     const start = _v.set(0.3, -0.25, -0.5).applyQuaternion(_q).add(_w.set(this.pos.x, EYE + this.jumpY, this.pos.z));
+    const speed = arm ? arm.speed : STAMP_SPEED;
+    const grav = arm ? arm.grav : 5;
+    const lift = arm ? arm.lift : 0.8;
     const cone = TOUCH && this.settings.assist ? Math.max(0.14, this.diff.assist) : this.diff.assist;
-    if (cone > 0) this.aimAssist(start, dir, cone);
-    let s = this.stamps.find((x) => !x.on);
+    if (cone > 0) this.aimAssist(start, dir, cone, speed, grav, lift);
+    const student = this.mode === 'student';
+    const key = arm ? `${arm.id}:${student ? 1 : 0}` : 'stamp';
+    let s = this.stamps.find((x) => !x.on && x.key === key);
     if (!s) {
-      s = { obj: this.models.stamp(), vel: new THREE.Vector3(), life: 0, on: false };
+      const obj = arm ? this.arms.model(arm.id, student) : this.models.stamp();
+      s = { obj, vel: new THREE.Vector3(), life: 0, on: false, key, arm: null, seen: new Set(), scored: false, back: false, t: 0 };
       this.scene.add(s.obj);
       this.stamps.push(s);
     }
     s.on = true;
     s.obj.visible = true;
-    this.stu.dress(s.obj);
+    if (!arm) this.stu.dress(s.obj);
+    s.arm = arm;
+    s.seen.clear();
+    s.scored = false;
+    s.back = false;
+    s.t = 0;
     s.obj.position.copy(start);
     s.obj.rotation.set(0, this.yaw, 0);
-    s.vel.copy(dir).multiplyScalar(STAMP_SPEED);
-    s.vel.y += 0.8;
-    s.life = 1.6;
+    s.vel.copy(dir).multiplyScalar(speed);
+    s.vel.y += lift;
+    s.life = arm ? arm.life : 1.6;
+    if (arm) {
+      const out = this.arms.spend();
+      if (out) this.note(`${out} 끝! 다시 ${student ? '서류로' : '도장으로'}`, 1.6);
+    }
   }
 
-  /** 조준점 가까이(cone 라디안 안)의 적이 있으면 도장 방향을 살짝 그쪽으로 꺾는다. 터치는 설정, PC는 초보·중급에서 */
-  private aimAssist(start: THREE.Vector3, dir: THREE.Vector3, cone: number): void {
+  /**
+   * 조준점 가까이(cone 라디안 안)의 적이 있으면 도장 방향을 살짝 그쪽으로 꺾는다. 터치는 설정, PC는 초보·중급에서.
+   * speed·grav·lift: 던지는 것의 빠르기와 낙차 (무기마다 다르다)
+   */
+  private aimAssist(start: THREE.Vector3, dir: THREE.Vector3, cone: number, speed = STAMP_SPEED, grav = 5, lift = 0.8): void {
     let best: THREE.Vector3 | null = null;
     let bestCos = Math.cos(cone);
     for (const e of this.enemies) {
@@ -1567,58 +1739,99 @@ class Game implements Ctx {
     }
     if (!best) return;
     const d = best.distanceTo(start);
-    const t = d / STAMP_SPEED;
-    dir.set(best.x - start.x, best.y + 2.5 * t * t - 0.8 * t - start.y, best.z - start.z).normalize();
+    const t = d / speed;
+    dir.set(best.x - start.x, best.y + 0.5 * grav * t * t - lift * t - start.y, best.z - start.z).normalize();
   }
 
   private updateStamps(dt: number): void {
     for (const s of this.stamps) {
       if (!s.on) continue;
       s.life -= dt;
-      s.vel.y -= 5 * dt;
+      s.t += dt;
+      const a = s.arm;
       const p = s.obj.position;
+      // 꿰뚫는 무기·부메랑은 맞혀도 멈추지 않는다 (한 번 맞힌 것은 seen에 둔다)
+      const pass = !!a && (a.pierce || a.boomerang);
+      if (a?.boomerang) {
+        if (!s.back && s.t >= BOOMERANG_TURN) {
+          // 돌아선다: 오는 길에 다시 맞힐 수 있다
+          s.back = true;
+          s.seen.clear();
+        }
+        if (s.back) {
+          const to = _r.set(this.pos.x, EYE - 0.3 + this.jumpY, this.pos.z).sub(p);
+          const d = to.length();
+          if (d < 1.1) s.life = 0;
+          else s.vel.lerp(to.multiplyScalar(a.speed * 1.1 / d), Math.min(1, dt * 7));
+        } else s.vel.multiplyScalar(1 - dt * 0.8);
+      } else s.vel.y -= (a ? a.grav : 5) * dt;
       // 빠르게 날아가므로 두 번 나눠 움직이며 맞았는지 본다
       for (let k = 0; k < 2 && s.life > 0; k++) {
         const prev = _prev.copy(p);
         p.addScaledVector(s.vel, dt / 2);
         for (const e of this.enemies) {
-          if (!e.targetable) continue;
+          if (!e.targetable || (pass && s.seen.has(e))) continue;
           if (e instanceof PersonBoss) {
             const h = e.hitTest(prev, p);
             if (h === 0) continue;
-            this.stampHit(e, p, h === 2);
+            const reflected = this.stampHit(e, p, h === 2, s);
+            if (pass && !reflected) {
+              s.seen.add(e);
+              continue;
+            }
             s.life = 0;
             break;
           }
-          if (p.distanceTo(e.center) < e.radius + 0.28) {
-            this.stampHit(e, p);
+          if (p.distanceTo(e.center) < e.radius + 0.28 + (a ? a.reach : 0)) {
+            this.stampHit(e, p, false, s);
+            if (pass) {
+              s.seen.add(e);
+              continue;
+            }
             s.life = 0;
             break;
           }
         }
         if (s.life <= 0) break;
         for (const sh of this.sheets) {
-          if (sh.on && p.distanceTo(sh.obj.position) < SHEET_R[sh.kind][0]) {
+          if (sh.on && p.distanceTo(sh.obj.position) < SHEET_R[sh.kind][0] + (a ? a.reach : 0)) {
             sh.on = false;
             sh.obj.visible = false;
-            this.hits++;
+            if (!s.scored) {
+              s.scored = true;
+              this.hits++;
+            }
             this.hitMarker(false);
             this.fx.confetti(sh.obj.position, sh.kind === 'paper' ? 6 : 10, 3, sh.kind === 'packet' ? 0x5ee0ff : 0xffffff);
             this.sound('pop', sh.obj.position, 0.6);
+            if (pass) continue;
             s.life = 0;
             break;
           }
         }
+        if (s.life <= 0) break;
+        // 경비원·대출기(막힌다)와 부수는 상자
+        const ph = this.props.stampHit(p, a ? a.power : 1, s.seen);
+        if (ph === 'stop' || (ph === 'hit' && !pass)) {
+          s.life = 0;
+          break;
+        }
       }
-      if (this.mode === 'student') this.stu.orient(s.obj, s.vel);
+      if (a) this.arms.spin(s.obj, s.vel, a, dt);
+      else if (this.mode === 'student') this.stu.orient(s.obj, s.vel);
       else s.obj.rotation.x += dt * 14;
+      // 부메랑은 바닥을 스치듯 난다
+      if (a?.boomerang && p.y < 0.3) {
+        p.y = 0.3;
+        if (s.vel.y < 0) s.vel.y = 0;
+      }
       if (p.y < 0.08 && s.life > 0) {
         s.life = 0;
         this.fx.decal(p.x, p.z);
         // 바닥의 전화기는 발치에 떨어져도 받는다
         for (const e of this.enemies) {
-          if (e.targetable && e.kind === 'phone' && e.obj.position.y < 0.5 && Math.hypot(p.x - e.center.x, p.z - e.center.z) < 1.0) {
-            this.stampHit(e, p);
+          if (e.targetable && e.kind === 'phone' && e.obj.position.y < 0.5 && Math.hypot(p.x - e.center.x, p.z - e.center.z) < 1.0 + (s.arm ? s.arm.reach : 0)) {
+            this.stampHit(e, p, false, s);
             break;
           }
         }
@@ -1630,11 +1843,23 @@ class Game implements Ctx {
     }
   }
 
-  private stampHit(e: Enemy, at: THREE.Vector3, weak = false): void {
-    this.hits++;
+  /**
+   * 도장(무기)이 맞았다. s: 던진 것 (무기 배율, 명중률은 한 번 던진 것을 한 번만 센다).
+   * 돌려주는 값: 반사반사 부총장이 되받아쳤으면 true (꿰뚫는 무기도 거기서 멈춘다)
+   */
+  private stampHit(e: Enemy, at: THREE.Vector3, weak = false, s?: Stamp): boolean {
+    if (!s || !s.scored) {
+      this.hits++;
+      if (s) s.scored = true;
+    }
+    const k = s?.arm ? s.arm.power : 1;
+    let reflected = false;
     if (e instanceof PersonBoss) {
       // 사람은 다치지 않는다: 결재판에 도장 자국과 반짝임만
+      const before = e.hp;
       e.stamped(weak, this);
+      // 반사(학생 모드 반사반사 부총장)면 무거운 무기도 진행되지 않는다
+      reflected = e.hp > before;
       this.sound(weak ? 'weak' : 'process', e.weakPoint, weak ? 1 : 0.5);
       if (weak) {
         this.weakHits++;
@@ -1645,8 +1870,10 @@ class Game implements Ctx {
       this.fx.mark(at, 0.8);
       this.sound('hit', at);
     }
-    const r = this.damage(e, weak ? WEAK_DMG : e instanceof PersonBoss ? BODY_DMG : 1, 'stamp');
+    const base = weak ? WEAK_DMG : e instanceof PersonBoss ? BODY_DMG : 1;
+    const r = this.damage(e, reflected ? base : base * k, 'stamp');
     this.hitMarker(r === 'kill' || weak);
+    return reflected;
   }
 
   private hitMarker(kill: boolean): void {
@@ -1725,22 +1952,27 @@ class Game implements Ctx {
     this.pos.x += (fx * cos - fz * sin) * speed * dt;
     this.pos.z += (-fx * sin - fz * cos) * speed * dt;
     this.clampToBounds();
-    for (const o of this.world.obstacles) {
-      const cx = Math.max(o.minX, Math.min(o.maxX, this.pos.x));
-      const cz = Math.max(o.minZ, Math.min(o.maxZ, this.pos.z));
-      const dx = this.pos.x - cx;
-      const dz = this.pos.z - cz;
-      const d = Math.hypot(dx, dz);
-      if (d < RADIUS) {
-        if (d > 0.0001) {
-          this.pos.x = cx + (dx / d) * RADIUS;
-          this.pos.z = cz + (dz / d) * RADIUS;
-        } else {
-          this.pos.z = o.maxZ + RADIUS;
-        }
+    for (const o of this.world.obstacles) this.pushOut(o);
+    // 경비원·대출기·상자
+    for (const o of this.props.solids) this.pushOut(o);
+    if (len > 0.1 && this.jumpY === 0) this.bob += dt * (running ? 13 : 9);
+  }
+
+  /** 장애물(사각형) 밖으로 민다 */
+  private pushOut(o: Rect): void {
+    const cx = Math.max(o.minX, Math.min(o.maxX, this.pos.x));
+    const cz = Math.max(o.minZ, Math.min(o.maxZ, this.pos.z));
+    const dx = this.pos.x - cx;
+    const dz = this.pos.z - cz;
+    const d = Math.hypot(dx, dz);
+    if (d < RADIUS) {
+      if (d > 0.0001) {
+        this.pos.x = cx + (dx / d) * RADIUS;
+        this.pos.z = cz + (dz / d) * RADIUS;
+      } else {
+        this.pos.z = o.maxZ + RADIUS;
       }
     }
-    if (len > 0.1 && this.jumpY === 0) this.bob += dt * (running ? 13 : 9);
   }
 
   /** 점프: 한 번만 (공중에서 다시 못 뛴다) */
@@ -1909,7 +2141,10 @@ class Game implements Ctx {
     this.viewmodel.rotation.x = 0.15 + sw * 0.55;
     this.viewmodel.position.y = -0.3 + Math.sin(this.bob * 0.5) * 0.012 + sw * 0.04 - Math.min(0.06, Math.max(-0.06, this.vy * 0.012));
     this.viewmodel.position.z = -0.6 - sw * 0.16;
-    this.handStamp.visible = this.cooldown < this.curCd * 0.4;
+    // 무기를 들었으면 도장 대신 무기가 손에 보인다 (사원증은 날아가 있는 동안 손이 빈다)
+    const ready = this.cooldown < this.curCd * 0.4;
+    this.handStamp.visible = ready && !this.arms.id;
+    this.arms.showHand(ready && !(this.arms.def?.boomerang && this.stamps.some((s) => s.on && s.arm?.boomerang)));
     if (this.fovKick > 0) {
       this.fovKick = Math.max(0, this.fovKick - dt * 1.8);
       this.camera.fov = 70 + Math.sin(this.fovKick * Math.PI) * 9;
@@ -2084,6 +2319,8 @@ class Game implements Ctx {
     this.updateStamps(dt);
     this.updateSheets(edt);
     this.updatePickups(dt);
+    this.props.update(dt);
+    this.rescue.update(dt);
     this.fx.update(dt);
   }
 
@@ -2148,6 +2385,8 @@ class Game implements Ctx {
     else wave = `${places[this.stage]} · 처리 ${this.processed}건`;
     this.setText('wave', wave);
     this.setText('buff', this.buffT > 0 ? `아메리카노 ${Math.ceil(this.buffT)}초 · 빨리 던지기` : '');
+    this.setText('weapon', this.arms.hud());
+    if (this.props) this.props.syncUi(this.phase === 'play');
     // 보스 막대 = 결재 진행 (0% → 100%)
     const boss = this.boss;
     if (boss) {

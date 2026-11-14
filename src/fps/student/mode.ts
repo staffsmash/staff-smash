@@ -258,6 +258,25 @@ export class StudentMode implements StuCtx {
     return this.g.mode === 'student';
   }
 
+  /** 고른 주인공 (조력자가 부르는 이름, 친구 고르기) */
+  get heroName(): string {
+    return this.hero.name;
+  }
+
+  get heroId(): string {
+    return this.hero.id;
+  }
+
+  /** 지금 구역 번호 (0 대운동장 · 1 사회과학관 앞 · 2 본관 앞 · 3 총장실) */
+  get areaNo(): number {
+    return this.area;
+  }
+
+  /** 구역 카드·화면 전환·엔딩 중 (조력자가 오지 않는다) */
+  get busy(): boolean {
+    return this.cardT > 0 || this.flow === 'card' || this.flow === 'fade' || this.flow === 'done' || this.flow === 'ending' || this.flow === 'result';
+  }
+
   // ---------- 미리 그리기 ----------
 
   /** 학생 모드 모형·그림을 타이틀 뒤에서 한 번 그려 둔다. 돌려준 함수로 치운다 */
@@ -547,7 +566,7 @@ export class StudentMode implements StuCtx {
     const help = document.getElementById('help');
     if (help) {
       if (!this.applied) this.helpHtml = help.innerHTML;
-      help.innerHTML = this.helpHtml.replace('도장 던지기', '서류 던지기');
+      help.innerHTML = this.helpHtml.replace('도장 던지기', '서류 던지기').replace('경비원 인사 E', '대출기 대여 E');
     }
     this.applied = true;
   }
