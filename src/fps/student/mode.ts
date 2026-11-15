@@ -7,6 +7,7 @@ import { lateMin, onTime, outcomeText } from '../../run';
 import type { Rect } from '../blocks';
 import { attachRecordForm } from '../board';
 import type { PersonBoss } from '../bosses';
+import type { Stage } from '../campus';
 import type { Ctx, Enemy, HurtKind } from '../enemies';
 import type { FoodKind } from '../models';
 import { peopleKit, type Person, type Who } from '../people';
@@ -29,7 +30,6 @@ import { ensureDom, esc, hideSpell, playEnding, showCombo, showSpell, spellHtml 
 // 16:52 시작, 17:00 본관 업무 마감. 결과는 성적표(구역마다 학점, 누적 GPA — 본편 2D grade.ts와 같은 기준).
 // main.ts의 Game은 연결 부분(모드 고르기·단계·HUD 몇 줄)만 이 파일을 부른다. 그래서 Game의 모양을 여기 적어 둔다.
 
-type Stage = 'yard' | 'yardBoss' | 'yardClear' | 'path' | 'plaza' | 'plazaClear' | 'path2' | 'field' | 'fieldClear' | 'toFinal' | 'final' | 'done';
 type Phase = 'title' | 'play' | 'paused' | 'clear' | 'over';
 
 /** 학생 모드가 쓰는 Game의 공개 부분 */

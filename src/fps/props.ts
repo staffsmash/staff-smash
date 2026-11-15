@@ -17,7 +17,7 @@ import { canvasTex, FONT, NAVY } from './textures';
 //   2~3번 맞히면 부서지고 식권(25%)이나 음식이 나온다. 상자는 민원(잡몹)이 아니다: 차례 정리·조준 보조와 상관없다.
 // 사람·기계·상자는 걸어서 통과하지 못한다 (solids → Game.move).
 
-export type Place = 'yard' | 'plaza' | 'field' | 'final';
+export type Place = 'yard' | 'plaza' | 'hum' | 'dorm' | 'field' | 'final';
 
 /** perks(props·helpers)가 쓰는 Game 쪽 기능 */
 export interface PerkHost {
@@ -62,11 +62,17 @@ const SPOTS: Record<'staff' | 'student', Record<Place, Spot>> = {
   staff: {
     yard: { npc: [-9, 14], look: [0, 6], boxes: [[-19, 3], [18, 9], [12, -2], [-12, 1]] },
     plaza: { npc: [76.5, -7], look: [74, 1], boxes: [[84, 10], [97, -12], [110, 11], [90, 15]] },
+    // 인문과학관 앞: 남서쪽 입구(PATH3) 옆, 국제학사 앞: 북쪽 입구(PATH4) 옆
+    hum: { npc: [151, 27], look: [149, 37], boxes: [[156, 8], [168, 21], [167, -15], [154, -12]] },
+    dorm: { npc: [172.5, 60.5], look: [165, 59], boxes: [[178, 74], [188, 88], [168, 95], [184, 70]] },
     field: { npc: [87, 61], look: [95, 62], boxes: [[75, 72], [116, 70], [108, 96], [80, 97]] },
     final: { npc: [-9, 14], look: [0, 6], boxes: [[-17, 3], [17, 3], [-14, 11]] },
   },
   student: {
     field: { npc: [87.5, 60.8], look: [95, 63], boxes: [[84, 70], [107, 68], [100, 92], [77, 90]] },
+    // 학생 모드(거꾸로): 국제학사 앞은 서쪽 철망 문(PATH5) 옆, 인문과학관 앞은 남쪽 입구(PATH4) 옆
+    dorm: { npc: [160.5, 74], look: [158, 66], boxes: [[172, 84], [186, 96], [178, 64], [190, 76]] },
+    hum: { npc: [171.5, 36], look: [165, 39], boxes: [[156, 6], [168, -14], [152, 20], [170, 16]] },
     plaza: { npc: [106, 15.5], look: [95, 13], boxes: [[86, -9], [100, -13], [112, 5], [82, 3]] },
     yard: { npc: [21.5, 10], look: [22, 1], boxes: [[12, -2], [-12, 3], [-18, 12], [5, 13]] },
     final: { npc: [-9, 14], look: [0, 6], boxes: [[-17, 3], [17, 3], [-14, 11]] },
@@ -77,17 +83,28 @@ const SPOTS: Record<'staff' | 'student', Record<Place, Spot>> = {
 function placesOf(mode: 'staff' | 'student', stage: string): [Place, Place] {
   if (stage === 'final' || stage === 'done') return ['final', 'final'];
   if (mode === 'student') {
-    // 학생: 대운동장 → 사회과학관 앞 → 본관 앞 → 총장실
+    // 학생: 대운동장 → (국제학사 앞 → 인문과학관 앞 →) 사회과학관 앞 → 본관 앞 → 총장실
+    if (stage === 'path5') return ['field', 'dorm'];
+    if (stage === 'dorm' || stage === 'dormClear') return ['dorm', 'dorm'];
+    if (stage === 'path4') return ['dorm', 'hum'];
+    if (stage === 'hum' || stage === 'humClear') return ['hum', 'hum'];
+    if (stage === 'path3') return ['hum', 'plaza'];
     if (stage === 'path2') return ['field', 'plaza'];
     if (stage === 'path') return ['plaza', 'yard'];
     if (stage === 'plaza' || stage === 'plazaClear') return ['plaza', 'plaza'];
     if (stage === 'yard' || stage === 'yardBoss' || stage === 'yardClear') return ['yard', 'yard'];
     return ['field', 'field'];
   }
+  // 교직원: 본관 앞 → 사회과학관 앞 → 인문과학관 앞 → 국제학사 앞 → 대운동장 → 해 질 녘 본관 앞
   if (stage === 'path') return ['yard', 'plaza'];
   if (stage === 'path2') return ['plaza', 'field'];
+  if (stage === 'path3') return ['plaza', 'hum'];
+  if (stage === 'path4') return ['hum', 'dorm'];
+  if (stage === 'path5') return ['dorm', 'field'];
   if (stage === 'toFinal') return ['field', 'final'];
   if (stage === 'plaza' || stage === 'plazaClear') return ['plaza', 'plaza'];
+  if (stage === 'hum' || stage === 'humClear') return ['hum', 'hum'];
+  if (stage === 'dorm' || stage === 'dormClear') return ['dorm', 'dorm'];
   if (stage === 'field' || stage === 'fieldClear') return ['field', 'field'];
   return ['yard', 'yard'];
 }
