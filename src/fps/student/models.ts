@@ -8,7 +8,9 @@ import {
   cancelBotTex,
   markTex,
   paperDecalTex,
+  passportTex,
   penLineTex,
+  soupTex,
   rejectDocTex,
   signTex,
   ticketTex,
@@ -63,6 +65,12 @@ export class StudentKit {
   readonly paperDecal: THREE.Texture;
   readonly rejectSheet: THREE.Texture;
   readonly approvalSheet: THREE.Texture;
+  // 국물 웅덩이 (김학생식당) · 여권 (김국제)
+  readonly soupMat: THREE.MeshBasicMaterial;
+  private passGeo = new THREE.BoxGeometry(0.34, 0.46, 0.05);
+  private passMats: THREE.Material[];
+  private cornerGeo = new THREE.BoxGeometry(0.34, 0.42, 0.02);
+  private cornerMat = lambert(0xffffff);
 
   constructor() {
     // 서류 비행기: 앞(-z)이 뾰족한 날개 두 장 + 아래 용골
@@ -99,6 +107,35 @@ export class StudentKit {
     this.approvalSheet = docTex('결재 서류', '#22304f');
     this.textures.push(face, bottom, front, this.botTex, tower, this.penTex, pl, this.passMark, this.persuadeMark, this.reflectMark, this.paperDecal);
     this.textures.push(...this.spellMarks.values(), this.rejectSheet, this.approvalSheet);
+    const soup = soupTex();
+    this.soupMat = new THREE.MeshBasicMaterial({
+      map: soup,
+      transparent: true,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -5,
+      polygonOffsetUnits: -10,
+    });
+    const pass = passportTex();
+    const cover = new THREE.MeshLambertMaterial({ map: pass });
+    const edge = lambert(0x16294d);
+    this.passMats = [edge, edge, lambert(0xf3ecdd), edge, cover, cover];
+    this.textures.push(soup, pass);
+  }
+
+  /** 김국제가 던지는 여권 한 권 */
+  passport(): THREE.Mesh {
+    const m = new THREE.Mesh(this.passGeo, this.passMats);
+    m.castShadow = true;
+    return m;
+  }
+
+  /** 허허실실 부총장의 "일거리": 삼각김밥 위로 삐져나온 서류 귀퉁이 (2D createFoodIcon('work')) */
+  workCorner(): THREE.Mesh {
+    const m = new THREE.Mesh(this.cornerGeo, this.cornerMat);
+    m.position.set(0.16, 0.14, -0.06);
+    m.rotation.set(0, 0.2, 0.4);
+    return m;
   }
 
   /** 던지는 서류 비행기 (앞 = -z) */
