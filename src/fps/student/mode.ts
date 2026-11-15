@@ -7,7 +7,7 @@ import { lateMin, onTime, outcomeText } from '../../run';
 import type { Rect } from '../blocks';
 import { attachRecordForm } from '../board';
 import type { PersonBoss } from '../bosses';
-import type { Stage } from '../campus';
+import { DORM_DOOR, HUM_DOOR, PATH3, PATH3_GUIDE, type Stage } from '../campus';
 import type { Ctx, Enemy, HurtKind } from '../enemies';
 import type { FoodKind } from '../models';
 import { peopleKit, type Person, type Who } from '../people';
@@ -15,7 +15,7 @@ import { DIFF_KEYS, DIFFS, saveSettings, timeText, type Diff, type DiffKey, type
 import { clearSubtitle, prepareSpeech } from '../speech';
 import { FRONT_X } from '../social';
 import type { World } from '../world';
-import { Bansa, Banryeo, StudentBoss, StudentPresident, WindowStaff, type StaffKind, type StuCtx } from './bosses';
+import { Bansa, Banryeo, Bujae, Hoho, STUDENT_BOSS_LINES, StudentBoss, StudentPresident, WindowStaff, type StaffKind, type StuCtx } from './bosses';
 import { AbsenceStamp, CancelBot, DocTower, RejectDoc, Ticket } from './enemies';
 import { StudentHazards } from './hazards';
 import { StudentKit } from './models';
@@ -23,8 +23,9 @@ import { buildStudentPeople, staffHero, type StudentPeople } from './people';
 import { heroPortrait } from './textures';
 import { ensureDom, esc, hideSpell, playEnding, showCombo, showSpell, spellHtml } from './ui';
 
-// 1인칭 시험판 학생 모드 (본편 2D 학생 모드 내용, 2026-11-14).
-// 교직원 모드를 거꾸로 올라간다: 대운동장 → 사회과학관 앞 → 본관 앞 → 본관 총장실(계단 앞).
+// 1인칭 시험판 학생 모드 (본편 2D 학생 모드 내용, 2026-11-14 · 2026-11-15 구역 다섯 곳).
+// 교직원 모드를 거꾸로 올라간다: 대운동장 → 국제학사 앞 → 인문과학관 앞 → 사회과학관 앞 → 본관 앞
+// → 본관 총장실(계단 앞). 구역과 길은 아래 ROUTE·LINKS 표 (새 구역·길은 campus.ts).
 // 구역마다: 학사 행정 잡몹 차례 → 창구 직원(작은 중간 보스) → 처장·부총장 (본관 앞은 창구 직원 뒤 총장).
 // 학생은 도장 대신 졸업 서류(비행기)를 던진다. 맞힌 자리에는 "통과"(사물)·"설득"(사람 결재판) 도장 자국이 남는다.
 // 16:52 시작, 17:00 본관 업무 마감. 결과는 성적표(구역마다 학점, 누적 GPA — 본편 2D grade.ts와 같은 기준).
@@ -88,16 +89,202 @@ export interface StudentHost {
 }
 
 const EYE = 1.6;
-/** 구역 이름 (성적표 줄) */
-const AREAS = ['대운동장', '사회과학관 앞', '본관 앞', '본관 총장실'];
+/** 마지막 구역 (성적표 마지막 줄) */
+const FINAL_NAME = '본관 총장실';
 
 type Spawn = 'doc' | 'absence' | 'bot' | 'queue';
-/** 구역마다 몰려오는 행정 (queue = 번호표 행렬 하나) */
-const WAVES: Partial<Record<Spawn, number>>[] = [
-  { doc: 5, absence: 1 },
-  { doc: 4, bot: 2, absence: 1 },
-  { doc: 4, bot: 2, absence: 1, queue: 1 },
+type BossKind = 'banryeo' | 'bansa' | 'bujae' | 'hoho';
+type V3 = THREE.Vector3;
+const v3 = (x: number, z: number) => new THREE.Vector3(x, 0, z);
+
+/** 사람이 들어오는 자리 · 서는 자리 · 나가는 자리 */
+interface Spots {
+  at: V3;
+  spot: V3;
+  exit: V3;
+}
+
+/** 학생 경로의 구역 하나 (차례대로) */
+interface AreaDef {
+  /** 성적표·HUD 이름 */
+  name: string;
+  /** 구역 안에 있을 때 Game.stage */
+  stage: Stage;
+  rect(w: World): Rect;
+  /** 몰려오는 행정 (queue = 번호표 행렬 하나) */
+  wave: Partial<Record<Spawn, number>>;
+  staff: StaffKind;
+  /** 창구 직원 다음 보스 (null = 창구 직원 뒤 총장실로) */
+  boss: BossKind | null;
+  staffAt(g: StudentGame): Spots;
+  /** 보스 자리 (김부재중 처장은 at = 드나드는 문) */
+  bossAt?(g: StudentGame): Spots;
+  /** 들어서면 놓이는 먹을 것 */
+  food?(g: StudentGame): [FoodKind, number, number][];
+  /** 노을 정도 (시계와 견줘 큰 쪽) */
+  dusk: number;
+}
+
+/** 구역과 다음 구역 사이 길 */
+interface LinkDef {
+  stage: Stage;
+  bounds(w: World): Rect[];
+  barricade(w: World): THREE.Group;
+  arrows(w: World): THREE.Group;
+  /** 구역 카드 아래 줄 */
+  card: string;
+  /** 시계 아래 장소 · 왼쪽 위 안내 */
+  place: string;
+  go: string;
+  /** HUD 길 안내가 가리키는 점 (꺾이는 길은 지금 자리에 따라) */
+  guide(p: V3): { x: number; z: number };
+  /** 다음 구역에 들어섰나 */
+  arrived(p: V3): boolean;
+  dusk: number;
+}
+
+/**
+ * 학생 경로 (교직원 경로를 거꾸로): 구역 다섯 곳 → 본관 총장실.
+ * ROUTE[i]에서 LINKS[i]를 지나 ROUTE[i + 1]로 간다.
+ */
+const ROUTE: AreaDef[] = [
+  {
+    name: '대운동장',
+    stage: 'field',
+    rect: (w) => w.field,
+    wave: { doc: 5, absence: 1 },
+    staff: 'haksa',
+    boss: 'banryeo',
+    // 대운동장: 동쪽 트랙 쪽에서 걸어 들어온다
+    staffAt: (g) => {
+      const spot = v3(Math.max(60, Math.min(128, g.pos.x + 9)), Math.max(66, Math.min(100, g.pos.z + 8)));
+      return { at: v3(Math.min(136, spot.x + 8), spot.z), spot, exit: v3(150, 80) };
+    },
+    dusk: 0.05,
+  },
+  {
+    // 학생회관 및 기숙사: 학생식당 창구 → 간식을 든 부총장
+    name: '국제학사 앞',
+    stage: 'dorm',
+    rect: (w) => w.dorm,
+    wave: { doc: 4, absence: 2, bot: 1 },
+    staff: 'sikdang',
+    boss: 'hoho',
+    // 국제학사 현관에서 나온다
+    staffAt: () => ({ at: v3(198, 79), spot: v3(179, 75), exit: DORM_DOOR.clone() }),
+    bossAt: () => ({ at: v3(198, 84), spot: v3(180, 82), exit: DORM_DOOR.clone() }),
+    food: () => [
+      ['gimbap', 165, 76],
+      ['americano', 171, 59],
+    ],
+    dusk: 0.2,
+  },
+  {
+    // 국제교류 서류 창구 → 결재가 늦는 처장
+    name: '인문과학관 앞',
+    stage: 'hum',
+    rect: (w) => w.hum,
+    wave: { doc: 5, bot: 1, absence: 2 },
+    staff: 'gukje',
+    boss: 'bujae',
+    // 인문과학관 현관에서 나온다 (김부재중 처장은 이 문으로 드나든다)
+    staffAt: () => ({ at: v3(180, 8), spot: v3(164, 12), exit: HUM_DOOR.clone() }),
+    bossAt: () => ({ at: HUM_DOOR.clone(), spot: v3(170, 7), exit: HUM_DOOR.clone() }),
+    food: () => [
+      ['gimbap', 158, 32],
+      ['americano', 170, 32],
+    ],
+    dusk: 0.35,
+  },
+  {
+    name: '사회과학관 앞',
+    stage: 'plaza',
+    rect: (w) => w.plaza,
+    wave: { doc: 4, bot: 2, absence: 1 },
+    staff: 'jinchwi',
+    boss: 'bansa',
+    // 사회과학관 현관에서 나온다
+    staffAt: () => ({ at: v3(FRONT_X - 1.5, 6), spot: v3(108, 4), exit: v3(FRONT_X - 0.5, 6) }),
+    bossAt: () => ({ at: v3(FRONT_X - 1.5, -4), spot: v3(104, -2), exit: v3(FRONT_X - 0.5, -4) }),
+    food: () => [
+      ['gimbap', 88, 8],
+      ['americano', 102, 8],
+    ],
+    dusk: 0.45,
+  },
+  {
+    name: '본관 앞',
+    stage: 'yard',
+    rect: (w) => w.yard,
+    wave: { doc: 4, bot: 2, absence: 1, queue: 1 },
+    staff: 'hakjong',
+    boss: null,
+    // 본관 문에서 나온다
+    staffAt: () => ({ at: v3(0, -19.2), spot: v3(0, -9), exit: v3(0, -20) }),
+    food: (g) => [[g.hp <= 6 ? 'donkatsu' : 'gimbap', 18, 8]],
+    dusk: 0.62,
+  },
 ];
+
+/** 사회과학관 앞 광장으로 올라가는 path3 세로 칸의 가운데 (x) */
+const PATH3_X = (PATH3[0].minX + PATH3[0].maxX) / 2;
+
+const LINKS: LinkDef[] = [
+  {
+    // 대운동장 동쪽 철망 문 → 국제학사 앞
+    stage: 'path5',
+    bounds: (w) => [w.field, ...w.path5, w.dorm],
+    barricade: (w) => w.barricade5,
+    arrows: (w) => w.arrows5,
+    card: '다음: 국제학사 앞 — 동쪽 철망 문으로 가세요 →',
+    place: '국제학사 가는 길',
+    go: '국제학사 앞으로 이동하세요',
+    guide: () => ({ x: 162, z: 66 }),
+    arrived: (p) => p.x > 158,
+    dusk: 0.15,
+  },
+  {
+    // 국제학사 앞 → 인문과학관 앞 (북쪽)
+    stage: 'path4',
+    bounds: (w) => [w.dorm, ...w.path4, w.hum],
+    barricade: (w) => w.barricade4,
+    arrows: (w) => w.arrows4,
+    card: '다음: 인문과학관 앞 — 북쪽 길로 가세요 ↑',
+    place: '인문과학관 가는 길',
+    go: '인문과학관 앞으로 이동하세요',
+    guide: () => ({ x: 165, z: 36 }),
+    arrived: (p) => p.z < 39,
+    dusk: 0.28,
+  },
+  {
+    // 인문과학관 앞 → 사회과학관 남쪽 끝을 돌아 → 광장 (서쪽으로 가다가 모퉁이에서 북쪽)
+    stage: 'path3',
+    bounds: (w) => [w.hum, ...w.path3, w.plaza],
+    barricade: (w) => w.barricade3,
+    arrows: (w) => w.arrows3,
+    card: '다음: 사회과학관 앞 — 서쪽 길로 가세요 ←',
+    place: '사회과학관 가는 길',
+    go: '사회과학관 앞으로 이동하세요',
+    guide: (p) => (p.x > PATH3_X + 4 ? { x: PATH3_GUIDE[0][0], z: PATH3_GUIDE[0][1] } : { x: PATH3_X, z: 15 }),
+    arrived: (p) => p.z < 17 && p.x < 119,
+    dusk: 0.4,
+  },
+  {
+    stage: 'path',
+    bounds: (w) => [w.plaza, w.path, w.yard],
+    barricade: (w) => w.barricade,
+    arrows: (w) => w.arrows,
+    card: '다음: 본관 앞 — 왼쪽 길로 가세요 ←',
+    place: '본관 가는 길',
+    go: '본관 앞으로 이동하세요',
+    guide: () => ({ x: 18, z: 1 }),
+    arrived: (p) => p.x < 24,
+    dusk: 0.55,
+  },
+];
+
+/** 성적표 줄 이름 (구역 다섯 곳 + 총장실) */
+const AREAS = [...ROUTE.map((a) => a.name), FINAL_NAME];
 const QUEUE_LEN = 4;
 
 /** 잡몹을 통과시켰을 때 (본편 2D 학생 모드 글자) */
@@ -249,6 +436,16 @@ export class StudentMode implements StuCtx {
     } catch {
       /* 처음 고르는 값 */
     }
+    // 학생 모드에서는 Game.area(잡몹이 나오고 보스가 걷는 경계)를 학생 경로의 지금 구역으로 돌려준다.
+    // Game.area는 단계 이름으로 구역을 고르는데, 학생은 같은 구역을 거꾸로 돌므로 여기서 직접 정한다.
+    // (main.ts를 고치지 않으려고 이 Game 객체에만 덮어쓴다. 교직원 모드·타이틀에서는 원래 값)
+    const base = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(g), 'area')?.get;
+    if (base) {
+      Object.defineProperty(g, 'area', {
+        configurable: true,
+        get: () => (this.on && g.phase !== 'title' ? this.rect : (base.call(g) as Rect)),
+      });
+    }
   }
 
   get easy(): boolean {
@@ -297,9 +494,9 @@ export class StudentMode implements StuCtx {
       group.add(o);
     });
     this.office.visible = true;
-    const ppl = [this.ppl.banryeo, this.ppl.bansa, ...Object.values(this.ppl.staff)];
+    const ppl = [this.ppl.banryeo, this.ppl.bansa, this.ppl.bujae, this.ppl.hoho, ...Object.values(this.ppl.staff)];
     ppl.forEach((p, i) => {
-      p.root.position.set(-4 + i * 2, -1.6, -3);
+      p.root.position.set(-6 + i * 1.4, -1.6, -3);
       p.say('…', 1, false);
       p.stampMark(true);
       p.update(0.016, { walking: true, raise: 0.5, reach: 0.5, wave: false });
@@ -327,6 +524,8 @@ export class StudentMode implements StuCtx {
       '결재… 올려 드리죠. 퇴근합니다…',
       '졸업 서류요? 한번 검토해 봅시다.',
       '좋아요, 검토 끝났습니다.',
+      ...ROUTE.map((a) => staffHero(a.staff).line),
+      ...STUDENT_BOSS_LINES,
     ]);
     const p = _v.set(0, 1.6, 6);
     for (const [t, col] of [
@@ -338,12 +537,23 @@ export class StudentMode implements StuCtx {
       ['설득 완료!', '#7CFC9A'],
       ['반려 철회!', '#7CFC9A'],
       ['검토 완료!', '#7CFC9A'],
+      ['결재 완료!', '#7CFC9A'],
+      ['국물 주의!', '#ffd27f'],
+      ['따르릉!', '#ffe066'],
       ...PERSUADE.map((t) => [t, '#9fd3ff']),
     ]) {
       this.g.fx.text(p, t, col);
     }
+    // 국물 웅덩이·여권·일거리
+    this.haz.spill(0, -2, 0.1);
+    this.haz.throwPassport(_v.set(0, 1.6, 4), new THREE.Vector3(0, 0, 0.01));
+    const work = { obj: this.workModel() };
+    work.obj.position.set(1.5, -1.6, -2);
+    group.add(work.obj);
     k.warmTickets(Array.from({ length: 24 }, (_, i) => String(87 + i).padStart(3, '0')));
     return () => {
+      this.haz.clear();
+      group.remove(work.obj);
       for (const pp of ppl) {
         group.remove(pp.root);
         pp.reset();
@@ -534,6 +744,12 @@ export class StudentMode implements StuCtx {
   reset(): void {
     this.ending?.cancel();
     this.ending = null;
+    const w = this.g.world;
+    for (const b of [w.barricade3, w.barricade4, w.barricade5]) {
+      b.visible = true;
+      b.position.y = 0;
+    }
+    for (const a of [w.arrows3, w.arrows4, w.arrows5]) a.visible = false;
     this.haz.clear();
     this.office.visible = false;
     this.towerModel.removeFromParent();
@@ -594,7 +810,8 @@ export class StudentMode implements StuCtx {
   private flipArrows(on: boolean): void {
     if (on === this.arrowsFlipped) return;
     this.arrowsFlipped = on;
-    for (const grp of [this.g.world.arrows, this.g.world.arrows2]) for (const a of grp.children) a.rotation.z += Math.PI;
+    const w = this.g.world;
+    for (const grp of [w.arrows, w.arrows2, w.arrows3, w.arrows4, w.arrows5]) for (const a of grp.children) a.rotation.z += Math.PI;
   }
 
   /** 던지는 것: 학생은 서류 비행기 (Game.fire가 부른다) */
@@ -620,7 +837,7 @@ export class StudentMode implements StuCtx {
     this.flow = 'wave';
     this.flowT = 0;
     this.queue = [];
-    for (const [k, n0] of Object.entries(WAVES[i]) as [Spawn, number][]) {
+    for (const [k, n0] of Object.entries(ROUTE[i].wave) as [Spawn, number][]) {
       const n = Math.max(1, Math.round(n0 * this.g.diff.count));
       for (let j = 0; j < n; j++) this.queue.push(k);
     }
@@ -682,6 +899,70 @@ export class StudentMode implements StuCtx {
     this.g.enemies.push(new RejectDoc(this.g, this.kit, at));
   }
 
+  spawnMinion(kind: 'doc' | 'absence' | 'bot'): void {
+    this.spawn(kind);
+  }
+
+  /** 허허실실 부총장: 플레이어 양옆(보스를 볼 때 왼쪽·오른쪽)에 간식 하나와 일거리 하나 (어느 쪽인지는 무작위) */
+  dropSnacks(from: THREE.Vector3): void {
+    const g = this.g;
+    let dx = from.x - g.pos.x;
+    let dz = from.z - g.pos.z;
+    const d = Math.hypot(dx, dz) || 1;
+    dx /= d;
+    dz /= d;
+    const real = (['donkatsu', 'gimbap', 'americano'] as const)[Math.floor(Math.random() * 3)];
+    const workSide = Math.random() < 0.5 ? -1 : 1;
+    for (const side of [-1, 1]) {
+      const r = 2.2 + Math.random() * 0.8;
+      const p = this.freeSpot(g.pos.x - dz * side * r + dx * 0.8, g.pos.z + dx * side * r + dz * 0.8);
+      if (side === workSide) {
+        this.haz.placeWork(this.workModel(), p.x, p.z);
+      } else {
+        g.spawnPickup(real, p.x, p.z);
+      }
+      g.fx.confetti(_v.set(p.x, 0.6, p.z), 8, 2, 0xf6f1e1, 1.2, 0.5);
+    }
+  }
+
+  /** 일거리: 삼각김밥 모형 + 삐져나온 서류 귀퉁이, 이름표는 2D처럼 "삼각김밥?" */
+  private workModel(): THREE.Group {
+    const { obj, item } = this.g.models.food('gimbap', true);
+    item.add(this.kit.workCorner());
+    const old = obj.children.find((c) => c instanceof THREE.Sprite);
+    const label = this.g.models.label('삼각김밥?', '#ffe066');
+    if (old) {
+      label.position.copy(old.position);
+      obj.remove(old);
+    } else label.position.y = 1.25;
+    obj.add(label);
+    return obj;
+  }
+
+  /** 구역 안, 화단·가로등 같은 장애물 밖 (Game.freeSpot과 같은 방식) */
+  private freeSpot(x: number, z: number): { x: number; z: number } {
+    const a = this.g.area;
+    const M = 0.8;
+    for (let it = 0; it < 3; it++) {
+      x = Math.max(a.minX + 1.2, Math.min(a.maxX - 1.2, x));
+      z = Math.max(a.minZ + 1.2, Math.min(a.maxZ - 1.2, z));
+      for (const o of this.g.world.obstacles) {
+        if (x <= o.minX - M || x >= o.maxX + M || z <= o.minZ - M || z >= o.maxZ + M) continue;
+        const opts: [number, number, number][] = [
+          [x - (o.minX - M), o.minX - M, z],
+          [o.maxX + M - x, o.maxX + M, z],
+          [z - (o.minZ - M), x, o.minZ - M],
+          [o.maxZ + M - z, x, o.maxZ + M],
+        ];
+        opts.sort((p, q) => p[0] - q[0]);
+        const ok = opts.find(([, nx, nz]) => nx >= a.minX && nx <= a.maxX && nz >= a.minZ && nz <= a.maxZ) ?? opts[0];
+        x = ok[1];
+        z = ok[2];
+      }
+    }
+    return { x, z };
+  }
+
   spawnQueue(n: number): void {
     const g = this.g;
     const head = this.spawnPoint(_v, 0).clone();
@@ -718,30 +999,10 @@ export class StudentMode implements StuCtx {
   }
 
   /** 창구 직원 (구역마다 한 명) */
-  private startStaff2(): void {
+  private startStaff2(kind = ROUTE[this.area].staff): void {
     const g = this.g;
-    const kinds: StaffKind[] = ['haksa', 'jinchwi', 'hakjong'];
-    const kind = kinds[this.area];
     const hero = staffHero(kind);
-    let at: THREE.Vector3;
-    let spot: THREE.Vector3;
-    let exit: THREE.Vector3;
-    if (this.area === 0) {
-      // 대운동장: 동쪽 트랙 쪽에서 걸어 들어온다
-      spot = new THREE.Vector3(Math.max(60, Math.min(128, g.pos.x + 9)), 0, Math.max(66, Math.min(100, g.pos.z + 8)));
-      at = new THREE.Vector3(Math.min(136, spot.x + 8), 0, spot.z);
-      exit = new THREE.Vector3(150, 0, 80);
-    } else if (this.area === 1) {
-      // 사회과학관 현관에서 나온다
-      at = new THREE.Vector3(FRONT_X - 1.5, 0, 6);
-      spot = new THREE.Vector3(108, 0, 4);
-      exit = new THREE.Vector3(FRONT_X - 0.5, 0, 6);
-    } else {
-      // 본관 문에서 나온다
-      at = new THREE.Vector3(0, 0, -19.2);
-      spot = new THREE.Vector3(0, 0, -9);
-      exit = new THREE.Vector3(0, 0, -20);
-    }
+    const { at, spot, exit } = ROUTE[this.area].staffAt(g);
     const b = new WindowStaff(g, this, this.ppl.staff[kind], kind, hero.name, hero.line, at, spot, exit);
     b.setTouchHint(this.h.touch);
     this.h.placeBoss(b);
@@ -750,16 +1011,37 @@ export class StudentMode implements StuCtx {
     this.addT = 9;
   }
 
-  private startBoss(): void {
+  /** 처장·부총장 자리: 구역에 정해 둔 곳이 없으면 플레이어 앞쪽 (구역 안) */
+  private bossSpots(): Spots {
+    const def = ROUTE[this.area];
+    if (def.bossAt) return def.bossAt(this.g);
+    const g = this.g;
+    const a = g.area;
+    const fx = -Math.sin(g.yaw);
+    const fz = -Math.cos(g.yaw);
+    const spot = v3(Math.max(a.minX + 6, Math.min(a.maxX - 6, g.pos.x + fx * 12)), Math.max(a.minZ + 6, Math.min(a.maxZ - 6, g.pos.z + fz * 12)));
+    const at = v3(Math.max(a.minX + 1, Math.min(a.maxX - 1, spot.x + fx * 6)), Math.max(a.minZ + 1, Math.min(a.maxZ - 1, spot.z + fz * 6)));
+    return { at, spot, exit: at.clone() };
+  }
+
+  private startBoss(kind = ROUTE[this.area].boss): void {
     const g = this.g;
     let b: StudentBoss;
-    if (this.area === 0) {
-      const f = g.world.field;
+    if (kind === 'banryeo') {
+      const f = g.area;
       const spot = new THREE.Vector3(Math.max(f.minX + 6, Math.min(f.maxX - 6, g.pos.x)), 0, Math.max(f.minZ + 10, Math.min(f.maxZ - 6, g.pos.z + 15)));
       const at = new THREE.Vector3(Math.max(f.minX + 2, spot.x - 7), 0, Math.min(f.maxZ - 1, spot.z + 6));
-      b = new Banryeo(g, this, this.ppl.banryeo, at, spot, new THREE.Vector3(60, 0, 112), Math.max(4, Math.round(7 * g.diff.bossHp)));
+      const exit = ROUTE[this.area].bossAt?.(g).exit ?? new THREE.Vector3(60, 0, 112);
+      b = new Banryeo(g, this, this.ppl.banryeo, at, spot, exit, Math.max(4, Math.round(7 * g.diff.bossHp)));
+    } else if (kind === 'bansa') {
+      const p = this.bossSpots();
+      b = new Bansa(g, this, this.ppl.bansa, p.at, p.spot, p.exit);
+    } else if (kind === 'bujae') {
+      const p = this.bossSpots();
+      b = new Bujae(g, this, this.ppl.bujae, p.at, p.spot, p.exit);
     } else {
-      b = new Bansa(g, this, this.ppl.bansa, new THREE.Vector3(FRONT_X - 1.5, 0, -4), new THREE.Vector3(104, 0, -2), new THREE.Vector3(FRONT_X - 0.5, 0, -4));
+      const p = this.bossSpots();
+      b = new Hoho(g, this, this.ppl.hoho, p.at, p.spot, p.exit);
     }
     this.h.placeBoss(b);
     this.announce(b);
@@ -769,7 +1051,7 @@ export class StudentMode implements StuCtx {
 
   private announce(b: StudentBoss | StudentPresident): void {
     this.h.showBossBar(b.bossName);
-    this.g.banner(b.bossName, b.hintText);
+    this.g.banner(b instanceof StudentBoss && b.introTitle ? b.introTitle : b.bossName, b.hintText);
     this.g.sound('volley');
   }
 
@@ -813,9 +1095,12 @@ export class StudentMode implements StuCtx {
       return;
     }
     document.getElementById('bossbox')?.classList.remove('on');
-    if (b instanceof Banryeo || b instanceof Bansa) {
+    if (b instanceof StudentBoss) {
       if (b instanceof Banryeo) g.banner('반려 철회!', '박반려 처장이 졸업 서류를 통과시켰습니다');
-      else g.banner('결재 완료!', '반사반사 부총장이 결재판에 서명했습니다');
+      else if (b instanceof Bansa) g.banner('결재 완료!', '반사반사 부총장이 결재판에 서명했습니다');
+      // 김부재중 처장·허허실실 부총장: 2D 김부재중 처장 결재 띠
+      else g.banner('결재 완료!', '이제 다음 구역으로 갈 수 있습니다');
+      this.haz.clear();
       this.flow = 'clear';
       this.flowT = 0;
       return;
@@ -834,19 +1119,12 @@ export class StudentMode implements StuCtx {
     const g = this.g;
     const w = g.world;
     const r = this.recordArea();
-    if (this.area === 0) {
-      g.stage = 'path2';
-      g.bounds = [w.field, w.path2, w.plaza];
-      this.h.lower(w.barricade2);
-      w.arrows2.visible = true;
-      this.card(r, '다음: 사회과학관 앞 — 북쪽 길로 가세요 ↑');
-    } else {
-      g.stage = 'path';
-      g.bounds = [w.plaza, w.path, w.yard];
-      this.h.lower(w.barricade);
-      w.arrows.visible = true;
-      this.card(r, '다음: 본관 앞 — 왼쪽 길로 가세요 ←');
-    }
+    const l = LINKS[this.area];
+    g.stage = l.stage;
+    g.bounds = l.bounds(w);
+    this.h.lower(l.barricade(w));
+    l.arrows(w).visible = true;
+    this.card(r, l.card);
     g.sound('open');
     this.flow = 'walk';
   }
@@ -854,20 +1132,13 @@ export class StudentMode implements StuCtx {
   private enterArea(i: number): void {
     const g = this.g;
     const w = g.world;
+    LINKS[i - 1].arrows(w).visible = false;
     this.area = i;
-    if (i === 1) {
-      g.stage = 'plaza';
-      g.bounds = [w.plaza];
-      w.arrows2.visible = false;
-      g.spawnPickup('gimbap', 88, 8);
-      g.spawnPickup('americano', 102, 8);
-    } else {
-      g.stage = 'yard';
-      g.bounds = [w.yard];
-      w.arrows.visible = false;
-      g.spawnPickup(g.hp <= 6 ? 'donkatsu' : 'gimbap', 18, 8);
-    }
-    g.banner(AREAS[i], '서류 들고 돌파!');
+    const def = ROUTE[i];
+    g.stage = def.stage;
+    g.bounds = [def.rect(w)];
+    for (const [k, x, z] of def.food?.(g) ?? []) g.spawnPickup(k, x, z);
+    g.banner(def.name, '서류 들고 돌파!');
     this.startWave(i);
   }
 
@@ -899,7 +1170,7 @@ export class StudentMode implements StuCtx {
     this.h.setDusk(1);
     g.rack.visible = true;
     this.office.visible = true;
-    this.area = 3;
+    this.area = ROUTE.length;
     this.h.placeBoss(new StudentPresident(g, g.people.president));
     g.spawnPickup('gimbap', -6, -2);
     g.spawnPickup('americano', 6, -2);
@@ -931,9 +1202,14 @@ export class StudentMode implements StuCtx {
       this.cardT -= dt;
       if (this.cardT <= 0) document.getElementById('areacard')?.classList.remove('on');
     }
-    // 창구 직원 기믹
+    // 창구 직원·보스 기믹
     const edt = dt * g.diff.speed;
-    if (this.haz.update(edt)) this.h.note('불 켜짐!');
+    if (this.haz.update(edt)) {
+      this.h.note('불 켜짐!');
+      if (g.boss instanceof WindowStaff) g.boss.lightsOn();
+    }
+    this.haz.updateThings(edt, g);
+    if (this.haz.slip({ pos: g.pos, feet: g.jumpY }, dt, g.bounds, g.world.obstacles)) this.h.hint('s-soup', '쏟아진 국물을 밟으면 미끄러져요', 2.4);
     const left = Math.ceil(this.haz.darkLeft);
     if (left > 0 && left !== this.darkSec) this.h.note(`점호 중 · 소등 (${left}초)`, 1.2);
     this.darkSec = left;
@@ -954,19 +1230,20 @@ export class StudentMode implements StuCtx {
         }
         break;
       case 'staff':
-      case 'boss':
-        // 가끔 반려 서류가 한 장씩 (오학종지는 번호표를 부르니 빼고)
+      case 'boss': {
+        // 가끔 반려 서류가 한 장씩 (오학종지는 번호표를 부르고, 김부재중 처장은 자리를 비울 때 따로 부르니 빼고)
         this.addT -= dt;
         if (this.addT <= 0) {
           this.addT = 10;
-          const quiet = g.boss instanceof WindowStaff && g.boss.staff === 'hakjong';
+          const quiet = (g.boss instanceof WindowStaff && g.boss.staff === 'hakjong') || g.boss instanceof Bujae;
           if (!quiet && g.minions() < 2) this.spawnDoc(this.spawnPoint(_v, 3));
         }
         break;
+      }
       case 'staffOut':
         // 창구 직원이 퇴근하는 동안 숨 돌리기 → 처장·부총장 (본관 앞은 총장실로)
         if (this.flowT >= 2.6) {
-          if (this.area < 2) this.startBoss();
+          if (ROUTE[this.area].boss) this.startBoss();
           else {
             const r = this.recordArea();
             this.card(r, '다음: 본관 총장실 — 총장 결재');
@@ -980,8 +1257,7 @@ export class StudentMode implements StuCtx {
         if (this.flowT >= 3.2) this.openPath();
         break;
       case 'walk':
-        if (g.stage === 'path2' && g.pos.z < 15) this.enterArea(1);
-        else if (g.stage === 'path' && g.pos.x < 24) this.enterArea(2);
+        if (LINKS[this.area]?.arrived(g.pos)) this.enterArea(this.area + 1);
         break;
       case 'card':
         if (this.flowT >= 2.6) {
@@ -1032,12 +1308,17 @@ export class StudentMode implements StuCtx {
     return START_CLOCK + this.g.elapsed / 60;
   }
 
+  /** 지금 걷는 길 (구역 사이) */
+  private get link(): LinkDef | null {
+    return this.flow === 'walk' ? (LINKS[this.area] ?? null) : null;
+  }
+
   private place(): string {
     const s = this.g.stage;
-    if (s === 'path2') return '사회과학관 가는 길';
-    if (s === 'path') return '본관 가는 길';
-    if (s === 'final' || s === 'done') return AREAS[3];
-    return AREAS[Math.min(this.area, 2)];
+    if (s === 'final' || s === 'done') return FINAL_NAME;
+    const l = this.link;
+    if (l) return l.place;
+    return ROUTE[Math.min(this.area, ROUTE.length - 1)].name;
   }
 
   clockHtml(clock: number): string {
@@ -1049,9 +1330,12 @@ export class StudentMode implements StuCtx {
   waveLine(): string {
     const g = this.g;
     const n = `통과 ${g.processed}건`;
-    if (g.stage === 'path2') return `사회과학관 앞으로 이동하세요 · ${n}`;
-    if (g.stage === 'path') return `본관 앞으로 이동하세요 · ${n}`;
+    const l = this.link;
+    if (l) return `${l.go} · ${n}`;
     const b = g.boss;
+    // 김부재중 처장 (2D 결재 대기 글)
+    if (b instanceof Bujae && b.away) return `결재 대기 중 · 김부재중 처장 부재중 (${Math.ceil(b.awayLeft)}초) · ${n}`;
+    if (b instanceof Bujae && b.coming) return `김부재중 처장이 오는 중… · ${n}`;
     if (b && !b.dead && b.targetable) return `${b.bossName} ${b instanceof StudentPresident ? '결재 받는 중' : '설득 중'} · ${n}`;
     if (b instanceof Banryeo && !b.dead && b.towerUp) return `${b.towerText} · ${n}`;
     if (this.flow === 'wave') return `행정 ${this.queue.length + g.minions()}건 남음 · ${n}`;
@@ -1069,10 +1353,15 @@ export class StudentMode implements StuCtx {
   }
 
   guide(): { x: number; z: number } | null {
+    return this.link?.guide(this.g.pos) ?? null;
+  }
+
+  /** 지금 싸우는 구역 사각형 (Game.area 대신 쓴다 — 생성자 참고) */
+  get rect(): Rect {
+    const w = this.g.world;
     const s = this.g.stage;
-    if (s === 'path2') return { x: 95, z: 12 };
-    if (s === 'path') return { x: 18, z: 1 };
-    return null;
+    if (s === 'final' || s === 'done') return w.yard;
+    return ROUTE[Math.min(this.area, ROUTE.length - 1)].rect(w);
   }
 
   hurtNote(kind: HurtKind): string | undefined {
@@ -1083,10 +1372,11 @@ export class StudentMode implements StuCtx {
   duskTarget(timeK: number): number {
     const s = this.g.stage;
     if (s === 'final' || s === 'done') return 1;
-    if (s === 'path') return Math.max(timeK, 0.55);
-    if (s === 'plaza' || s === 'path2') return Math.max(timeK, 0.3);
-    if (s === 'yard') return Math.max(timeK, 0.6);
-    return Math.max(timeK * 0.6, 0.05);
+    const l = this.link;
+    if (l) return Math.max(timeK, l.dusk);
+    const i = Math.min(this.area, ROUTE.length - 1);
+    // 첫 구역은 시계보다 조금 늦게 물든다
+    return i === 0 ? Math.max(timeK * 0.6, ROUTE[0].dusk) : Math.max(timeK, ROUTE[i].dusk);
   }
 
   /** 잡몹을 통과시켰을 때 (Game.onProcessed가 부른다) */

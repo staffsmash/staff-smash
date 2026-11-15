@@ -256,6 +256,53 @@ export function penLineTex(): THREE.CanvasTexture {
   return t;
 }
 
+/** 김학생식당이 쏟은 국물 (바닥에 까는 둥근 웅덩이, 2D Puddle 색: 국물·윗물·하이라이트·건더기) */
+export function soupTex(): THREE.CanvasTexture {
+  return canvasTex(256, 256, (g) => {
+    g.fillStyle = 'rgba(201,120,46,0.85)';
+    g.beginPath();
+    g.ellipse(128, 128, 120, 112, 0, 0, Math.PI * 2);
+    g.fill();
+    g.fillStyle = 'rgba(217,149,69,0.92)';
+    g.beginPath();
+    g.ellipse(134, 134, 90, 80, 0.3, 0, Math.PI * 2);
+    g.fill();
+    g.fillStyle = 'rgba(255,226,176,0.7)';
+    g.beginPath();
+    g.ellipse(86, 92, 34, 9, -0.4, 0, Math.PI * 2);
+    g.fill();
+    for (const [x, y, col] of [
+      [70, 140, '#4caf50'],
+      [150, 110, '#f4f4f4'],
+      [182, 160, '#4caf50'],
+      [120, 176, '#f4f4f4'],
+      [100, 120, '#4caf50'],
+      [170, 84, '#f4f4f4'],
+    ] as const) {
+      g.fillStyle = col;
+      g.fillRect(x, y, 14, 8);
+    }
+  });
+}
+
+/** 김국제가 던지는 여권 겉장 (2D createPassportIcon: 남색 표지 + 금색 문장·줄) */
+export function passportTex(): THREE.CanvasTexture {
+  return canvasTex(96, 128, (g) => {
+    g.fillStyle = '#1f3a6b';
+    g.fillRect(0, 0, 96, 128);
+    g.fillStyle = '#16294d';
+    g.fillRect(0, 0, 8, 128);
+    g.strokeStyle = '#e0bb62';
+    g.lineWidth = 5;
+    g.beginPath();
+    g.arc(52, 56, 18, 0, Math.PI * 2);
+    g.stroke();
+    g.fillStyle = '#e0bb62';
+    g.fillRect(44, 48, 16, 16);
+    g.fillRect(28, 94, 48, 6);
+  });
+}
+
 /** 선택 화면 주인공 얼굴 (블록형 앞모습, 2D createStudentHeroRig 색) */
 export function heroPortrait(look: StudentHeroLook): string {
   const c = document.createElement('canvas');
