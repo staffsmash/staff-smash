@@ -4,11 +4,13 @@ import { Sfx, type SfxName } from './audio';
 import type { Rect } from './blocks';
 import { addBoardButton, attachRecordForm } from './board';
 import { BODY_DMG, BOSS_HINTS, BOSS_NAMES, Bogo, Chonggwal, Meeting, PersonBoss, President, SERVER_SPOT, WEAK_DMG } from './bosses';
+import { DORM_ENTER_Z, FIELD_GATE_X, GATE_Z0, GATE_Z1, HUM_DOOR, HUM_ENTER_X, PATH3_GUIDE, DORM_DOOR, type Stage } from './campus';
 import { Bomb, Bubble, Mail, Phone, type Ctx, type Enemy, type HurtKind, type Kind, type SheetKind } from './enemies';
 import { FIELD_ENTER_Z, FC } from './field';
 import { Fx } from './fx';
 import { Hazards, RING_H } from './hazards';
 import { Rescue } from './helpers';
+import { buildMidPeople, buildNewBossPeople, Gumto, MID_LINES, MID_TEXTS, Molla, ReviewPile, StaffMid, type MidKind, type MidPerson } from './mids';
 import { Models, type FoodKind } from './models';
 import { Person, peopleKit, type Who } from './people';
 import { Props, type PerkHost } from './props';
@@ -28,12 +30,15 @@ import { clearSubtitle, prepareSpeech, speechTextures, speechView, updateSubtitl
 import { DocTower } from './student/enemies';
 import { StudentMode, type StudentHost } from './student/mode';
 import { loadLogos } from './textures';
+import { FRONT_X } from './social';
 import { buildWorld, type World } from './world';
 
 // Staff Smash: HUFS 1인칭 시험판 (v4).
 // 본관 앞에서 세 차례 몰려오는 민원(메일·전화기·말풍선·서류 뭉치)을 도장으로 처리하고,
-// 김총괄(본관 앞) → 김보고 처장(사회과학관 앞) → 회의소집 부총장(대운동장) → 총장 프레지던트 캉(해 질 녘 본관 앞)의
-// 결재를 받으면 퇴근. 잡몹은 사물이고, 보스만 사람이다(사람 보스는 다치지 않고 결재판에 도장을 받는다).
+// 김총괄(본관 앞) → 김보고 처장(사회과학관 앞) → 오검토 처장(인문과학관 앞) → 최몰라 처장(국제학사 앞)
+// → 회의소집 부총장(대운동장) → 총장 프레지던트 캉(해 질 녘 본관 앞)의 결재를 받으면 퇴근.
+// 다섯 구역마다 보스 앞에 중간보스(민원 학생, mids.ts)가 먼저 나온다.
+// 잡몹은 사물이고, 사람(중간보스·보스)은 다치지 않고 들고 있는 서류·결재판에 도장을 받는다.
 // 본편(2D)과 따로 도는 시험용 페이지다. 프레지던트 캉을 제외한 인물은 모두 가상이다.
 // 2026-11-14: 무기(arms.ts — 경비원·도서 무인 대출기에서 받는다), 부수는 상자·경비원·대출기(props.ts),
 // 조력자 이벤트(helpers.ts), 식권·보조배터리.
@@ -84,15 +89,37 @@ const PLAZA_X = 72;
 const LOOK_MOUSE = 0.0022;
 const LOOK_TOUCH = 0.006;
 
-const AREA_NAMES = ['본관 앞', '사회과학관 앞', '대운동장', '해 질 녘 본관 앞'];
+/** 구역: 0 본관 앞 → 1 사회과학관 앞 → 2 인문과학관 앞 → 3 국제학사 앞 → 4 대운동장 → 5 해 질 녘 본관 앞(총장) */
+const AREA_NAMES = ['본관 앞', '사회과학관 앞', '인문과학관 앞', '국제학사 앞', '대운동장', '해 질 녘 본관 앞'];
 
 type SpawnKind = 'mail' | 'bulk' | 'phone' | 'bubble' | 'bomb';
+type Wave = Partial<Record<SpawnKind, number>>;
 
-const WAVES: Partial<Record<SpawnKind, number>>[] = [
-  { mail: 5, phone: 1 },
-  { mail: 6, bulk: 1, bubble: 2, phone: 1 },
-  { mail: 6, bulk: 2, bubble: 2, bomb: 2, phone: 2 },
+/** 구역에 들어서면 몰려오는 민원 차례 (본관 앞 셋, 인문과학관 앞·국제학사 앞 하나씩. 나머지는 중간보스부터) */
+const AREA_WAVES: Record<number, Wave[]> = {
+  0: [
+    { mail: 5, phone: 1 },
+    { mail: 6, bulk: 1, bubble: 2, phone: 1 },
+    { mail: 6, bulk: 2, bubble: 2, bomb: 2, phone: 2 },
+  ],
+  2: [{ mail: 5, bubble: 2, phone: 1 }],
+  3: [{ mail: 5, bulk: 1, bomb: 2, phone: 1 }],
+};
+
+/** 구역마다 중간보스 (민원 학생) */
+const MID_OF: MidKind[] = ['wrongNumber', 'noticeBoss', 'deadline', 'minwon', 'presidentMail'];
+
+/** 중간보스가 처음 서는 곳 → 걸어가 서는 곳 → 처리된 뒤 걸어 나가는 곳 */
+const MID_SPOTS: [THREE.Vector3, THREE.Vector3, THREE.Vector3][] = [
+  [new THREE.Vector3(-24, 0, 2), new THREE.Vector3(-6, 0, -3), new THREE.Vector3(-31, 0, 3)],
+  [new THREE.Vector3(FRONT_X - 1.5, 0, 4), new THREE.Vector3(106, 0, 3), new THREE.Vector3(FRONT_X - 0.5, 0, 4)],
+  [HUM_DOOR.clone(), new THREE.Vector3(167, 0, HUM_DOOR.z), HUM_DOOR.clone()],
+  [DORM_DOOR.clone(), new THREE.Vector3(184, 0, DORM_DOOR.z), DORM_DOOR.clone()],
+  [new THREE.Vector3(95, 0, 58), new THREE.Vector3(114, 0, 72), new THREE.Vector3(95, 0, 56)],
 ];
+
+/** 해 질 무렵이 이 분(게임 시간)에 걸쳐 진다 (교직원 모드. 구역이 뒤로 갈수록 더 빨리 어두워진다) */
+const STAFF_DUSK_MIN = 12;
 
 const SP_GAIN: Record<Kind, number> = { mail: 9, bulk: 16, phone: 12, bubble: 12, bomb: 14, boss: 0 };
 
@@ -128,7 +155,6 @@ const HURT_NOTE: Partial<Record<HurtKind, string>> = {
 };
 
 type Phase = 'title' | 'play' | 'paused' | 'clear' | 'over';
-type Stage = 'yard' | 'yardBoss' | 'yardClear' | 'path' | 'plaza' | 'plazaClear' | 'path2' | 'field' | 'fieldClear' | 'toFinal' | 'final' | 'done';
 type DamageSrc = 'stamp' | 'blast' | 'fuse' | 'special';
 
 /** 시계 아래 작은 글씨 (지금 있는 곳) */
@@ -140,6 +166,13 @@ const PLACES: Record<Stage, string> = {
   plaza: '사회과학관 앞',
   plazaClear: '사회과학관 앞',
   path2: '대운동장 가는 길',
+  path3: '인문과학관 가는 길',
+  hum: '인문과학관 앞',
+  humClear: '인문과학관 앞',
+  path4: '국제학사 가는 길',
+  dorm: '국제학사 앞',
+  dormClear: '국제학사 앞',
+  path5: '대운동장 가는 길',
   field: '대운동장',
   fieldClear: '대운동장',
   toFinal: '대운동장',
@@ -279,11 +312,14 @@ function dmgText(v: number): string {
   return Number.isInteger(r) ? String(r) : r.toFixed(1);
 }
 
+/** 단계 → 구역 번호 (구역 카드·기록·조력자 열쇠). 길은 가는 쪽 구역으로 센다 */
 function areaOf(s: Stage): number {
   if (s === 'yard' || s === 'yardBoss' || s === 'yardClear') return 0;
   if (s === 'path' || s === 'plaza' || s === 'plazaClear') return 1;
-  if (s === 'path2' || s === 'field' || s === 'fieldClear' || s === 'toFinal') return 2;
-  return 3;
+  if (s === 'path3' || s === 'hum' || s === 'humClear') return 2;
+  if (s === 'path4' || s === 'dorm' || s === 'dormClear') return 3;
+  if (s === 'path2' || s === 'path5' || s === 'field' || s === 'fieldClear' || s === 'toFinal') return 4;
+  return 5;
 }
 
 class Game implements Ctx {
@@ -323,10 +359,26 @@ class Game implements Ctx {
   stamps: Stamp[] = [];
   sheets: Sheet[] = [];
   pickups: Pickup[] = [];
-  /** 지금 구역의 사람 보스 */
+  /** 지금 구역의 사람 보스 (중간보스 포함) */
   boss: PersonBoss | null = null;
   /** 보스 넷의 모형 (처음에 한 번 만든다) */
   people!: Record<Who, Person>;
+  /** 새 구역 보스 둘(오검토·최몰라 처장)의 모형 */
+  newPeople!: { gumto: Person; molla: Person };
+  /** 이번 판의 중간보스 다섯 (판마다 이름이 바뀐다) */
+  mids: Record<MidKind, MidPerson> | null = null;
+  /** 지금 구역의 싸움 차례: 민원 차례 → 중간보스 → (잠깐 쉬고) 보스 */
+  fight: 'none' | 'wave' | 'mid' | 'between' | 'boss' = 'none';
+  /** 중간보스가 물러난 뒤 보스가 나올 때까지 */
+  nextBossT = -1;
+  /** 대운동장 단상에서 기다리는 회의소집 부총장 */
+  waiting: Meeting | null = null;
+  /** 인문과학관 앞에서 처리된 민원 (오검토 처장이 되살린다) */
+  readonly pile = new ReviewPile();
+  /** 마감 직전 학생이 늘린 초과근무 (분) */
+  penaltyMin = 0;
+  /** 지금 구역의 민원 차례들 */
+  private waves: Wave[] = AREA_WAVES[0];
   hz!: Hazards;
   /** 수강신청 서버 랙 (마지막 구역에만 보인다) */
   rack!: THREE.Group;
@@ -433,11 +485,31 @@ class Game implements Ctx {
     return this.jumpY;
   }
 
-  /** 말풍선 돌진이 멈추는 경계 */
+  /** 말풍선 돌진이 멈추는 경계 (길 위에서는 지나온 구역) */
   get area(): Rect {
-    const a = areaOf(this.stage);
-    if (a === 2 && this.stage !== 'path2') return this.world.field;
-    return a === 0 || a === 3 ? this.world.yard : this.world.plaza;
+    const w = this.world;
+    switch (this.stage) {
+      case 'path':
+      case 'plaza':
+      case 'plazaClear':
+      case 'path2':
+      case 'path3':
+        return w.plaza;
+      case 'hum':
+      case 'humClear':
+      case 'path4':
+        return w.hum;
+      case 'dorm':
+      case 'dormClear':
+      case 'path5':
+        return w.dorm;
+      case 'field':
+      case 'fieldClear':
+      case 'toFinal':
+        return w.field;
+      default:
+        return w.yard;
+    }
   }
 
   async init(): Promise<void> {
@@ -451,6 +523,7 @@ class Game implements Ctx {
       meeting: new Person('meeting', BOSS_NAMES.meeting, '#d8c4ff'),
       president: new Person('president', BOSS_NAMES.president, '#ffe066'),
     };
+    this.newPeople = buildNewBossPeople();
     this.rack = this.models.serverRack();
     this.rack.position.copy(SERVER_SPOT);
     this.rack.visible = false;
@@ -514,10 +587,10 @@ class Game implements Ctx {
       o.scale.setScalar(0.15);
       g.add(o);
     });
-    // 보스 넷: 자세와 말풍선·도장 자국·메일 폭풍까지 한 번 그려 둔다
-    const ppl = Object.values(this.people);
+    // 보스 넷(+ 새 구역 보스 둘): 자세와 말풍선·도장 자국·메일 폭풍까지 한 번 그려 둔다
+    const ppl = [...Object.values(this.people), this.newPeople.gumto, this.newPeople.molla];
     ppl.forEach((pp, i) => {
-      pp.root.position.set(-3 + i * 2, -1.6, -2);
+      pp.root.position.set(-5 + i * 2, -1.6, -2);
       pp.say('…', 1, false);
       pp.stampMark(true);
       pp.updateStorm(1);
@@ -545,11 +618,13 @@ class Game implements Ctx {
       ['결재판!', '#ffe066'],
       ['결재 완료!', '#7CFC9A'],
       ['회의 불참 성공!', '#7CFC9A'],
+      ...MID_TEXTS,
     ]) {
       this.fx.text(p, t, col);
     }
     // 보스 대사 그림도 미리 만든다 (처음 말할 때 끊기지 않게)
     prepareSpeech(BOSS_LINES);
+    prepareSpeech(MID_LINES);
     this.fx.update(0.001);
     this.camera.position.set(0, EYE, 11);
     this.camera.rotation.set(0, 0, 0);
@@ -919,7 +994,7 @@ class Game implements Ctx {
         <img class="emblem" src="hufs/emblem-mono.png" alt=""> <img class="type" src="hufs/hufs-type.png" alt="HUFS">
         <h1>STAFF SMASH <span class="tag">1인칭 시험판</span></h1>
         <p class="big">오후 4시 52분, 본관 앞</p>
-        <p>퇴근 8분 전, 민원이 몰려옵니다. 도장으로 처리하고 결재를 받으세요.<br>김총괄 → 김보고 처장 → 회의소집 부총장 → 총장 프레지던트 캉</p>
+        <p>퇴근 8분 전, 민원이 몰려옵니다. 도장으로 처리하고 결재를 받으세요.<br>김총괄 → 김보고 처장 → 오검토 처장 → 최몰라 처장 → 회의소집 부총장 → 총장 프레지던트 캉</p>
         <p class="ctl">${ctl}</p>
         <div class="srow center"><span class="slabel">난이도</span><div class="seg" role="group" aria-label="난이도">${this.diffSeg()}</div></div>
         <p class="best">최고 기록 ${bestLine(this.settings.diff)}</p>
@@ -974,7 +1049,10 @@ class Game implements Ctx {
     if (this.phase === 'title') {
       this.runDiff = this.settings.diff;
       if (this.mode === 'student') this.stu.begin();
-      else this.beginWave(0);
+      else {
+        this.mids = buildMidPeople();
+        this.startWaves(0);
+      }
     }
     this.phase = 'play';
     this.last = performance.now();
@@ -1031,12 +1109,19 @@ class Game implements Ctx {
     $('fade').classList.remove('on');
     this.stage = 'yard';
     this.bounds = [this.world.yard];
-    for (const b of [this.world.barricade, this.world.barricade2]) {
+    const w = this.world;
+    for (const b of [w.barricade, w.barricade2, w.barricade3, w.barricade4, w.barricade5]) {
       b.visible = true;
       b.position.y = 0;
     }
-    this.world.arrows.visible = false;
-    this.world.arrows2.visible = false;
+    for (const a of [w.arrows, w.arrows2, w.arrows3, w.arrows4, w.arrows5]) a.visible = false;
+    this.mids = null;
+    this.fight = 'none';
+    this.nextBossT = -1;
+    this.waiting = null;
+    this.pile.clear();
+    this.penaltyMin = 0;
+    this.waves = AREA_WAVES[0];
     this.lowering = [];
     this.pos.set(0, EYE, 11);
     this.yaw = 0;
@@ -1089,9 +1174,16 @@ class Game implements Ctx {
     this.start();
   }
 
+  /** 구역의 민원 차례를 시작한다 (a = 구역 번호) */
+  private startWaves(a: number): void {
+    this.fight = 'wave';
+    this.waves = AREA_WAVES[a] ?? [];
+    this.beginWave(0);
+  }
+
   private beginWave(i: number): void {
     this.wave = i;
-    const w = WAVES[i];
+    const w = this.waves[i];
     this.queue = [];
     for (const [k, n0] of Object.entries(w) as [SpawnKind, number][]) {
       const n = Math.max(1, Math.round(n0 * this.diff.count));
@@ -1107,7 +1199,7 @@ class Game implements Ctx {
       if (p >= this.queue.length - 2) [this.queue[p], this.queue[0]] = [this.queue[0], this.queue[p]];
     }
     this.spawnT = 1.2;
-    this.banner(`${i + 1}차 민원 도착!`, i === 0 ? '본관 쪽에서 날아옵니다 — 도장으로 처리하세요' : `${this.queue.length}건이 몰려옵니다`);
+    this.banner(`${i + 1}차 민원 도착!`, i === 0 && areaOf(this.stage) === 0 ? '본관 쪽에서 날아옵니다 — 도장으로 처리하세요' : `${this.queue.length}건이 몰려옵니다`);
   }
 
   // ---------- 구역 넘어가기 ----------
@@ -1150,35 +1242,80 @@ class Game implements Ctx {
     this.enemies.push(b);
   }
 
-  /** 보스 막대와 이름 띠를 켠다 */
+  /** 보스 막대와 이름 띠를 켠다 (새 구역 보스는 자기 공략 줄) */
   private announceBoss(b: PersonBoss): void {
     this.showBossBar(b.bossName);
-    this.banner(b.bossName, BOSS_HINTS[b.who]);
+    this.banner(b.bossName, b instanceof Gumto || b instanceof Molla ? b.hintText : BOSS_HINTS[b.who]);
     this.sound('volley');
   }
 
-  /** 3차 민원이 끝나면 본관에서 김총괄이 걸어 나온다 */
-  private startYardBoss(): void {
-    this.stage = 'yardBoss';
-    const b = new Chonggwal(this, this.people.chonggwal);
+  /** 민원 차례가 끝나면(또는 구역에 들어서면) 중간보스(민원 학생)가 온다 */
+  private startMid(): void {
+    const a = areaOf(this.stage);
+    if (a === 0) this.stage = 'yardBoss';
+    this.fight = 'mid';
+    const kind = MID_OF[a];
+    const mp = (this.mids ??= buildMidPeople())[kind];
+    const [at, spot, exit] = MID_SPOTS[a];
+    const b = new StaffMid(this, mp, kind, at, spot, exit, this.world.obstacles, this.runDiff === 'easy');
+    this.placeBoss(b);
+    this.showBossBar(b.bossName);
+    this.banner(b.bannerTitle, b.bannerSub);
+    this.sound('volley');
+    if (b.note) this.hint(`mid:${kind}`, b.note, 3.8);
+  }
+
+  /** 중간보스가 물러난 뒤 구역 보스가 나온다 (대운동장은 단상의 부총장이 깨어난다) */
+  private spawnAreaBoss(): void {
+    const a = areaOf(this.stage);
+    const easy = this.runDiff === 'easy';
+    this.fight = 'boss';
+    if (a === 4) {
+      const m = this.waiting;
+      this.waiting = null;
+      if (!m) return;
+      this.boss = m;
+      m.wake();
+      this.announceBoss(m);
+      return;
+    }
+    const b =
+      a === 0
+        ? new Chonggwal(this, this.people.chonggwal)
+        : a === 1
+          ? new Bogo(this, this.people.bogo)
+          : a === 2
+            ? new Gumto(this, this.newPeople.gumto, this.pile, this.world.obstacles, easy)
+            : new Molla(this, this.newPeople.molla, this.world.obstacles, easy);
     this.placeBoss(b);
     this.announceBoss(b);
   }
 
-  /** 보스 결재 완료 (승인 도장 → 한마디 → 퇴근) */
+  /** 보스 결재 완료 (승인 도장 → 한마디 → 퇴근). 중간보스(민원 학생)는 인사하고 돌아간 뒤 구역 보스가 나온다 */
   private bossApproved(b: PersonBoss): void {
-    this.approved.push(b.bossName);
     this.sweepMinions();
     this.hz.clear();
     this.freezeT = 0;
     this.buzz([40, 30, 80]);
-    if (this.mode === 'student') return this.stu.bossApproved(b);
+    if (this.mode === 'student') {
+      this.approved.push(b.bossName);
+      return this.stu.bossApproved(b);
+    }
+    if (b instanceof StaffMid) {
+      $('bossbox').classList.remove('on');
+      this.fight = 'between';
+      this.nextBossT = 2.6;
+      return;
+    }
+    this.approved.push(b.bossName);
     if (b.who === 'president') {
       this.presidentApproved();
       return;
     }
     this.clearT = 3.2;
-    this.stage = b.who === 'chonggwal' ? 'yardClear' : b.who === 'bogo' ? 'plazaClear' : 'fieldClear';
+    this.fight = 'none';
+    const clears: Stage[] = ['yardClear', 'plazaClear', 'humClear', 'dormClear', 'fieldClear'];
+    this.stage = clears[Math.min(4, areaOf(this.stage))];
   }
 
   /** 본관 앞을 다 정리하면 사회과학관 쪽 길이 열린다 */
@@ -1196,9 +1333,7 @@ class Game implements Ctx {
     this.stage = 'plaza';
     this.bounds = [this.world.plaza];
     this.world.arrows.visible = false;
-    const b = new Bogo(this, this.people.bogo);
-    this.placeBoss(b);
-    this.announceBoss(b);
+    this.startMid();
   }
 
   private showBossBar(name: string): void {
@@ -1231,37 +1366,76 @@ class Game implements Ctx {
     }
   }
 
-  /** 사회과학관 앞을 정리하면 남쪽 대운동장 길이 열린다. 부총장은 단상에서 기다린다 */
-  private openField(): void {
-    this.stage = 'path2';
-    this.bounds = [this.world.plaza, this.world.path2, this.world.field];
-    this.lower(this.world.barricade2);
-    this.world.arrows2.visible = true;
+  /** 사회과학관 앞을 정리하면 남동쪽 길(사회과학관 남쪽 끝을 돌아 인문과학관 앞)이 열린다 */
+  private openHum(): void {
+    const w = this.world;
+    this.stage = 'path3';
+    this.bounds = [w.plaza, ...w.path3, w.hum];
+    this.lower(w.barricade3);
+    w.arrows3.visible = true;
     $('bossbox').classList.remove('on');
-    this.showCard(1, this.recordArea(), '다음: 대운동장 — 남쪽 길로 가세요 ↓');
+    this.showCard(1, this.recordArea(), '다음: 인문과학관 앞 — 남동쪽 길로 가세요 ↘');
     this.sound('open');
-    this.placeBoss(new Meeting(this, this.people.meeting));
+  }
+
+  private enterHum(): void {
+    this.stage = 'hum';
+    this.bounds = [this.world.hum];
+    this.world.arrows3.visible = false;
+    this.pile.clear();
+    this.startWaves(2);
+  }
+
+  /** 인문과학관 앞을 정리하면 남쪽 국제학사 길이 열린다 */
+  private openDorm(): void {
+    const w = this.world;
+    this.stage = 'path4';
+    this.bounds = [w.hum, ...w.path4, w.dorm];
+    this.lower(w.barricade4);
+    w.arrows4.visible = true;
+    $('bossbox').classList.remove('on');
+    this.showCard(2, this.recordArea(), '다음: 국제학사 앞 — 남쪽 길로 가세요 ↓');
+    this.sound('open');
+  }
+
+  private enterDorm(): void {
+    this.stage = 'dorm';
+    this.bounds = [this.world.dorm];
+    this.world.arrows4.visible = false;
+    this.startWaves(3);
+  }
+
+  /** 국제학사 앞을 정리하면 대운동장 동쪽 철망 문이 열린다. 부총장은 단상에서 기다린다 */
+  private openField(): void {
+    const w = this.world;
+    this.stage = 'path5';
+    this.bounds = [w.dorm, ...w.path5, w.field];
+    this.lower(w.barricade5);
+    w.arrows5.visible = true;
+    $('bossbox').classList.remove('on');
+    this.showCard(3, this.recordArea(), '다음: 대운동장 — 서쪽 철망 문으로 가세요 ←');
+    this.sound('open');
+    const m = new Meeting(this, this.people.meeting);
+    this.placeBoss(m);
+    this.waiting = m;
   }
 
   private enterField(): void {
     this.stage = 'field';
     this.bounds = [this.world.field];
     this.world.arrows2.visible = false;
-    const b = this.boss;
-    if (b instanceof Meeting) {
-      b.wake();
-      this.announceBoss(b);
-    }
-    // 스탠드 앞에 간식 두 개
-    this.spawnPickup(this.hp <= 6 ? 'donkatsu' : 'gimbap', 91.5, 61.5);
-    this.spawnPickup('americano', 98.5, 61.5);
+    this.world.arrows5.visible = false;
+    // 철망 문 안쪽에 간식 두 개
+    this.spawnPickup(this.hp <= 6 ? 'donkatsu' : 'gimbap', 131, 63.5);
+    this.spawnPickup('americano', 131, 68.5);
+    this.startMid();
   }
 
   /** 부총장 결재 뒤: 구역 카드 → 화면이 어두워졌다가 해 질 녘 본관 앞으로 */
   private leaveField(): void {
     this.stage = 'toFinal';
     $('bossbox').classList.remove('on');
-    this.showCard(2, this.recordArea(), '다음: 해 질 녘 본관 앞 — 총장 결재');
+    this.showCard(4, this.recordArea(), '다음: 해 질 녘 본관 앞 — 총장 결재');
     this.seqT = 2.6;
   }
 
@@ -1344,9 +1518,23 @@ class Game implements Ctx {
   private spawnPoint(out: THREE.Vector3, y: number): THREE.Vector3 {
     const side = Math.random() < 0.3;
     const a = areaOf(this.stage);
-    if (a === 2) {
+    if (a === 4) {
       const f = this.world.field;
       return out.set(f.minX + Math.random() * (f.maxX - f.minX), y, f.maxZ - Math.random() * 6);
+    }
+    if (a === 2) {
+      // 인문과학관 쪽(동쪽) 또는 마당 남북 끝에서
+      const h = this.world.hum;
+      return side
+        ? out.set(h.minX + 4 + Math.random() * (h.maxX - h.minX - 8), y, Math.random() < 0.5 ? h.minZ + 1 : h.maxZ - 1)
+        : out.set(h.maxX - 5 + Math.random() * 4, y, h.minZ + 3 + Math.random() * (h.maxZ - h.minZ - 6));
+    }
+    if (a === 3) {
+      // 국제학사 쪽(동쪽) 또는 남쪽 끝에서
+      const d = this.world.dorm;
+      return side
+        ? out.set(d.minX + 3 + Math.random() * (d.maxX - d.minX - 6), y, d.maxZ - 1)
+        : out.set(d.maxX - 5 + Math.random() * 4, y, d.minZ + 4 + Math.random() * (d.maxZ - d.minZ - 8));
     }
     if (a === 1) {
       return out.set(side ? 78 + Math.random() * 30 : 114 + Math.random() * 4, y, side ? (Math.random() < 0.5 ? -22 : 22) : -14 + Math.random() * 28);
@@ -1383,9 +1571,11 @@ class Game implements Ctx {
     this.hint('phone');
   }
 
-  spawnAt(kind: 'mail' | 'bomb' | 'bubble', at: THREE.Vector3): void {
-    this.enemies.push(kind === 'mail' ? new Mail(this, false, at) : kind === 'bubble' ? new Bubble(this, at) : new Bomb(this, at));
+  spawnAt(kind: 'mail' | 'bomb' | 'bubble', at: THREE.Vector3): Enemy {
+    const e = kind === 'mail' ? new Mail(this, false, at) : kind === 'bubble' ? new Bubble(this, at) : new Bomb(this, at);
+    this.enemies.push(e);
     if (kind !== 'mail') this.hint(kind);
+    return e;
   }
 
   minions(): number {
@@ -1454,6 +1644,8 @@ class Game implements Ctx {
   }
 
   private onProcessed(e: Enemy): void {
+    // 인문과학관 앞에서 처리된 민원은 오검토 처장의 재검토 더미로
+    if (this.mode === 'staff' && areaOf(this.stage) === 2) this.pile.add(e);
     this.counts[e.kind]++;
     this.processed++;
     this.addSp(SP_GAIN[e.kind]);
@@ -1752,7 +1944,8 @@ class Game implements Ctx {
 
   special(): void {
     if (this.phase !== 'play' || this.sp < SP_MAX) return;
-    if (this.stage !== 'yard' && this.stage !== 'yardBoss' && this.stage !== 'plaza' && this.stage !== 'field' && this.stage !== 'final') return;
+    const s = this.stage;
+    if (s !== 'yard' && s !== 'yardBoss' && s !== 'plaza' && s !== 'hum' && s !== 'dorm' && s !== 'field' && s !== 'final') return;
     this.sp = 0;
     this.spReadyShown = false;
     this.sound('special');
@@ -2220,7 +2413,7 @@ class Game implements Ctx {
     }
     const running = k.has('ShiftLeft') || k.has('ShiftRight') || this.stick.length() > 0.95;
     // 적이 없는 길에서는 조금 빨리 걷는다
-    const onPath = this.stage === 'path' || this.stage === 'path2';
+    const onPath = this.stage === 'path' || this.stage === 'path2' || this.stage === 'path3' || this.stage === 'path4' || this.stage === 'path5';
     const speed = (running ? RUN : WALK) * (this.slow > 0 ? 0.55 : 1) * (onPath ? 1.35 : 1) * (this.shuttleT > 0 ? SHUTTLE_MUL : 1);
     const sin = Math.sin(this.yaw);
     const cos = Math.cos(this.yaw);
@@ -2326,7 +2519,7 @@ class Game implements Ctx {
       this.showTitle();
     });
     // 닉네임 기록판 (src/fps/board.ts)
-    attachRecordForm(o, { mode: 'fps-staff', stage: this.areaStats.length, cleared: false, elapsed: this.elapsed, hero: '김국제', diff: this.runDiff });
+    attachRecordForm(o, { mode: 'fps-staff', stage: this.areaStats.length, cleared: false, elapsed: this.elapsed, hero: '김국제', diff: this.runDiff, clockMin: START_CLOCK + this.elapsed / 60 + this.penaltyMin });
   }
 
   /** 근무평정: 처리 시간 40 + 받은 민원 피해 30 + 명중률 30 (본편 2D와 같은 S~D 구간) */
@@ -2336,8 +2529,8 @@ class Game implements Ctx {
       return fallback;
     };
     const acc = this.accuracy();
-    // 네 구역 기준: 4분 30초 / 6분 / 7분 30초
-    const time = step(this.elapsed, [[270, 40], [360, 30], [450, 20]], 10);
+    // 여섯 구역(중간보스 다섯) 기준: 8분 30초 / 10분 30초 / 12분 30초
+    const time = step(this.elapsed, [[510, 40], [630, 30], [750, 20]], 10);
     const dmg = step(Math.round(this.damageTaken * 10) / 10, [[0, 30], [4, 22], [9, 14]], 6);
     const aim = acc >= 70 ? 30 : acc >= 55 ? 22 : acc >= 40 ? 14 : 6;
     const total = time + dmg + aim;
@@ -2359,7 +2552,7 @@ class Game implements Ctx {
     document.exitPointerLock?.();
     $('bossbox').classList.remove('on');
     for (const id of ['stamp1', 'stamp2']) $(id).classList.remove('on');
-    const clock = START_CLOCK + this.elapsed / 60;
+    const clock = START_CLOCK + this.elapsed / 60 + this.penaltyMin;
     const g = this.gradeRun();
     const rec = recordBest(this.runDiff, { total: g.total, grade: g.grade, time: this.elapsed });
     const offText = clock <= OFF_HOURS ? `정시 퇴근 · 17:00까지 ${Math.ceil(OFF_HOURS - clock)}분 여유` : `초과근무 ${Math.max(1, Math.floor(clock - OFF_HOURS))}분`;
@@ -2390,7 +2583,7 @@ class Game implements Ctx {
       this.showTitle();
     });
     // 닉네임 기록판 (src/fps/board.ts)
-    attachRecordForm(o, { mode: 'fps-staff', stage: this.areaStats.length, cleared: true, elapsed: this.elapsed, hero: '김국제', diff: this.runDiff });
+    attachRecordForm(o, { mode: 'fps-staff', stage: this.areaStats.length, cleared: true, elapsed: this.elapsed, hero: '김국제', diff: this.runDiff, clockMin: clock });
   }
 
   // ---------- 매 프레임 ----------
@@ -2447,9 +2640,19 @@ class Game implements Ctx {
     const a = areaOf(this.stage);
     if (this.mode === 'student' && this.phase !== 'title') target = this.stu.duskTarget(timeK);
     else if (this.phase !== 'title') {
-      if (a === 3) target = 1;
-      else if (a === 2) target = Math.max(timeK, 0.6 + (this.boss && this.stage === 'field' ? 0.2 * this.boss.progress : this.stage === 'path2' ? 0 : 0.2));
-      else if (a === 1) target = Math.max(timeK, 0.32);
+      // 교직원: 여섯 구역에 걸쳐 노을로 (본관 앞 → … → 대운동장에서 짙어지고 해 질 녘 본관 앞)
+      const k = Math.max(0, Math.min(1, this.elapsed / 60 / STAFF_DUSK_MIN));
+      const b = this.boss;
+      if (a === 5) target = 1;
+      else if (a === 4) {
+        let f = 0.56;
+        if (this.stage === 'field') f = this.fight === 'mid' && b ? 0.6 + 0.05 * b.progress : this.fight === 'boss' && b ? 0.65 + 0.2 * b.progress : 0.65;
+        else if (this.stage === 'fieldClear' || this.stage === 'toFinal') f = 0.85;
+        target = Math.max(k, f);
+      } else if (a === 3) target = Math.max(k, 0.48);
+      else if (a === 2) target = Math.max(k, 0.36);
+      else if (a === 1) target = Math.max(k, 0.22);
+      else target = k;
     }
     this.dusk += (target - this.dusk) * Math.min(1, dt * 0.5);
     if (Math.abs(this.dusk - this.duskShown) > 0.004) {
@@ -2500,21 +2703,9 @@ class Game implements Ctx {
         this.stu.step(dt);
         break;
       case 'yard':
-        if (this.queue.length > 0) {
-          this.spawnT -= dt;
-          if (this.spawnT <= 0 && this.minions() < 7) {
-            this.spawnKind(this.queue.pop() as SpawnKind);
-            this.spawnT = 0.85;
-          }
-        } else if (this.minions() === 0) {
-          if (this.waveDelay < 0) this.waveDelay = 1.6;
-          this.waveDelay -= dt;
-          if (this.waveDelay <= 0) {
-            this.waveDelay = -1;
-            if (this.wave + 1 < WAVES.length) this.beginWave(this.wave + 1);
-            else this.startYardBoss();
-          }
-        }
+      case 'hum':
+      case 'dorm':
+        if (this.fight === 'wave') this.stepWave(dt);
         break;
       case 'yardClear':
         this.clearT -= dt;
@@ -2525,9 +2716,27 @@ class Game implements Ctx {
         break;
       case 'plazaClear':
         this.clearT -= dt;
+        if (this.clearT <= 0) this.openHum();
+        break;
+      case 'path3':
+        if (this.pos.x > HUM_ENTER_X) this.enterHum();
+        break;
+      case 'humClear':
+        this.clearT -= dt;
+        if (this.clearT <= 0) this.openDorm();
+        break;
+      case 'path4':
+        if (this.pos.z > DORM_ENTER_Z) this.enterDorm();
+        break;
+      case 'dormClear':
+        this.clearT -= dt;
         if (this.clearT <= 0) this.openField();
         break;
+      case 'path5':
+        if (this.pos.x < FIELD_GATE_X) this.enterField();
+        break;
       case 'path2':
+        // 옛 지름길 (교직원 흐름에서는 열리지 않는다)
         if (this.pos.z > FIELD_ENTER_Z) this.enterField();
         break;
       case 'fieldClear':
@@ -2568,6 +2777,7 @@ class Game implements Ctx {
       default:
         break;
     }
+    if (this.mode === 'staff') this.stepFight(dt);
     for (let i = 0; i < this.lowering.length; i++) {
       const l = this.lowering[i];
       l.t += dt;
@@ -2612,6 +2822,43 @@ class Game implements Ctx {
     this.fx.update(dt);
   }
 
+  /** 민원 차례: 줄을 세워 하나씩 내보내고, 다 처리하면 다음 차례 또는 중간보스 */
+  private stepWave(dt: number): void {
+    if (this.queue.length > 0) {
+      this.spawnT -= dt;
+      if (this.spawnT <= 0 && this.minions() < 7) {
+        this.spawnKind(this.queue.pop() as SpawnKind);
+        this.spawnT = 0.85;
+      }
+    } else if (this.minions() === 0) {
+      if (this.waveDelay < 0) this.waveDelay = 1.6;
+      this.waveDelay -= dt;
+      if (this.waveDelay <= 0) {
+        this.waveDelay = -1;
+        if (this.wave + 1 < this.waves.length) this.beginWave(this.wave + 1);
+        else this.startMid();
+      }
+    }
+  }
+
+  /** 교직원: 중간보스 뒤 구역 보스 등장, 마감 직전 학생의 초과근무 */
+  private stepFight(dt: number): void {
+    if (this.nextBossT > 0) {
+      this.nextBossT -= dt;
+      if (this.nextBossT <= 0) {
+        this.nextBossT = -1;
+        this.spawnAreaBoss();
+      }
+    }
+    const b = this.boss;
+    if (b instanceof StaffMid && b.penalty > 0) {
+      this.penaltyMin += b.penalty;
+      b.penalty = 0;
+      this.note('마감 연장 · 초과근무 +2분', 2.4);
+      this.buzz([30, 30, 30]);
+    }
+  }
+
   /** 보스 요령은 처음 볼 때 한 번씩 */
   private bossHints(): void {
     const b = this.boss;
@@ -2650,7 +2897,7 @@ class Game implements Ctx {
   }
 
   private updateHud(dt: number): void {
-    const clock = START_CLOCK + this.elapsed / 60;
+    const clock = START_CLOCK + this.elapsed / 60 + this.penaltyMin;
     const left = Math.ceil(OFF_HOURS - clock);
     const places = PLACES;
     const clockLine = this.stage === 'done' && this.offShown ? `${clockText(clock)} · 퇴근 승인!` : `${clockText(clock)} · ${left > 0 ? `퇴근까지 ${left}분` : `초과근무 ${Math.max(1, Math.floor(clock - OFF_HOURS))}분`}`;
@@ -2666,10 +2913,15 @@ class Game implements Ctx {
     this.setClass('spBtn', 'ready', ready);
     let wave: string;
     if (student) wave = this.stu.waveLine();
-    else if (this.stage === 'yard') wave = `${this.wave + 1}차 민원 ${this.queue.length + this.minions()}건 남음 · 처리 ${this.processed}건`;
+    else if (this.fight === 'wave') wave = `${this.wave + 1}차 민원 ${this.queue.length + this.minions()}건 남음 · 처리 ${this.processed}건`;
     else if (this.stage === 'path') wave = `사회과학관 앞으로 이동하세요 · 처리 ${this.processed}건`;
-    else if (this.stage === 'path2') wave = `대운동장으로 이동하세요 · 처리 ${this.processed}건`;
-    else if (this.boss && !this.boss.dead && this.boss.targetable) wave = `${this.boss.bossName} 결재 받는 중 · 처리 ${this.processed}건`;
+    else if (this.stage === 'path3') wave = `인문과학관 앞으로 이동하세요 · 처리 ${this.processed}건`;
+    else if (this.stage === 'path4') wave = `국제학사 앞으로 이동하세요 · 처리 ${this.processed}건`;
+    else if (this.stage === 'path2' || this.stage === 'path5') wave = `대운동장으로 이동하세요 · 처리 ${this.processed}건`;
+    else if (this.boss instanceof StaffMid && !this.boss.dead) {
+      const ex = this.boss.extra;
+      wave = `${ex || `${this.boss.shortName} 민원 처리 중`} · 처리 ${this.processed}건`;
+    } else if (this.boss && !this.boss.dead && this.boss.targetable) wave = `${this.boss.bossName} 결재 받는 중 · 처리 ${this.processed}건`;
     else wave = `${places[this.stage]} · 처리 ${this.processed}건`;
     this.setText('wave', wave);
     this.setText('buff', this.buffT > 0 ? `아메리카노 ${Math.ceil(this.buffT)}초 · 빨리 던지기` : '');
@@ -2686,7 +2938,7 @@ class Game implements Ctx {
     if (boss) {
       const pr = Math.round(boss.progress * 100);
       this.setStyle('bossbar', 'width', `${pr}%`);
-      this.setText('bossprog', `${student ? this.stu.barWord() : '결재 진행'} ${pr}%`);
+      this.setText('bossprog', `${student ? this.stu.barWord() : boss instanceof StaffMid ? '처리' : '결재 진행'} ${pr}%`);
     }
     this.setClass('bossbox', 'weak', !!boss && boss.open);
     if (this.bannerTimer > 0) {
@@ -2723,11 +2975,30 @@ class Game implements Ctx {
       d.el.style.opacity = d.t > 0 ? String(Math.min(1, d.t * 1.6)) : '0';
     }
     // 길 안내
-    const guide = this.phase === 'play' && (this.stage === 'path' || this.stage === 'path2');
+    const s = this.stage;
+    const guide = this.phase === 'play' && (s === 'path' || s === 'path2' || s === 'path3' || s === 'path4' || s === 'path5');
     if (guide) {
       const sg = student ? this.stu.guide() : null;
-      const tx = sg ? sg.x : this.stage === 'path' ? PLAZA_X + 3 : FC.x;
-      const tz = sg ? sg.z : this.stage === 'path' ? 1 : FIELD_ENTER_Z + 2;
+      let tx = PLAZA_X + 3;
+      let tz = 1;
+      if (sg) {
+        tx = sg.x;
+        tz = sg.z;
+      } else if (s === 'path2') {
+        tx = FC.x;
+        tz = FIELD_ENTER_Z + 2;
+      } else if (s === 'path3') {
+        // 꺾이는 길: 모퉁이까지 → 인문과학관 앞 입구
+        const p = this.pos.z < PATH3_GUIDE[0][1] - 3 ? PATH3_GUIDE[0] : PATH3_GUIDE[1];
+        tx = p[0];
+        tz = p[1];
+      } else if (s === 'path4') {
+        tx = 165;
+        tz = DORM_ENTER_Z + 3;
+      } else if (s === 'path5') {
+        tx = FIELD_GATE_X - 4;
+        tz = (GATE_Z0 + GATE_Z1) / 2;
+      }
       const rel = wrap(Math.atan2(-(tx - this.pos.x), -(tz - this.pos.z)) - this.yaw);
       this.setStyle('guide', 'transform', `rotate(${(-rel).toFixed(2)}rad)`);
       this.setStyle('guide', 'opacity', '1');
@@ -2744,4 +3015,4 @@ function clockText(min: number): string {
 
 const game = new Game();
 void game.init();
-if (DEBUG) Object.assign(window as object, { __fps: game, __fpsLib: { Mail, Phone, Bubble, Bomb, PersonBoss, Chonggwal, Bogo, Meeting, President, THREE, FC } });
+if (DEBUG) Object.assign(window as object, { __fps: game, __fpsLib: { Mail, Phone, Bubble, Bomb, PersonBoss, Chonggwal, Bogo, Meeting, President, StaffMid, Gumto, Molla, THREE, FC } });

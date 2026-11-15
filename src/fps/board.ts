@@ -18,15 +18,15 @@ export interface FpsRecord {
   mode: FpsMode;
   /** 빈 문자열 = 익명 */
   nickname: string;
-  /** 깬 구역 수 0~4 */
+  /** 깬 구역 수 0~6 */
   stage: number;
-  /** 네 구역을 모두 깼으면 true */
+  /** 여섯 구역을 모두 깼으면 true */
   cleared: boolean;
   /** 게임 속 시각(분). 16:52 = 1012 */
   clockMin: number;
   /** 걸린 시간(초) */
   elapsed: number;
-  /** 학생: 구역별 학점을 이어 붙인 글자("A+A0B+A+"), 교직원: '' */
+  /** 학생: 구역별 학점을 이어 붙인 글자("A+A0B+A+A+A+", 최대 12자), 교직원: '' */
   grades: string;
   /** 주인공 이름 */
   hero: string;
@@ -40,7 +40,7 @@ export interface FpsRecord {
 /** 결과 화면이 넘겨주는 이번 판 */
 export interface FpsResult {
   mode: FpsMode;
-  /** 깬 구역 수 0~4 */
+  /** 깬 구역 수 0~6 */
   stage: number;
   cleared: boolean;
   /** 걸린 시간(초) */
@@ -66,7 +66,14 @@ interface FpsBoard {
 }
 
 const VERSION = 'F1';
-const MAX_STAGE = 4;
+/**
+ * 구역 수 (2026-11-15: 교직원 5구역 + 총장전 = 6, 학생 모드도 6). 서버 Code.gs MODE_MAX와 같다.
+ * 예전 서버(MODE_MAX 4)는 stage를 4로 자르고 stage === 4일 때만 cleared로 둔다: 다 깬 판은 그대로 "퇴근 승인"·"졸업",
+ * 5·6구역에서 멈춘 판은 "5구역"으로 보인다 (오류 없음).
+ */
+const MAX_STAGE = 6;
+/** 학생 학점 글자 최대 길이 (6구역 × 2자) */
+const GRADES_MAX = 12;
 const TOP_N = 20;
 const params = new URLSearchParams(location.search);
 /** 시험용: ?debug&recordsUrl=http://localhost:포트 (debug가 있을 때만, 이 컴퓨터 주소만 받아들인다) */
@@ -123,11 +130,13 @@ function clean(raw: Partial<Record<keyof FpsRecord, unknown>>, mode: FpsMode): F
   };
 }
 
-/** 서버가 돌려준 줄이 방금 내가 올린 기록인지 (서버는 자기 시각을 ts로 쓰므로 값으로 맞춘다) */
+/**
+ * 서버가 돌려준 줄이 방금 내가 올린 기록인지 (서버는 자기 시각을 ts로 쓰므로 값으로 맞춘다).
+ * 구역 수는 맞추지 않는다: 예전 서버(MODE_MAX 4)는 5·6구역 기록을 4로 잘라 저장한다.
+ */
 function sameRecord(a: FpsRecord, b: FpsRecord): boolean {
   return (
     a.nickname === b.nickname &&
-    a.stage === b.stage &&
     a.cleared === b.cleared &&
     a.diff === b.diff &&
     Math.abs(a.clockMin - b.clockMin) < 0.01 &&
@@ -504,7 +513,7 @@ export function attachRecordForm(root: HTMLElement, r: FpsResult): void {
       cleared: r.cleared && stage === MAX_STAGE,
       clockMin: Math.round((r.clockMin ?? START_CLOCK + r.elapsed / 60) * 100) / 100,
       elapsed: Math.round(r.elapsed),
-      grades: r.mode === 'fps-student' ? (r.grades ?? '').slice(0, 10) : '',
+      grades: r.mode === 'fps-student' ? (r.grades ?? '').slice(0, GRADES_MAX) : '',
       hero: r.hero.slice(0, 20),
       skill: r.mode === 'fps-student' ? (r.skill ?? '').slice(0, 20) : '',
       version: VERSION,

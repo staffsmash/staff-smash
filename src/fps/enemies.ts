@@ -38,7 +38,8 @@ export interface Ctx {
   quake(amount: number, at?: THREE.Vector3): void;
   banner(title: string, sub?: string): void;
   detonate(b: Bomb, byPlayer: boolean): void;
-  spawnAt(kind: 'mail' | 'bomb' | 'bubble', at: THREE.Vector3): void;
+  /** 그 자리에 잡몹 하나 (만든 잡몹을 돌려준다) */
+  spawnAt(kind: 'mail' | 'bomb' | 'bubble', at: THREE.Vector3): Enemy;
   spawnPhone(): void;
   sheet(from: THREE.Vector3, vel: THREE.Vector3, kind?: SheetKind): void;
   /** 보스를 뺀 살아 있는 적 수 */

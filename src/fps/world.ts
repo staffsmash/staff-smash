@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { box, frontBox, lamp, lambert, mergeStatic, plane, tree, type Rect } from './blocks';
+import { buildDorm, buildHumanities, DORM_AREA, GATE_Z0, GATE_Z1, HUM_AREA, PATH3, PATH4, PATH5 } from './campus';
 import { buildField } from './field';
 import { buildSocial } from './social';
 import {
@@ -15,9 +16,11 @@ import {
   type Logos,
 } from './textures';
 
-// 1인칭 시험판의 무대: 해 질 무렵 서울캠퍼스 본관 앞 (블록형) → 오른쪽 길 → 사회과학관 앞 → 남쪽 길 → 대운동장 (field.ts).
+// 1인칭 시험판의 무대: 해 질 무렵 서울캠퍼스 본관 앞 (블록형) → 오른쪽 길 → 사회과학관 앞
+// → 남동쪽 길 → 인문과학관 앞 → 남쪽 길 → 국제학사 앞 → 서쪽 철망 문 → 대운동장 (campus.ts, field.ts).
+// 사회과학관 앞에서 대운동장으로 바로 가는 남쪽 길(path2)도 그대로 있다.
 // 단위는 m. 첫 구역에서 플레이어는 +z 쪽에서 -z(본관) 쪽을 본다. 본관 정면 벽은 z = -22.
-// 사회과학관은 동쪽(+x) 길 끝에 있고 정면이 서쪽(-x)을 본다 (social.ts).
+// 사회과학관은 동쪽(+x) 길 끝에 있고 정면이 서쪽(-x)을 본다 (social.ts). 인문과학관·국제학사도 정면이 서쪽이다.
 
 const STONE = 0xe9e1cf;
 const STONE_L = 0xf3ecdd;
@@ -37,12 +40,31 @@ export interface World {
   path2: Rect;
   /** 대운동장 */
   field: Rect;
-  /** 길을 막고 있다가 열리는 바리케이드 */
+  /** 인문과학관 앞 (campus.ts HUM_AREA) */
+  hum: Rect;
+  /** 국제학사 앞 (campus.ts DORM_AREA) */
+  dorm: Rect;
+  /** 사회과학관 앞 → 인문과학관 앞 길 (사각형 둘, campus.ts PATH3) */
+  path3: Rect[];
+  /** 인문과학관 앞 → 국제학사 앞 길 (campus.ts PATH4) */
+  path4: Rect[];
+  /** 국제학사 앞 → 대운동장 동쪽 철망 문 길 (campus.ts PATH5) */
+  path5: Rect[];
+  /** 길을 막고 있다가 열리는 바리케이드 (barricade = path 입구, 2 = path2, 3 = path3, 4 = path4, 5 = path5) */
   barricade: THREE.Group;
   barricade2: THREE.Group;
-  /** 길 바닥의 안내 화살표 */
+  barricade3: THREE.Group;
+  barricade4: THREE.Group;
+  barricade5: THREE.Group;
+  /**
+   * 길 바닥의 안내 화살표 (arrows = path, 2 = path2, 3 = path3, 4 = path4, 5 = path5).
+   * 모두 교직원 모드 방향을 가리킨다. 묶음 바로 아래가 화살표 하나하나라서 rotation.z에 π를 더하면 거꾸로 된다.
+   */
   arrows: THREE.Group;
   arrows2: THREE.Group;
+  arrows3: THREE.Group;
+  arrows4: THREE.Group;
+  arrows5: THREE.Group;
   arrowMat: THREE.MeshBasicMaterial;
   sun: THREE.DirectionalLight;
   /** 그림자 범위 중심(플레이어)에서 해까지 (노을로 갈수록 낮아진다) */
@@ -123,14 +145,14 @@ function makeBarricade(root: THREE.Object3D, x: number, z: number, rotY: number,
   return g;
 }
 
-/** 바닥 안내 화살표 줄. rotZ = 0 이면 +x 쪽을 가리킨다 (-π/2 이면 +z) */
-function makeArrows(root: THREE.Object3D, pts: [number, number][], rotZ: number, mat: THREE.Material, geo: THREE.BufferGeometry): THREE.Group {
+/** 바닥 안내 화살표 줄. rotZ = 0 이면 +x 쪽을 가리킨다 (-π/2 이면 +z, π 이면 -x). 점마다 [x, z, rotZ]로 따로 줄 수도 있다 */
+function makeArrows(root: THREE.Object3D, pts: ([number, number] | [number, number, number])[], rotZ: number, mat: THREE.Material, geo: THREE.BufferGeometry): THREE.Group {
   const g = new THREE.Group();
   g.visible = false;
   root.add(g);
-  for (const [x, z] of pts) {
+  for (const [x, z, r] of pts) {
     const a = new THREE.Mesh(geo, mat);
-    a.rotation.set(-Math.PI / 2, 0, rotZ);
+    a.rotation.set(-Math.PI / 2, 0, r ?? rotZ);
     a.position.set(x, 0.06, z);
     g.add(a);
   }
@@ -245,6 +267,12 @@ export function buildWorld(scene: THREE.Scene, logos: Logos): World {
   ground.position.x = 50;
   ground.receiveShadow = true;
   root.add(ground);
+  // 동쪽 끝 땅 (인문과학관·국제학사 뒤 산 아래)
+  const east = new THREE.Mesh(new THREE.PlaneGeometry(130, 200), lambert(0x76825f));
+  east.rotation.x = -Math.PI / 2;
+  east.position.set(294, -0.03, -6);
+  east.receiveShadow = true;
+  root.add(east);
 
   // 먼 산과 건물 (배경)
   for (let i = 0; i < 13; i++) {
@@ -356,6 +384,12 @@ export function buildWorld(scene: THREE.Scene, logos: Logos): World {
   const barricade = makeBarricade(root, 26.6, 1, 0, stripeMat, plain);
   // 사회과학관 앞 → 대운동장 (광장 남쪽 가장자리)
   const barricade2 = makeBarricade(root, 95, 18.6, Math.PI / 2, stripeMat, plain);
+  // 사회과학관 앞 → 인문과학관 앞 (광장 남동쪽), 인문과학관 앞 → 국제학사 앞, 국제학사 앞 → 대운동장 (동쪽 철망 문)
+  const p3 = PATH3[0];
+  const p4 = PATH4[0];
+  const barricade3 = makeBarricade(root, (p3.minX + p3.maxX) / 2, 19, Math.PI / 2, stripeMat, plain);
+  const barricade4 = makeBarricade(root, (p4.minX + p4.maxX) / 2, HUM_AREA.maxZ + 1.5, Math.PI / 2, stripeMat, plain);
+  const barricade5 = makeBarricade(root, 154, (GATE_Z0 + GATE_Z1) / 2, 0, stripeMat, plain);
 
   // 바닥 안내 화살표
   const arrowMat = new THREE.MeshBasicMaterial({
@@ -373,10 +407,25 @@ export function buildWorld(scene: THREE.Scene, logos: Logos): World {
   const pts2: [number, number][] = [];
   for (let z = 22; z <= 58; z += 6) pts2.push([95, z]);
   const arrows2 = makeArrows(root, pts2, -Math.PI / 2, arrowMat, arrowGeo);
+  // path3: 남쪽으로 내려가다가 모퉁이에서 동쪽으로
+  const pts3: [number, number, number][] = [];
+  const cx3 = (p3.minX + p3.maxX) / 2;
+  const cz3 = (PATH3[1].minZ + PATH3[1].maxZ) / 2;
+  for (let z = 22; z <= cz3 - 4; z += 6) pts3.push([cx3, z, -Math.PI / 2]);
+  for (let x = cx3; x <= PATH3[1].maxX + 2; x += 6) pts3.push([x, cz3, 0]);
+  const arrows3 = makeArrows(root, pts3, 0, arrowMat, arrowGeo);
+  const pts4: [number, number][] = [];
+  for (let z = HUM_AREA.maxZ + 4; z <= DORM_AREA.minZ + 2; z += 6) pts4.push([(p4.minX + p4.maxX) / 2, z]);
+  const arrows4 = makeArrows(root, pts4, -Math.PI / 2, arrowMat, arrowGeo);
+  const pts5: [number, number][] = [];
+  for (let x = 158; x >= 134; x -= 6) pts5.push([x, (GATE_Z0 + GATE_Z1) / 2]);
+  const arrows5 = makeArrows(root, pts5, Math.PI, arrowMat, arrowGeo);
 
   obstacles.push(...buildSocial(root, logos));
   const fieldInfo = buildField(root, logos);
   obstacles.push(...fieldInfo.obstacles);
+  obstacles.push(...buildHumanities(root, logos));
+  obstacles.push(...buildDorm(root, logos));
 
   // 움직이는 것(바리케이드·화살표)만 빼고 재질별로 합친다
   mergeStatic(root);
@@ -408,10 +457,21 @@ export function buildWorld(scene: THREE.Scene, logos: Logos): World {
     plaza: { minX: 70, maxX: 119, minZ: -18, maxZ: 18 },
     path2: fieldInfo.path2,
     field: fieldInfo.field,
+    hum: HUM_AREA,
+    dorm: DORM_AREA,
+    path3: PATH3,
+    path4: PATH4,
+    path5: PATH5,
     barricade,
     barricade2,
+    barricade3,
+    barricade4,
+    barricade5,
     arrows,
     arrows2,
+    arrows3,
+    arrows4,
+    arrows5,
     arrowMat,
     sun,
     sunOffset,

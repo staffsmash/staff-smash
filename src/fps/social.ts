@@ -123,13 +123,14 @@ export function buildSocial(root: THREE.Object3D, logos: Logos): Rect[] {
     box(root, 3.6, 0.55, 17.6, FRONT_X - 3, 0.28, s * 21, lambert(0x6e9a45), false);
   }
 
-  // 뒤쪽 배경: 북쪽 건물, 동쪽 산
+  // 뒤쪽 배경: 북쪽 건물, 동쪽 산 (인문과학관·국제학사(campus.ts) 뒤로 물렸다)
   const far = new THREE.Group();
   root.add(far);
   const farFacade = facadeTex({ w: 512, h: 256, cols: 11, rows: 4, wall: '#d9d5cc', glass: '#5a7184', frame: '#b8b3aa' });
   frontBox(far, 34, 16, 14, 96, 8, -52, 0xd9d5cc, farFacade).castShadow = false;
-  for (let i = 0; i < 7; i++) {
-    box(far, 26, 20 + (i % 3) * 7, 24, 215, 10, -90 + i * 30, lambert(i % 2 ? 0x5d7a52 : 0x6e8862), false);
+  for (let i = 0; i < 8; i++) {
+    const h = 24 + (i % 3) * 8;
+    box(far, 30, h, 26, 252, h / 2, -90 + i * 30, lambert(i % 2 ? 0x5d7a52 : 0x6e8862), false);
   }
   return obstacles;
 }
