@@ -21,8 +21,9 @@ import {
 // 적·물건·도장의 블록 모형. 모양(geometry)과 재질은 종류마다 하나씩 만들어 함께 쓴다.
 
 /** 줍는 물건: 음식 셋 + 식권(체력 모두 회복) + 보조배터리(필살기 게이지 +50)
- *  + 연차 쿠폰(학생: 공결 확인서 — 다음 한 번 막기) + 셔틀버스 시간표(10초 빨리 걷기) + 단톡방 공지 캡처(잡몹 2.5초 멈춤) */
-export type FoodKind = 'donkatsu' | 'gimbap' | 'americano' | 'ticket' | 'battery' | 'shield' | 'shuttle' | 'capture';
+ *  + 연차 쿠폰(학생: 공결 확인서 — 다음 한 번 막기) + 셔틀버스 시간표(10초 빨리 걷기) + 단톡방 공지 캡처(잡몹 2.5초 멈춤)
+ *  + 인감 도장(학생: 출석 스티커 — 8초 동안 기본 공격에 맞은 잡몹이 넘어진다) */
+export type FoodKind = 'donkatsu' | 'gimbap' | 'americano' | 'ticket' | 'battery' | 'shield' | 'shuttle' | 'capture' | 'seal';
 
 export const FOOD_NAMES: Record<FoodKind, string> = {
   donkatsu: '학식 돈가스',
@@ -33,11 +34,13 @@ export const FOOD_NAMES: Record<FoodKind, string> = {
   shield: '연차 쿠폰',
   shuttle: '셔틀버스 시간표',
   capture: '단톡방 공지 캡처',
+  seal: '인감 도장',
 };
 
 /** 학생 모드에서 이름이 바뀌는 것 */
 export const STUDENT_FOOD_NAMES: Partial<Record<FoodKind, string>> = {
   shield: '공결 확인서',
+  seal: '출석 스티커',
 };
 
 /** 모드에 맞는 물건 이름 */
@@ -150,6 +153,66 @@ function captureTex(): THREE.CanvasTexture {
       g.lineTo(x, y);
       g.lineTo(x, y + dy * 18);
       g.stroke();
+    }
+  });
+}
+
+/** 인감 도장이 찍힌 종이 (흰 종이에 빨간 테두리 원과 "인감") */
+function sealPrintTex(): THREE.CanvasTexture {
+  return canvasTex(192, 192, (g) => {
+    g.fillStyle = '#fbf7ec';
+    g.fillRect(0, 0, 192, 192);
+    g.strokeStyle = '#c8202f';
+    g.lineWidth = 12;
+    g.beginPath();
+    g.arc(96, 96, 72, 0, Math.PI * 2);
+    g.stroke();
+    g.lineWidth = 4;
+    g.beginPath();
+    g.arc(96, 96, 56, 0, Math.PI * 2);
+    g.stroke();
+    g.fillStyle = '#c8202f';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.font = `bold 52px ${FONT}`;
+    g.fillText('인감', 96, 100);
+  });
+}
+
+/** 출석 스티커 판 (하늘색 판, 큰 금색 "출석" 스티커 하나와 작은 스티커들, 한 칸은 떼어 냄) */
+function attendStickerTex(): THREE.CanvasTexture {
+  return canvasTex(176, 224, (g) => {
+    g.fillStyle = '#e4f1fb';
+    g.fillRect(0, 0, 176, 224);
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    // 큰 스티커
+    g.fillStyle = '#f5c542';
+    g.beginPath();
+    g.arc(88, 78, 58, 0, Math.PI * 2);
+    g.fill();
+    g.strokeStyle = '#ffffff';
+    g.lineWidth = 6;
+    g.stroke();
+    g.fillStyle = '#1f3a6b';
+    g.font = `bold 40px ${FONT}`;
+    g.fillText('출석', 88, 80);
+    // 작은 스티커 셋 + 떼어 낸 자리 하나
+    const cols = ['#5bd16b', '#ff8fa3', '#7cc4ff'];
+    for (let i = 0; i < 4; i++) {
+      const x = 30 + i * 39;
+      g.beginPath();
+      g.arc(x, 180, 15, 0, Math.PI * 2);
+      if (i < 3) {
+        g.fillStyle = cols[i];
+        g.fill();
+      } else {
+        g.strokeStyle = '#a9c2d6';
+        g.lineWidth = 3;
+        g.setLineDash([5, 4]);
+        g.stroke();
+        g.setLineDash([]);
+      }
     }
   });
 }
@@ -441,6 +504,20 @@ export class Models {
         const m = add(item, screen, face, 0, 0.01, z);
         if (z < 0) m.rotation.y = Math.PI;
       }
+    } else if (kind === 'seal' && student) {
+      // 출석 스티커: 세워 든 스티커 판 (앞뒤 같은 그림)
+      const face = new THREE.MeshLambertMaterial({ map: attendStickerTex() });
+      const edge = lam(0xd2e4f2);
+      add(item, new THREE.BoxGeometry(0.46, 0.58, 0.03), [edge, edge, edge, edge, face, face], 0, 0, 0);
+    } else if (kind === 'seal') {
+      // 인감 도장: 상아색 도장(빨간 인주 면) + 옆에 세운 "인감" 찍힌 종이 (앞뒤 같은 그림)
+      const face = new THREE.MeshLambertMaterial({ map: sealPrintTex() });
+      const edge = lam(0xefe8d6);
+      add(item, new THREE.BoxGeometry(0.46, 0.46, 0.02), [edge, edge, edge, edge, face, face], -0.13, 0.02, 0);
+      const ivory = lam(0xf1e6c8);
+      add(item, new THREE.CylinderGeometry(0.1, 0.12, 0.4, 14), ivory, 0.27, 0.06, 0);
+      add(item, new THREE.SphereGeometry(0.1, 12, 8), ivory, 0.27, 0.27, 0);
+      add(item, new THREE.CylinderGeometry(0.13, 0.13, 0.05, 14), lam(0xc8202f), 0.27, -0.165, 0);
     } else {
       // 보조배터리: 짙은 몸통 + 초록 충전 칸 넷(앞뒤) + 위쪽 단자와 흰 선
       add(item, new THREE.BoxGeometry(0.3, 0.48, 0.13), lam(0x2b2f38), 0, 0, 0);

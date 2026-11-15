@@ -38,6 +38,7 @@ import { buildWorld, type World } from './world';
 // 2026-11-14: 무기(arms.ts — 경비원·도서 무인 대출기에서 받는다), 부수는 상자·경비원·대출기(props.ts),
 // 조력자 이벤트(helpers.ts), 식권·보조배터리.
 // 연차 쿠폰(학생: 공결 확인서 — 다음 한 번 막기)·셔틀버스 시간표(10초 빨리 걷기)·단톡방 공지 캡처(잡몹 2.5초 멈춤).
+// 2026-11-15: 인감 도장(학생: 출석 스티커 — 8초 동안 기본 공격에 맞은 잡몹이 넘어진다), 조력자 규칙(30% 이하 반드시, 한 방이면 먼저).
 
 const params = new URLSearchParams(location.search);
 const DEBUG = params.has('debug');
@@ -63,9 +64,16 @@ const SHUTTLE_T = 10;
 const SHUTTLE_MUL = 1.3;
 /** 단톡방 공지 캡처: 잡몹이 멈추는 시간 (초) */
 const CAPTURE_T = 2.5;
-/** 민원이 떨어뜨리는 것 가운데 연차 쿠폰·셔틀버스 시간표·단톡방 공지 캡처가 나올 몫 (각각) */
+/** 인감 도장(학생: 출석 스티커): 기본 공격이 잡몹을 넘어뜨리는 시간, 넘어진 잡몹이 일어나기까지 (초) */
+const SEAL_T = 8;
+const DOWN_T = 1.2;
+/** 넘어진 잡몹이 뒤로 밀려나는 거리 (m) */
+const DOWN_SLIDE = 2.2;
+/** 민원이 떨어뜨리는 것 가운데 연차 쿠폰·셔틀버스 시간표·단톡방 공지 캡처·인감 도장이 나올 몫 (각각) */
 const PERK_SHARE = 0.12;
-const PERKS: FoodKind[] = ['shield', 'shuttle', 'capture'];
+const PERKS: FoodKind[] = ['shield', 'shuttle', 'capture', 'seal'];
+/** 조력자: 맞아서 체력이 이 비율 이하로 떨어지면 그 구역에서 한 번 반드시 온다 */
+const RESCUE_HP = 0.3;
 const SP_MAX = 100;
 const JUMP_V = 5.4;
 const GRAVITY = 16;
@@ -181,6 +189,22 @@ interface Frost {
   mark: THREE.Sprite;
 }
 
+/** 인감 도장(출석 스티커)으로 넘어진 잡몹: 뒤로 밀려 쓰러져 한 바퀴 구르고 다시 선다 (그동안 움직이지도 공격하지도 않는다) */
+interface Down {
+  t: number;
+  /** 밀려나는 쪽 (플레이어 → 잡몹, 수평 단위 벡터) */
+  dir: THREE.Vector3;
+  /** 넘어지는 축 (위 × dir: 윗부분이 플레이어 반대쪽으로 넘어간다) */
+  axis: THREE.Vector3;
+  /** 넘어지기 전 자세와 자리 */
+  q0: THREE.Quaternion;
+  pos0: THREE.Vector3;
+  /** 몸 원점 → 맞는 점 (위쪽으로만. 넘어질 때 이 점을 중심으로 돈다) */
+  off: THREE.Vector3;
+  /** 바닥에 있던 잡몹 (전화기·결석 도장·번호표). 아니면 날아다니던 것 */
+  ground: boolean;
+}
+
 interface Pickup {
   kind: FoodKind;
   obj: THREE.Group;
@@ -233,6 +257,8 @@ const _q = new THREE.Quaternion();
 const _e = new THREE.Euler(0, 0, 0, 'YXZ');
 const _prev = new THREE.Vector3();
 const _r = new THREE.Vector3();
+const _dq = new THREE.Quaternion();
+const _dv = new THREE.Vector3();
 const ZERO = new THREE.Vector3();
 /** 교직원 모드 주인공 이름 (조력자가 부르는 이름) */
 const STAFF_NAME = '김국제';
@@ -327,6 +353,12 @@ class Game implements Ctx {
   frozen = new Map<Enemy, Frost>();
   private frostGeo = new THREE.IcosahedronGeometry(1, 1);
   private frostMat = new THREE.MeshBasicMaterial({ color: 0x9fd3ff, transparent: true, opacity: 0.3, depthWrite: false });
+  /** 인감 도장(학생: 출석 스티커): 남은 시간. 그동안 기본 공격(도장·서류)에 맞은 잡몹이 넘어진다 */
+  sealT = 0;
+  /** 넘어진 잡몹 */
+  downs = new Map<Enemy, Down>();
+  /** 체력이 30% 이하로 떨어졌는데 조력자가 아직 못 왔다 (구역 카드·화면 전환이 끝나면 온다) */
+  private rescueDue = false;
   dropCd = 4;
   /** 발이 땅에서 뜬 높이와 위아래 속도 */
   jumpY = 0;
@@ -467,6 +499,8 @@ class Game implements Ctx {
       m.food('shield', true).obj,
       m.food('shuttle').obj,
       m.food('capture').obj,
+      m.food('seal').obj,
+      m.food('seal', true).obj,
       ...this.arms.warmItems(),
       m.sheet('paper'),
       m.sheet('rental'),
@@ -1021,6 +1055,9 @@ class Game implements Ctx {
     this.buffT = 0;
     this.shieldT = 0;
     this.shuttleT = 0;
+    this.sealT = 0;
+    this.downs.clear();
+    this.rescueDue = false;
     this.dropCd = 4;
     this.slow = 0;
     this.invuln = 0;
@@ -1360,6 +1397,7 @@ class Game implements Ctx {
   private removeEnemy(e: Enemy): void {
     this.scene.remove(e.obj);
     e.dispose();
+    this.downs.delete(e);
   }
 
   /** 맞힘·폭발·필살기 모두 여기로. 결과: 처리(kill) / 맞음(hit) / 무시(none) */
@@ -1459,7 +1497,7 @@ class Game implements Ctx {
     const r = Math.random();
     const perk = Math.random();
     // 가끔 보조배터리 (필살기 게이지가 다 찼으면 음식).
-    // 체력이 넉넉하면 가끔 연차 쿠폰(공결 확인서)·셔틀버스 시간표·단톡방 공지 캡처 (위급할 때는 음식)
+    // 체력이 넉넉하면 가끔 연차 쿠폰(공결 확인서)·셔틀버스 시간표·단톡방 공지 캡처·인감 도장(출석 스티커) (위급할 때는 음식)
     const food: FoodKind =
       this.sp < SP_MAX - 10 && Math.random() < 0.2
         ? 'battery'
@@ -1551,6 +1589,9 @@ class Game implements Ctx {
     } else if (p.kind === 'capture') {
       this.freezeMobs(CAPTURE_T);
       this.note('단톡방 공지 캡처! 잡몹이 잠깐 멈춰요', 2);
+    } else if (p.kind === 'seal') {
+      this.sealT = SEAL_T;
+      this.note(this.mode === 'student' ? '출석 스티커! 8초 동안 서류가 넘어뜨려요' : '인감 도장! 8초 동안 도장이 넘어뜨려요', 2);
     } else {
       this.buffT = BUFF_T;
       this.note(this.mode === 'student' ? '아메리카노! 공격 속도 UP' : '아메리카노! 8초 동안 도장을 빨리 던집니다');
@@ -1618,6 +1659,93 @@ class Game implements Ctx {
       f.mark.position.set(e.center.x, e.center.y + e.radius + 0.45, e.center.z);
       f.mark.material.opacity = 0.6 + Math.sin(f.t * 8) * 0.4;
     }
+  }
+
+  // ---------- 인감 도장(출석 스티커): 잡몹 넘어뜨리기 ----------
+
+  /**
+   * 기본 공격에 맞고 남은 잡몹을 넘어뜨린다. 사람(보스·창구 직원)·박반려 처장의 서류 탑·서류 뭉치(맞으면 터진다)는 빼고,
+   * 아직 하늘에서 떨어지는 중인 전화기·결석 도장도 뺀다 (그림자 자리에 떨어져야 한다). 이미 넘어져 있으면 그대로
+   */
+  private knockDown(e: Enemy): void {
+    if (!e.targetable || isBoss(e) || e instanceof DocTower || e instanceof Bomb || this.downs.has(e)) return;
+    if ((e as { landing?: THREE.Vector3 | null }).landing) return;
+    const o = e.obj;
+    const dir = new THREE.Vector3(e.center.x - this.pos.x, 0, e.center.z - this.pos.z);
+    if (dir.lengthSq() < 1e-6) dir.set(-Math.sin(this.yaw), 0, -Math.cos(this.yaw));
+    dir.normalize();
+    // 맞아서 부푼 크기는 그대로 두지 않는다 (넘어진 동안 몸 움직임을 건너뛴다)
+    e.pop = 0;
+    o.scale.setScalar(e.baseScale);
+    this.downs.set(e, {
+      t: 0,
+      dir,
+      axis: new THREE.Vector3(dir.z, 0, -dir.x),
+      q0: o.quaternion.clone(),
+      pos0: o.position.clone(),
+      // 맞는 점은 맞고 밀리기(knock) 전 자리라서 높이만 쓴다 (모든 잡몹의 맞는 점은 몸 원점 바로 위)
+      off: new THREE.Vector3(0, e.center.y - o.position.y, 0),
+      ground: e.kind === 'phone' || o.position.y < 0.5,
+    });
+    this.sound('boom', e.center, 0.3);
+    this.fx.ring(e.center.x, 0.06, e.center.z, 0.3, 1.8, 0.35, 0xc8202f);
+  }
+
+  /** 넘어진 잡몹이면 이번 단계는 넘어지는 동작만 하고 true. 다 일어났거나 처리된 것은 놓아 준다 */
+  private holdDown(e: Enemy, dt: number): boolean {
+    const d = this.downs.get(e);
+    if (!d) return false;
+    if (e.dead || e.gone) {
+      // 넘어진 채로 처리됐다: 그 자세에서 처리 연출을 잇는다
+      this.downs.delete(e);
+      return false;
+    }
+    d.t = Math.min(DOWN_T, d.t + dt);
+    const t = d.t;
+    const PI = Math.PI;
+    // 뒤로 넘어짐(0~0.22초) → 한 바퀴 뒹굴기(~0.62) → 누운 채 흔들(~0.9) → 다시 섬(~1.2)
+    let th: number;
+    let hop = 0;
+    if (t < 0.22) {
+      const k = t / 0.22;
+      th = (PI / 2) * (1 - (1 - k) * (1 - k));
+      hop = Math.sin(PI * k) * 0.3;
+    } else if (t < 0.62) {
+      const k = (t - 0.22) / 0.4;
+      th = PI / 2 + PI * 2 * k * k * (3 - 2 * k);
+    } else if (t < 0.9) {
+      const k = (t - 0.62) / 0.28;
+      th = PI * 2.5 + Math.sin(k * PI * 4) * 0.12 * (1 - k);
+    } else {
+      // 살짝 넘치며 일어선다
+      const k = (t - 0.9) / (DOWN_T - 0.9);
+      const back = 1 + 2.70158 * (k - 1) ** 3 + 1.70158 * (k - 1) ** 2;
+      th = PI * 2.5 - (PI / 2) * back;
+      hop = Math.sin(PI * k) * 0.15;
+    }
+    const s = DOWN_SLIDE * (1 - (1 - Math.min(1, t / 0.6)) ** 3);
+    const a = this.area;
+    const px = Math.max(a.minX - 2, Math.min(a.maxX + 2, d.pos0.x + d.off.x + d.dir.x * s));
+    const pz = Math.max(a.minZ - 2, Math.min(a.maxZ + 2, d.pos0.z + d.off.z + d.dir.z * s));
+    let py: number;
+    if (d.ground) {
+      // 바닥 것: 누우면 몸 중심이 낮아진다 (뒹굴 때는 모서리로 섰다 누웠다)
+      const lie = Math.min(d.off.y, 0.35);
+      py = d.pos0.y * Math.max(0, 1 - t / 0.22) + d.off.y * Math.abs(Math.cos(th)) + lie * Math.abs(Math.sin(th)) + hop;
+    } else {
+      // 날던 것: 공중에서 뒤로 뒹굴며 조금 가라앉았다가 제 높이로
+      py = Math.max(0.9, d.pos0.y + d.off.y - Math.sin((PI * t) / DOWN_T) * 0.7);
+    }
+    const o = e.obj;
+    _dq.setFromAxisAngle(d.axis, th);
+    o.quaternion.copy(_dq).multiply(d.q0);
+    o.position.set(px, py, pz).sub(_dv.copy(d.off).applyQuaternion(_dq));
+    e.center.set(px, py, pz);
+    if (t < DOWN_T) return true;
+    // 다시 섰다: 넘어지기 전 자세로 밀려난 자리에서 하던 일을 잇는다
+    o.quaternion.copy(d.q0);
+    this.downs.delete(e);
+    return false;
   }
 
   // ---------- 필살기: 전체 공지 발송 ----------
@@ -1688,7 +1816,9 @@ class Game implements Ctx {
       return;
     }
     dmg *= this.diff.damage;
-    this.hp = Math.max(0, this.hp - dmg);
+    // 한 방에 쓰러질 피해라도 이 구역에 조력자가 아직 안 왔으면 체력 1로 버티고 조력자가 먼저 온다
+    const save = this.hp - dmg <= 0.001 && this.rescueReady();
+    this.hp = save ? 1 : Math.max(0, this.hp - dmg);
     this.damageTaken += dmg;
     this.invuln = 0.6;
     this.calmT = 0;
@@ -1711,20 +1841,45 @@ class Game implements Ctx {
       this.gameOver();
       return;
     }
-    if (this.hp <= MAX_HP * 0.25) this.maybeRescue();
+    if (this.hp <= MAX_HP * RESCUE_HP) {
+      this.rescueDue = true;
+      this.tryRescue();
+    }
   }
 
   // ---------- 조력자 · 무기 ----------
 
-  /** 체력 25% 이하: 60% 확률로 동료·친구가 도우러 온다 (구역마다 한 번, 카드·연출·엔딩 중에는 안 온다) */
-  private maybeRescue(): void {
-    if (this.cardT > 0 || this.seqT > 0 || this.stage === 'toFinal' || this.stage === 'done') return;
-    if (this.mode === 'student' && this.stu.busy) return;
-    const key = `${this.mode}:${this.mode === 'student' ? this.stu.areaNo : areaOf(this.stage)}`;
-    if (!this.rescue.canStart(key) || Math.random() >= 0.6) return;
+  /** 조력자 구역 열쇠: 교직원은 areaOf, 학생은 stu.areaNo (구역이 늘어도 번호로 나뉜다) */
+  private rescueKey(): string {
+    return `${this.mode}:${this.mode === 'student' ? this.stu.areaNo : areaOf(this.stage)}`;
+  }
+
+  /** 구역 카드·화면 전환·엔딩 중 (조력자는 끝난 뒤에 온다) */
+  private rescueHeld(): boolean {
+    if (this.stage === 'done') return true;
+    if (this.mode === 'student') return this.stu.busy;
+    return this.cardT > 0 || this.seqT > 0 || this.stage === 'toFinal';
+  }
+
+  /** 지금 이 구역 조력자를 바로 부를 수 있다 */
+  private rescueReady(): boolean {
+    return this.phase === 'play' && !this.rescueHeld() && this.rescue.canStart(this.rescueKey());
+  }
+
+  /**
+   * 체력 30% 이하: 동료·친구가 반드시 도우러 온다 (구역마다 한 번).
+   * 카드·화면 전환 중이면 기다렸다가 끝나면 온다 (그 사이 체력이 30%를 넘으면 취소). Game.hurt·step이 부른다
+   */
+  private tryRescue(): void {
+    if (this.hp <= 0 || this.hp > MAX_HP * RESCUE_HP || !this.rescue.canStart(this.rescueKey())) {
+      this.rescueDue = false;
+      return;
+    }
+    if (!this.rescueReady()) return;
+    this.rescueDue = false;
     // 뛰어 들어오는 동안은 맞지 않는다 (도착하면 2초 무적)
     this.invuln = Math.max(this.invuln, 1.4);
-    this.rescue.start(key);
+    this.rescue.start(this.rescueKey());
   }
 
   /** 조력자 도착: 잡몹 모두 처리, 체력 +35%, 2초 무적, 사람 보스·창구 직원은 진행 +10% (5%는 남긴다) */
@@ -1991,6 +2146,8 @@ class Game implements Ctx {
     }
     const base = weak ? WEAK_DMG : e instanceof PersonBoss ? BODY_DMG : 1;
     const r = this.damage(e, reflected ? base : base * k, 'stamp');
+    // 인감 도장(출석 스티커): 기본 공격(도장·서류)에 맞고 남은 잡몹은 넘어진다 (무기는 아니다)
+    if (r === 'hit' && this.sealT > 0 && !s?.arm) this.knockDown(e);
     this.hitMarker(r === 'kill' || weak);
     return reflected;
   }
@@ -2325,6 +2482,7 @@ class Game implements Ctx {
     if (this.buffT > 0) this.buffT -= dt;
     if (this.shieldT > 0) this.shieldT -= dt;
     if (this.shuttleT > 0) this.shuttleT -= dt;
+    if (this.sealT > 0) this.sealT -= dt;
     if (this.dropCd > 0) this.dropCd -= dt;
     if (this.freezeT > 0) this.freezeT -= dt;
     if (this.cardT > 0) {
@@ -2428,9 +2586,11 @@ class Game implements Ctx {
         e.noticeT -= dt;
         if (e.noticeT < 0) this.noticeHit(e);
       }
-      // 단톡방 공지 캡처로 멈춘 잡몹은 움직이지도 공격하지도 않는다
-      if (!e.gone && !this.holdFrozen(e)) e.update(edt, this);
+      // 인감 도장으로 넘어진 잡몹·단톡방 공지 캡처로 멈춘 잡몹은 움직이지도 공격하지도 않는다
+      if (!e.gone && !this.holdDown(e, dt) && !this.holdFrozen(e)) e.update(edt, this);
     }
+    // 학생 모드 총장실 옮기기처럼 판에서 바로 빠진 잡몹은 넘어진 목록에서도 뺀다
+    if (this.downs.size) for (const e of this.downs.keys()) if (!e.obj.parent) this.downs.delete(e);
     // 끝난 적은 치운다 (자리 당겨 쓰기)
     let n = 0;
     for (const e of this.enemies) {
@@ -2447,6 +2607,7 @@ class Game implements Ctx {
     this.updatePickups(dt);
     this.updateFrost(dt);
     this.props.update(dt);
+    if (this.rescueDue) this.tryRescue();
     this.rescue.update(dt);
     this.fx.update(dt);
   }
@@ -2516,6 +2677,7 @@ class Game implements Ctx {
     const perks: string[] = [];
     if (this.shieldT > 0) perks.push(`${this.mode === 'student' ? '공결 확인서' : '연차 쿠폰'} · 한 번 막음 ${Math.ceil(this.shieldT)}초`);
     if (this.shuttleT > 0) perks.push(`셔틀버스 시간표 · 빨라짐 ${Math.ceil(this.shuttleT)}초`);
+    if (this.sealT > 0) perks.push(`${this.mode === 'student' ? '출석 스티커' : '인감 도장'} · 넘어뜨림 ${Math.ceil(this.sealT)}초`);
     this.setText('perks', perks.join('  ·  '));
     this.setText('weapon', this.arms.hud());
     if (this.props) this.props.syncUi(this.phase === 'play');

@@ -5,8 +5,9 @@ import { Person, type Look } from './people';
 import type { PerkHost } from './props';
 import { prepareSpeech } from './speech';
 
-// 1인칭 시험판: 조력자 이벤트 (2026-11-14, 두 모드 공통).
-// 맞아서 체력이 25% 이하(0보다 많이)로 떨어지면 60% 확률로, 구역마다 한 번까지 동료·친구 2~3명이 뛰어 들어온다.
+// 1인칭 시험판: 조력자 이벤트 (2026-11-14, 두 모드 공통. 2026-11-15 규칙 바꿈).
+// 구역마다(총장전 포함) 맞아서 체력이 처음 30% 이하로 떨어지면 반드시 한 번 동료·친구 2~3명이 뛰어 들어온다.
+// 한 방에 쓰러질 피해면 체력 1로 버티고 먼저 온다 (Game.hurt). 플레이어가 보는 쪽 앞에서 달려와 화면 안에 선다.
 // - 교직원 모드: 오학종지·이진취·박국제학사·김학생식당 가운데 (최장학은 1인칭에 쓰지 않는다)
 // - 학생 모드: 고른 주인공을 뺀 학생 주인공들
 // 도착하면 살아 있는 잡몹을 모두 처리하고, 체력 +35%, 2초 무적, 보스(사람·창구 직원)는 결재 진행·설득 +10%
@@ -98,6 +99,8 @@ function wrap(a: number): number {
 export class Rescue {
   private readonly staff: Person[];
   private readonly students = new Map<string, Person>();
+  /** 띠 아래에 부르는 조력자 이름 */
+  private readonly nameOf = new Map<Person, string>();
   private active: Helper[] = [];
   /** 이번 판에 조력자가 왔던 구역 */
   private used = new Set<string>();
@@ -109,6 +112,7 @@ export class Rescue {
   constructor(private readonly h: PerkHost) {
     this.staff = STAFF_IDS.map((id) => {
       const p = new Person('meeting', heroById(id).name, '#7CFC9A', staffLook(id));
+      this.nameOf.set(p, heroById(id).name);
       return p;
     });
     for (const s of STUDENT_HEROES) {
@@ -116,6 +120,7 @@ export class Rescue {
       // 학생은 결재판을 들지 않는다
       p.clip.visible = false;
       this.students.set(s.id, p);
+      this.nameOf.set(p, s.name);
     }
     // 대사 그림 (학생 주인공 넷 이름마다)
     const lines = [...rescueLines(false, '김국제')];
@@ -127,15 +132,18 @@ export class Rescue {
     return this.active.length > 0;
   }
 
-  /** 이 구역(key)에서 아직 안 왔고 지금 오는 중이 아니면 true */
+  /** 이 구역(key)에서 아직 안 왔으면 true (앞 구역 조력자가 아직 걸어 나가는 중이어도 된다 — start가 치운다) */
   canStart(key: string): boolean {
-    return !this.busy && !this.used.has(key);
+    return !this.used.has(key);
   }
 
-  /** 조력자 출발 (Game.hurt가 확률을 굴린 뒤 부른다) */
+  /** 조력자 출발 (Game.tryRescue가 부른다) */
   start(key: string): void {
     const h = this.h;
     const student = h.mode === 'student';
+    // 앞 구역 조력자가 아직 남아 있으면 바로 치운다
+    for (const x of this.active) this.remove(x);
+    this.active = [];
     this.used.add(key);
     this.t = 0;
     this.hitAt = -1;
@@ -150,19 +158,22 @@ export class Rescue {
     const a = h.area;
     const cx = (x: number) => Math.max(a.minX + 1, Math.min(a.maxX - 1, x));
     const cz = (z: number) => Math.max(a.minZ + 1, Math.min(a.maxZ - 1, z));
-    // 화면 안에 얼굴·말풍선이 보이게 앞 양옆(±31°, 5.5m)과 왼쪽 옆(57°, 4.5m)에 선다. 바깥쪽 11m에서 뛰어 들어온다
+    // 화면 안에 몸·말풍선이 다 보이게 앞 양옆(±24°, 7.5m)과 왼쪽 앞(43°, 7m)에 선다 (말풍선이 위쪽 HUD·자막과 덜 겹친다).
+    // 보는 쪽 앞 14m(±11~19°, 처음부터 화면 안)에서 플레이어 쪽으로 뛰어 들어온다
     const spots: [number, number][] = [
-      [0.55, 5.5],
-      [-0.55, 5.5],
-      [1.0, 4.5],
+      [0.42, 7.5],
+      [-0.42, 7.5],
+      [0.75, 7],
     ];
+    const names: string[] = [];
     for (let i = 0; i < n; i++) {
       const [ang, r] = spots[i];
       const th = h.yaw + ang;
-      const out = th + (ang >= 0 ? 1.0 : -1.0);
+      const out = h.yaw + ang * 0.45;
       const spot = new THREE.Vector3(cx(h.pos.x - Math.sin(th) * r), 0, cz(h.pos.z - Math.cos(th) * r));
-      const from = new THREE.Vector3(cx(h.pos.x - Math.sin(out) * 11), 0, cz(h.pos.z - Math.cos(out) * 11));
+      const from = new THREE.Vector3(cx(h.pos.x - Math.sin(out) * 14), 0, cz(h.pos.z - Math.cos(out) * 14));
       const person = pool[i];
+      names.push(this.nameOf.get(person) ?? '');
       person.reset();
       const obj = new THREE.Group();
       obj.add(person.root);
@@ -172,7 +183,8 @@ export class Rescue {
       h.scene.add(obj);
       this.active.push({ person, obj, from, spot, state: 'in', t: 0, yaw });
     }
-    h.banner(student ? '친구들이 도우러 왔다!' : '동료 직원들이 도우러 왔다!');
+    // 2D처럼 띠 아래에 온 사람 이름
+    h.banner(student ? '친구들이 도우러 왔다!' : '동료 직원들이 도우러 왔다!', names.join(' · '));
     h.sound('open');
   }
 
@@ -185,9 +197,10 @@ export class Rescue {
       // 도착: 한꺼번에 처리 + 첫째 대사
       this.hitAt = this.t;
       h.rescueHit();
-      this.active[0].person.say(this.lines[0], 2.2);
+      this.active[0].person.say(this.lines[0], 2.0);
     }
-    if (this.hitAt >= 0 && !this.said2 && this.t - this.hitAt >= 1.9) {
+    // 둘째 대사는 첫째 말풍선이 내려간 뒤 (두 말풍선이 겹치지 않게)
+    if (this.hitAt >= 0 && !this.said2 && this.t - this.hitAt >= 2.1) {
       this.said2 = true;
       if (this.active[1]) this.active[1].person.say(this.lines[1], 2.2);
     }
