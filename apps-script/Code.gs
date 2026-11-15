@@ -4,7 +4,7 @@
  * - doPost: 기록 1건 추가 (닉네임이 비면 익명 — 순위에는 안 나오고 플레이 수에만 잡힌다)
  * - doGet : ?mode=staff|student|fps-staff|fps-student 상위 20개와 플레이 수. 응답의 mode는 실제로 쓴 모드다
  *           (1인칭 게임은 이 값으로 새 서버인지 확인한다 — 옛 서버는 fps-* 를 'staff'로 돌려준다).
- * - 모드: staff·student = 본편 2D(스테이지 0~3), fps-staff·fps-student = 1인칭 시험판(구역 0~4). 그 밖의 값은 'staff'.
+ * - 모드: staff·student = 본편 2D(스테이지 0~3), fps-staff·fps-student = 1인칭 시험판(구역 0~6, 2026-11-15 4 → 6). 그 밖의 값은 'staff'.
  * - 12번째 칸 diff(easy·normal·hard)는 1인칭 난이도다. 2D 기록은 비어 있다.
  * - 개인정보는 받지 않는다. 부적절한 닉네임·조작 기록은 시트에서 행을 지우면 된다.
  */
@@ -12,7 +12,7 @@
 const SHEET_NAME = 'records';
 const HEADERS = ['ts', 'mode', 'nickname', 'stage', 'cleared', 'clockMin', 'elapsed', 'grades', 'hero', 'skill', 'version', 'diff'];
 /** 모드별 마지막 스테이지(구역) 번호. 이 값까지 다 깨야 cleared */
-const MODE_MAX = { staff: 3, student: 3, 'fps-staff': 4, 'fps-student': 4 };
+const MODE_MAX = { staff: 3, student: 3, 'fps-staff': 6, 'fps-student': 6 };
 /** 난이도 순위: 같은 단계면 어려운 난이도가 위 */
 const DIFF_RANK = { hard: 3, normal: 2, easy: 1 };
 const BAD = [
@@ -72,7 +72,7 @@ function doPost(e) {
     const d = JSON.parse(e.postData.contents);
     const mode = mode_(d.mode);
     const max = MODE_MAX[mode];
-    const fps = max === 4;
+    const fps = mode.indexOf('fps-') === 0;
     const stage = Math.round(num_(d.stage, 0, max, 0));
     const row = [
       new Date(),
@@ -82,8 +82,8 @@ function doPost(e) {
       d.cleared === true && stage === max,
       num_(d.clockMin, 900, 1440, 1440),
       num_(d.elapsed, 0, 7200, 7200),
-      // 학점 글자: 2D는 3스테이지(6글자), 1인칭은 4구역(최대 8글자, 여유 10)
-      String(d.grades || '').slice(0, fps ? 10 : 6),
+      // 학점 글자: 2D는 3스테이지(6글자), 1인칭은 6구역(최대 12글자)
+      String(d.grades || '').slice(0, fps ? 12 : 6),
       String(d.hero || '').slice(0, 20),
       String(d.skill || '').slice(0, 20),
       String(d.version || '').slice(0, 10),

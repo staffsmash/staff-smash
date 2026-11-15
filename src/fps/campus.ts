@@ -416,7 +416,7 @@ export function buildHumanities(root: THREE.Object3D, logos: Logos): Rect[] {
   pine(root, 150, -18, 1.1);
   pine(root, 179, -19, 0.95);
   pine(root, 179, 37, 1.0);
-  pine(root, 152.5, 30, 0.9);
+  pine(root, 161, -20, 0.9);
   lamp(root, 147.5, -8, logos, -Math.PI / 2);
   lamp(root, 147.5, 18, logos, -Math.PI / 2);
   solids.push({ minX: 147.2, maxX: 147.8, minZ: -8.3, maxZ: -7.7 }, { minX: 147.2, maxX: 147.8, minZ: 17.7, maxZ: 18.3 });
