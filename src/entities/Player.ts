@@ -32,11 +32,12 @@ import * as fx from '../fx';
 /** 주인공 외형: 교직원(가상 행정직원) 또는 학생 */
 export type PlayerLook = { student: false; look: StaffLook } | { student: true; look: StudentHeroLook };
 
-/** 맨손 (교직원: 도장 → 도장 → 결재판 내려치기, 학생: 잽 → 잽 → 가방 휘두르기). 수치는 같다 */
+/** 맨손 (교직원: 도장 → 도장 → 결재판 내려치기, 학생: 잽 → 잽 → 가방 휘두르기). 수치는 같다.
+ *  인감 도장(출석 스티커)을 먹은 동안은 첫째·둘째 타도 잡몹을 넘어뜨린다 (StageScene.resolvePlayerAttack) */
 export const COMBO: AttackDef[] = [
-  { total: 0.24, active: [0.06, 0.12], chainAt: 0.11, reach: 66, zReach: 30, dmg: 1, kb: 70, knockdown: false },
-  { total: 0.26, active: [0.07, 0.13], chainAt: 0.12, reach: 68, zReach: 30, dmg: 1, kb: 70, knockdown: false },
-  { total: 0.48, active: [0.2, 0.28], chainAt: 99, reach: 84, zReach: 30, dmg: 2, kb: 0, knockdown: true },
+  { total: 0.24, active: [0.06, 0.12], chainAt: 0.11, reach: 66, zReach: 30, dmg: 1, kb: 70, knockdown: false, bare: true },
+  { total: 0.26, active: [0.07, 0.13], chainAt: 0.12, reach: 68, zReach: 30, dmg: 1, kb: 70, knockdown: false, bare: true },
+  { total: 0.48, active: [0.2, 0.28], chainAt: 99, reach: 84, zReach: 30, dmg: 2, kb: 0, knockdown: true, bare: true },
 ];
 
 export const JUMP_ATTACK: AttackDef = {
@@ -120,6 +121,8 @@ export class Player extends Fighter {
   shieldPopT = 0;
   /** 셔틀버스 시간표: 남은 시간. 그동안 30% 빨리 움직인다 */
   shuttleT = 0;
+  /** 인감 도장(학생: 출석 스티커): 남은 시간. 그동안 맨손 공격이 잡몹을 넘어뜨린다 */
+  sealT = 0;
   /** 국물 위에 서 있다 (김학생식당). 스테이지가 매 프레임 채운다 */
   slipT = 0;
   clingBy: Clinger | null = null;
@@ -220,6 +223,7 @@ export class Player extends Fighter {
     if (this.shieldT > 0) this.shieldT -= dt;
     if (this.shieldPopT > 0) this.shieldPopT -= dt;
     if (this.shuttleT > 0) this.shuttleT -= dt;
+    if (this.sealT > 0) this.sealT -= dt;
 
     // 손에 든 마감 서류 뭉치
     if (this.weapon?.id === 'bomb') {

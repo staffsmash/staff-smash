@@ -56,6 +56,29 @@ const REACTING = new Set(['hurt', 'stagger', 'down', 'getup', 'bow', 'leaving', 
 const FROST = 0x9fd3ff;
 let nextUid = 1;
 
+// ---------- 대사 섞기 (2026-11-15 중간보스·보스 ★ 추가 대사, 문구 검토 11절) ----------
+
+/** 기존 대사 자리에서 ★ 추가 대사가 나올 확률 (공격 예고 대사가 더 자주 나오게 남긴다) */
+export const MIX_SHARE = 0.4;
+/** ★ 추가 대사는 짧은 예고 대사보다 길어서 적어도 이만큼 띄운다 (초) */
+const EXTRA_SEC = 1.4;
+/** 싸우는 중 혼잣말: 말한 지 이만큼 지나야 하고 (초), 그 뒤 초당 이 확률로 말한다 (총학 박드러누움 농성 대사와 같은 방식) */
+const CHAT_QUIET = 3.5;
+const CHAT_RATE = 0.3;
+/** 혼잣말끼리 말풍선이 겹치지 않게: 한 장면에서 혼잣말 사이 최소 간격 (ms) */
+const CHAT_GAP_MS = 1500;
+const lastChat = new WeakMap<object, number>();
+
+/** 대사 묶음에서 하나를 무작위로 고른다 */
+export function pickLine(lines: readonly string[]): string {
+  return lines[Math.floor(Math.random() * lines.length)];
+}
+
+/** 기존 대사(base)와 ★ 추가 대사(extra)를 무작위로 섞는다. extra 쪽은 share 확률로 나온다 */
+export function mixLine(base: string, extra: readonly string[], share = MIX_SHARE): string {
+  return extra.length > 0 && Math.random() < share ? pickLine(extra) : base;
+}
+
 export abstract class Enemy extends Fighter {
   abstract readonly kind: EnemyKind;
   state = 'enter';
@@ -87,6 +110,8 @@ export abstract class Enemy extends Fighter {
   private label: Phaser.GameObjects.Text | null = null;
   private speech: Phaser.GameObjects.Text | null = null;
   private speechT = 0;
+  /** 마지막으로 말한 뒤 지난 시간 (초) — 싸우는 중 혼잣말 간격 */
+  private quietT = 0;
   /** 단톡방 공지 캡처: 남은 멈춤 시간 (초)과 머리 위 "…" */
   frozenT = 0;
   private frostMark: Phaser.GameObjects.Text | null = null;
@@ -143,6 +168,7 @@ export abstract class Enemy extends Fighter {
   }
 
   update(dt: number, player: Player): void {
+    this.quietT += dt;
     if (this.frozenT > 0) {
       this.frozenT -= dt;
       if (this.frozenT <= 0 || this.dead) this.thaw();
@@ -388,6 +414,25 @@ export abstract class Enemy extends Fighter {
     if (!this.speech) this.speech = fx.speechText(this.scene, text);
     else this.speech.setText(text);
     this.speechT = sec;
+    this.quietT = 0;
+  }
+
+  /** 기존 대사 자리: base와 ★ 추가 대사(extra)를 섞어 말한다. 추가 대사는 조금 더 오래 띄운다 */
+  protected sayMix(base: string, extra: readonly string[], sec: number, share = MIX_SHARE): void {
+    const text = mixLine(base, extra, share);
+    this.say(text, text === base ? sec : Math.max(sec, EXTRA_SEC));
+  }
+
+  /** 싸우는 중 혼잣말: 말한 지 CHAT_QUIET초가 지나면 초당 CHAT_RATE 확률로 lines 중 하나를 말한다.
+   *  다른 인물이 방금 혼잣말을 했으면 쉰다 (말풍선이 겹치지 않게). 말했으면 true */
+  protected chatter(dt: number, lines: readonly string[], sec = EXTRA_SEC): boolean {
+    if (lines.length === 0 || this.quietT < CHAT_QUIET || Math.random() >= dt * CHAT_RATE) return false;
+    const now = this.scene.time.now;
+    const last = lastChat.get(this.scene);
+    if (last !== undefined && now >= last && now - last < CHAT_GAP_MS) return false;
+    lastChat.set(this.scene, now);
+    this.say(pickLine(lines), sec);
+    return true;
   }
 
   private syncTexts(dt: number): void {

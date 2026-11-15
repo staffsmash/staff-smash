@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import stats from '../data/enemies.json';
 import { TYPE_LABEL } from '../data/names';
 import type { StageScene } from '../scenes/StageScene';
-import { Enemy, type BossLike } from './Enemy';
+import { Enemy, pickLine, type BossLike } from './Enemy';
 import type { HitInfo } from './Fighter';
 import type { Player } from './Player';
 import { neutralPose, type Pose } from './Rig';
@@ -24,6 +24,8 @@ const QUESTIONS = [
   '저만 몰랐던 거예요?',
   '단톡방엔 없던데요?',
 ];
+/** ★ 질문 추가 (문구 검토 11-4절, 2026-11-15 사용자 "추가"). 질문을 던질 때 기존 질문과 섞여 나온다 */
+const MORE_QUESTIONS = ['에브리타임엔 다르게 써 있던데요?', '메일 제목이 공지인 줄 몰랐어요!', '첨부파일은 안 열어 봤는데요?', '공지 세 줄 요약해 주세요!'];
 
 export class NoticeBoss extends Enemy implements BossLike {
   readonly kind = 'noticeBoss' as const;
@@ -112,7 +114,7 @@ export class NoticeBoss extends Enemy implements BossLike {
           this.vx = 0;
           this.vy = 0;
           this.shots = 0;
-          this.say(QUESTIONS[Math.floor(Math.random() * QUESTIONS.length)], 1.6);
+          this.sayMix(pickLine(QUESTIONS), MORE_QUESTIONS, 1.6);
         }
         break;
       }

@@ -1,8 +1,8 @@
 import Phaser from 'phaser';
 import stats from '../data/enemies.json';
-import { HEROES, type HeroId } from '../data/heroes';
+import { HEROES, type DeskLines, type HeroId } from '../data/heroes';
 import type { StageScene } from '../scenes/StageScene';
-import { Enemy } from './Enemy';
+import { Enemy, pickLine } from './Enemy';
 import type { HitInfo } from './Fighter';
 import type { Player } from './Player';
 import { neutralPose, type Pose, type Rig } from './Rig';
@@ -19,6 +19,10 @@ import * as fx from '../fx';
 // - 김국제 "노미네이션 마감 지났어요": 여권·서류를 부채꼴로 던진다
 // - 오학종지 "번호표 뽑고 기다리세요": 대기번호표 줄을 계속 부른다. 뽑는 동안 본체를 치면 멈춘다
 // - 최장학 "신청 기간이 아닙니다": 동전을 뿌려 유인했다가 회수한다. 밟으면 잠깐 멈춘다
+// 대사(2026-11-15 ★ 추가, 문구 검토 11-1절 — data/heroes.ts의 desk):
+// - 싸우는 중: 다가가는 동안 가끔 혼잣말 (말한 지 3.5초 지나면 초당 30% 확률, Enemy.chatter)
+// - 기믹 때: 기존 대사(line)와 기믹 대사(소등·국물·첨삭 선·여권·서류·동전)가 반반으로 섞인다
+// - 박국제학사: 소등이 끝나 불이 켜지면 한마디
 
 export type WindowStaffKind = 'haksa' | 'sikdang' | 'jinchwi' | 'gukje' | 'hakjong' | 'janghak';
 export const WINDOW_STAFF_KINDS: WindowStaffKind[] = ['haksa', 'sikdang', 'jinchwi', 'gukje', 'hakjong', 'janghak'];
@@ -65,6 +69,8 @@ export class WindowStaff extends Enemy {
   readonly name: string;
   readonly line: string;
   thanksText = '퇴근합니다…';
+  /** ★ 추가 대사 묶음 (싸우는 중·기믹 때·불이 켜질 때) */
+  private readonly desk: DeskLines;
   private readonly info: StaffInfo;
   private readonly st: Stats;
   private gimmickT = 2.4;
@@ -82,6 +88,7 @@ export class WindowStaff extends Enemy {
     const hero = windowStaffHero(kind);
     this.name = hero.name;
     this.line = hero.line;
+    this.desk = hero.desk ?? { fight: [] };
     this.baseScale = 1.1;
     this.cooldown = 1.2;
     this.resumeState = 'intro';
@@ -114,14 +121,18 @@ export class WindowStaff extends Enemy {
           this.acted = false;
           this.facing = dx >= 0 ? 1 : -1;
           this.set('gimmick');
-          this.say(this.line, 1.6);
+          // 기존 대사와 기믹 대사(소등·국물·첨삭 선·여권·서류·동전)를 반반으로 섞는다
+          this.sayMix(this.line, this.desk.gimmick ?? [], 1.6, 0.5);
           return;
         }
         if (this.canStartAttack(player, dx, dy, this.kind === 'sikdang' ? 120 : 100)) {
           this.set('windup');
           this.vx = 0;
           this.vy = 0;
+          break;
         }
+        // 싸우는 중 혼잣말
+        this.chatter(dt, this.desk.fight);
         break;
       }
       case 'windup':
@@ -242,6 +253,13 @@ export class WindowStaff extends Enemy {
     this.gimmickT = this.st.gimmickEvery + extra + Math.random() * 1.5;
     this.cooldown = 0.6;
     this.set('recover');
+  }
+
+  /** 박국제학사: 소등이 끝나 불이 켜졌을 때 (스테이지가 부른다) */
+  onLightsOn(): void {
+    const lines = this.desk.lightsOn ?? [];
+    if (this.dead || this.removed || lines.length === 0) return;
+    this.say(pickLine(lines), 1.6);
   }
 
   takeHit(h: HitInfo): boolean {

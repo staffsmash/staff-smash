@@ -18,6 +18,8 @@ import * as fx from '../fx';
 const S = stats.deadlineBoss;
 const EXTEND_SEC = 30;
 const PENALTY_MIN = 2;
+/** ★ 싸우는 중 추가 대사 (문구 검토 11-4절, 2026-11-15 사용자 "추가"). 서류 던지기·돌진·서류 뭉치 때 기존 대사와 섞인다 */
+const MORE_LINES = ['출력만 하면 돼요!', '서명은 나중에 할게요!', '파일명만 바꾸면 돼요!', '시계 좀 천천히 가게 해 주세요!'];
 
 export class DeadlineBoss extends Enemy implements BossLike {
   readonly kind = 'deadlineBoss' as const;
@@ -77,13 +79,13 @@ export class DeadlineBoss extends Enemy implements BossLike {
         if (this.cycle % 3 === 0) {
           this.set('throw');
           this.shots = 0;
-          this.say('이거 받아 주세요! 마감 직전이에요!', 1.4);
+          this.sayMix('이거 받아 주세요! 마감 직전이에요!', MORE_LINES, 1.4);
         } else if (Math.abs(dy) < 16 || Math.abs(dx) > 220) {
           this.set('windup');
-          this.say('급해요 급해!', 0.9);
+          this.sayMix('급해요 급해!', MORE_LINES, 0.9);
         } else {
           this.set('wave');
-          this.say('이것도 같이 내 주세요!', 1.2);
+          this.sayMix('이것도 같이 내 주세요!', MORE_LINES, 1.2);
         }
         this.vx = 0;
         this.vy = 0;

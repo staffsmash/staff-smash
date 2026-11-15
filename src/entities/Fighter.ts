@@ -33,6 +33,8 @@ export interface AttackDef {
   kb: number;
   knockdown: boolean;
   tag?: string;
+  /** 맨손 공격(처리, J) — 인감 도장(출석 스티커)을 먹으면 잡몹을 넘어뜨린다 */
+  bare?: boolean;
 }
 
 export abstract class Fighter {

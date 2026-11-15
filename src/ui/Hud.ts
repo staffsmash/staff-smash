@@ -44,7 +44,7 @@ export class Hud {
   private readonly bossT: Phaser.GameObjects.Text;
   private readonly noticeT: Phaser.GameObjects.Text;
   private readonly alertT: Phaser.GameObjects.Text;
-  /** 체력 상자 아래: 연차 쿠폰(공결 확인서)·셔틀버스 시간표 효과 */
+  /** 체력 상자 아래: 연차 쿠폰(공결 확인서)·셔틀버스 시간표·인감 도장(출석 스티커) 효과 */
   private readonly perkT: Phaser.GameObjects.Text;
   private readonly touch: boolean;
   /** 학생 모드: 시계는 본관 마감, 무기는 학생 이름 */
@@ -236,11 +236,13 @@ export class Hud {
     }
     this.alertT.setText(info.notice).setVisible(info.notice !== '');
 
-    // 연차 쿠폰(공결 확인서)·셔틀버스 시간표
+    // 연차 쿠폰(공결 확인서)·셔틀버스 시간표·인감 도장(출석 스티커). 셋이 겹치면 가운데 알림과 닿지 않게 두 줄로 나눈다
     const perks: string[] = [];
     if (p.shieldT > 0) perks.push(`${this.student ? '공결 확인서' : '연차 쿠폰'} · 한 번 막음 ${Math.ceil(p.shieldT)}초`);
     if (p.shuttleT > 0) perks.push(`셔틀버스 시간표 · 빨라짐 ${Math.ceil(p.shuttleT)}초`);
-    this.perkT.setText(perks.join('   ')).setVisible(perks.length > 0);
+    if (p.sealT > 0) perks.push(`${this.student ? '출석 스티커' : '인감 도장'} · 넘어뜨림 ${Math.ceil(p.sealT)}초`);
+    const text = perks.length > 2 ? `${perks.slice(0, 2).join('   ')}\n${perks.slice(2).join('   ')}` : perks.join('   ');
+    this.perkT.setText(text).setVisible(perks.length > 0);
 
     this.livesT.setText(`목숨 ×${p.lives}`);
 

@@ -16,6 +16,8 @@ import * as fx from '../fx';
 // - 설득되면 "반려 철회" — 넘어지지 않고 퇴근하며 물러난다.
 
 const S = stats.banryeoBoss;
+/** ★ 싸우는 중 추가 대사 (문구 검토 11-2절, 2026-11-15 사용자 "추가"). 탑 뒤 도장·내려치기 때 기존 대사와 섞인다 */
+const MORE_LINES = ['양식이 작년 거예요.', '도장 위치가 틀렸어요.', '원본 대조필 받아 오세요.', '첨부 서류 순서가 틀렸어요.'];
 /** 탑 앞뒤 간격: 처장은 탑보다 조금 뒤(깊이 y가 작은 쪽)에 선다 */
 const BEHIND = 24;
 
@@ -188,7 +190,7 @@ export class BanryeoBoss extends Enemy implements BossLike {
         if (!this.slammed && this.stateT >= 0.35) {
           this.slammed = true;
           this.scene.slamStamp(player.x + player.vx * 0.3, player.y, '반려', 1.0);
-          this.say('반려!', 0.8);
+          this.sayMix('반려!', MORE_LINES, 0.8);
         }
         if (this.stateT >= 0.8) {
           this.slamT = S.slamEvery + Math.random() * 0.8;
@@ -213,7 +215,7 @@ export class BanryeoBoss extends Enemy implements BossLike {
           this.set('windup');
           this.vx = 0;
           this.vy = 0;
-          this.say('반려합니다!', 0.9);
+          this.sayMix('반려합니다!', MORE_LINES, 0.9);
         } else if (this.cooldown <= 0 && player.targetable && Math.abs(dx) > 260) {
           this.startPeek();
           this.vx = 0;
