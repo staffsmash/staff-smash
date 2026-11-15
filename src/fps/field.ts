@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { box, GINKGO, lamp, lambert, MAPLE, plane, tree, type Rect } from './blocks';
+import { GATE_Z0, GATE_Z1 } from './campus';
 import {
   apartmentTex,
   emblemTex,
@@ -18,6 +19,7 @@ import {
 // 사회과학관 앞 광장 남쪽(+z)으로 난 길을 따라가면 북쪽 콘크리트 스탠드 사이로 들어온다.
 // 줄무늬 잔디(가운데 원에 남색 심벌), 붉은 트랙, 흰 골대와 그물, 남쪽 높은 초록 철망과 남색 현수막,
 // 그 너머 아파트와 산. 해는 남서쪽 하늘로 진다.
+// 동쪽 철망에는 국제학사 앞(campus.ts)으로 이어지는 문이 있다 (z = GATE_Z0 ~ GATE_Z1).
 
 /** 운동장 한가운데 */
 export const FC = new THREE.Vector3(95, 0, 85);
@@ -212,10 +214,15 @@ export function buildField(root: THREE.Object3D, logos: Logos): FieldInfo {
   const south = tiledPlane(FENCE_X1 - FENCE_X0, FENCE_H, 0.7);
   south.translate((FENCE_X0 + FENCE_X1) / 2, FENCE_H / 2, FENCE_Z);
   fence.push(south);
-  for (const x of [FENCE_X0, FENCE_X1]) {
-    const end = tiledPlane(FENCE_Z - 52, FENCE_H, 0.7);
+  // 끝 철망: 서쪽은 한 장, 동쪽은 문(GATE_Z0 ~ GATE_Z1)을 남기고 두 장
+  for (const [x, z0, z1] of [
+    [FENCE_X0, 52, FENCE_Z],
+    [FENCE_X1, 52, GATE_Z0],
+    [FENCE_X1, GATE_Z1, FENCE_Z],
+  ] as [number, number, number][]) {
+    const end = tiledPlane(z1 - z0, FENCE_H, 0.7);
     end.rotateY(Math.PI / 2);
-    end.translate(x, FENCE_H / 2, (FENCE_Z + 52) / 2);
+    end.translate(x, FENCE_H / 2, (z0 + z1) / 2);
     fence.push(end);
   }
   const fenceGeo = mergeGeometries(fence, false);
@@ -232,9 +239,14 @@ export function buildField(root: THREE.Object3D, logos: Logos): FieldInfo {
   box(root, FENCE_X1 - FENCE_X0, 0.16, 0.16, (FENCE_X0 + FENCE_X1) / 2, FENCE_H + 0.2, FENCE_Z, post, false);
   box(root, FENCE_X1 - FENCE_X0, 0.12, 0.12, (FENCE_X0 + FENCE_X1) / 2, 2.2, FENCE_Z, post, false);
   for (const x of [FENCE_X0, FENCE_X1]) {
-    for (let z = 52; z < FENCE_Z; z += 8) box(root, 0.22, FENCE_H + 0.3, 0.22, x, (FENCE_H + 0.3) / 2, z, post);
+    for (let z = 52; z < FENCE_Z; z += 8) {
+      if (x === FENCE_X1 && z > GATE_Z0 - 1 && z < GATE_Z1 + 1) continue;
+      box(root, 0.22, FENCE_H + 0.3, 0.22, x, (FENCE_H + 0.3) / 2, z, post);
+    }
     box(root, 0.16, 0.16, FENCE_Z - 52, x, FENCE_H + 0.2, (FENCE_Z + 52) / 2, post, false);
   }
+  // 동쪽 문 기둥 (조금 굵게)
+  for (const z of [GATE_Z0, GATE_Z1]) box(root, 0.34, FENCE_H + 0.3, 0.34, FENCE_X1, (FENCE_H + 0.3) / 2, z, post);
   // 남색 현수막 (운동장 쪽을 본다)
   plane(root, 26, 3.25, cx, 3.6, FENCE_Z - 0.12, fieldBannerTex(logos), { rotY: Math.PI });
   // 서쪽 끝 철망 현수막
@@ -293,7 +305,7 @@ export function buildField(root: THREE.Object3D, logos: Logos): FieldInfo {
   for (const [x, z, s] of [
     [29, 70, 1.1],
     [27, 98, 1.0],
-    [161, 66, 1.15],
+    [175, 50, 1.15],
     [163, 99, 1.0],
   ] as [number, number, number][]) {
     tree(root, x, z, s, MAPLE);

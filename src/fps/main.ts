@@ -4,6 +4,7 @@ import { Sfx, type SfxName } from './audio';
 import type { Rect } from './blocks';
 import { addBoardButton, attachRecordForm } from './board';
 import { BODY_DMG, BOSS_HINTS, BOSS_NAMES, Bogo, Chonggwal, Meeting, PersonBoss, President, SERVER_SPOT, WEAK_DMG } from './bosses';
+import type { Stage } from './campus';
 import { Bomb, Bubble, Mail, Phone, type Ctx, type Enemy, type HurtKind, type Kind, type SheetKind } from './enemies';
 import { FIELD_ENTER_Z, FC } from './field';
 import { Fx } from './fx';
@@ -120,7 +121,6 @@ const HURT_NOTE: Partial<Record<HurtKind, string>> = {
 };
 
 type Phase = 'title' | 'play' | 'paused' | 'clear' | 'over';
-type Stage = 'yard' | 'yardBoss' | 'yardClear' | 'path' | 'plaza' | 'plazaClear' | 'path2' | 'field' | 'fieldClear' | 'toFinal' | 'final' | 'done';
 type DamageSrc = 'stamp' | 'blast' | 'fuse' | 'special';
 
 /** 시계 아래 작은 글씨 (지금 있는 곳) */
@@ -132,6 +132,13 @@ const PLACES: Record<Stage, string> = {
   plaza: '사회과학관 앞',
   plazaClear: '사회과학관 앞',
   path2: '대운동장 가는 길',
+  path3: '인문과학관 가는 길',
+  hum: '인문과학관 앞',
+  humClear: '인문과학관 앞',
+  path4: '국제학사 가는 길',
+  dorm: '국제학사 앞',
+  dormClear: '국제학사 앞',
+  path5: '대운동장 가는 길',
   field: '대운동장',
   fieldClear: '대운동장',
   toFinal: '대운동장',
