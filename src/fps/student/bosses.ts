@@ -784,7 +784,7 @@ export class Bujae extends StudentBoss {
 
   /** door: 들어오고 나가는 문, spot: 결재판을 드는 자리 */
   constructor(c: Ctx, s: StuCtx, person: Person, door: THREE.Vector3, spot: THREE.Vector3, exit: THREE.Vector3) {
-    super(c, s, person, door, exit, '퇴근합니다…', '김부재중 처장', 60, '결재 완료!');
+    super(c, s, person, door, exit, '퇴근합니다…', '김부재중 처장', 54, '결재 완료!');
     this.introTitle = '다음 구역은 결재가 필요합니다';
     this.door = door.clone();
     this.spot = spot.clone();
@@ -855,7 +855,7 @@ export class Bujae extends StudentBoss {
         this.faceTo(c.eye.x, c.eye.z, dt);
         if (this.subT >= (this.s.easy ? 3.8 : 3.0) || this.raiseTo < 0.5) {
           this.raiseTo = 0;
-          this.hereT = 8 + Math.random() * 2;
+          this.hereT = 7 + Math.random() * 2;
           this.lookT = 4.2;
           this.throwT = 1.2;
           this.go('here');

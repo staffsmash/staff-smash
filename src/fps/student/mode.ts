@@ -7,7 +7,7 @@ import { lateMin, onTime, outcomeText } from '../../run';
 import type { Rect } from '../blocks';
 import { attachRecordForm } from '../board';
 import type { PersonBoss } from '../bosses';
-import type { Stage } from '../campus';
+import { DORM_DOOR, HUM_DOOR, PATH3, PATH3_GUIDE, type Stage } from '../campus';
 import type { Ctx, Enemy, HurtKind } from '../enemies';
 import type { FoodKind } from '../models';
 import { peopleKit, type Person, type Who } from '../people';
@@ -24,7 +24,8 @@ import { heroPortrait } from './textures';
 import { ensureDom, esc, hideSpell, playEnding, showCombo, showSpell, spellHtml } from './ui';
 
 // 1인칭 시험판 학생 모드 (본편 2D 학생 모드 내용, 2026-11-14 · 2026-11-15 구역 다섯 곳).
-// 교직원 모드를 거꾸로 올라간다 (경로는 아래 ROUTE). 마지막은 본관 총장실(계단 앞).
+// 교직원 모드를 거꾸로 올라간다: 대운동장 → 국제학사 앞 → 인문과학관 앞 → 사회과학관 앞 → 본관 앞
+// → 본관 총장실(계단 앞). 구역과 길은 아래 ROUTE·LINKS 표 (새 구역·길은 campus.ts).
 // 구역마다: 학사 행정 잡몹 차례 → 창구 직원(작은 중간 보스) → 처장·부총장 (본관 앞은 창구 직원 뒤 총장).
 // 학생은 도장 대신 졸업 서류(비행기)를 던진다. 맞힌 자리에는 "통과"(사물)·"설득"(사람 결재판) 도장 자국이 남는다.
 // 16:52 시작, 17:00 본관 업무 마감. 결과는 성적표(구역마다 학점, 누적 GPA — 본편 2D grade.ts와 같은 기준).
@@ -135,7 +136,8 @@ interface LinkDef {
   /** 시계 아래 장소 · 왼쪽 위 안내 */
   place: string;
   go: string;
-  guide: { x: number; z: number };
+  /** HUD 길 안내가 가리키는 점 (꺾이는 길은 지금 자리에 따라) */
+  guide(p: V3): { x: number; z: number };
   /** 다음 구역에 들어섰나 */
   arrived(p: V3): boolean;
   dusk: number;
@@ -161,6 +163,40 @@ const ROUTE: AreaDef[] = [
     dusk: 0.05,
   },
   {
+    // 학생회관 및 기숙사: 학생식당 창구 → 간식을 든 부총장
+    name: '국제학사 앞',
+    stage: 'dorm',
+    rect: (w) => w.dorm,
+    wave: { doc: 4, absence: 2, bot: 1 },
+    staff: 'sikdang',
+    boss: 'hoho',
+    // 국제학사 현관에서 나온다
+    staffAt: () => ({ at: v3(198, 79), spot: v3(179, 75), exit: DORM_DOOR.clone() }),
+    bossAt: () => ({ at: v3(198, 84), spot: v3(180, 82), exit: DORM_DOOR.clone() }),
+    food: () => [
+      ['gimbap', 165, 76],
+      ['americano', 171, 59],
+    ],
+    dusk: 0.2,
+  },
+  {
+    // 국제교류 서류 창구 → 결재가 늦는 처장
+    name: '인문과학관 앞',
+    stage: 'hum',
+    rect: (w) => w.hum,
+    wave: { doc: 5, bot: 1, absence: 2 },
+    staff: 'gukje',
+    boss: 'bujae',
+    // 인문과학관 현관에서 나온다 (김부재중 처장은 이 문으로 드나든다)
+    staffAt: () => ({ at: v3(180, 8), spot: v3(164, 12), exit: HUM_DOOR.clone() }),
+    bossAt: () => ({ at: HUM_DOOR.clone(), spot: v3(170, 7), exit: HUM_DOOR.clone() }),
+    food: () => [
+      ['gimbap', 158, 32],
+      ['americano', 170, 32],
+    ],
+    dusk: 0.35,
+  },
+  {
     name: '사회과학관 앞',
     stage: 'plaza',
     rect: (w) => w.plaza,
@@ -174,7 +210,7 @@ const ROUTE: AreaDef[] = [
       ['gimbap', 88, 8],
       ['americano', 102, 8],
     ],
-    dusk: 0.3,
+    dusk: 0.45,
   },
   {
     name: '본관 앞',
@@ -186,22 +222,52 @@ const ROUTE: AreaDef[] = [
     // 본관 문에서 나온다
     staffAt: () => ({ at: v3(0, -19.2), spot: v3(0, -9), exit: v3(0, -20) }),
     food: (g) => [[g.hp <= 6 ? 'donkatsu' : 'gimbap', 18, 8]],
-    dusk: 0.6,
+    dusk: 0.62,
   },
 ];
 
+/** 사회과학관 앞 광장으로 올라가는 path3 세로 칸의 가운데 (x) */
+const PATH3_X = (PATH3[0].minX + PATH3[0].maxX) / 2;
+
 const LINKS: LinkDef[] = [
   {
-    stage: 'path2',
-    bounds: (w) => [w.field, w.path2, w.plaza],
-    barricade: (w) => w.barricade2,
-    arrows: (w) => w.arrows2,
-    card: '다음: 사회과학관 앞 — 북쪽 길로 가세요 ↑',
+    // 대운동장 동쪽 철망 문 → 국제학사 앞
+    stage: 'path5',
+    bounds: (w) => [w.field, ...w.path5, w.dorm],
+    barricade: (w) => w.barricade5,
+    arrows: (w) => w.arrows5,
+    card: '다음: 국제학사 앞 — 동쪽 철망 문으로 가세요 →',
+    place: '국제학사 가는 길',
+    go: '국제학사 앞으로 이동하세요',
+    guide: () => ({ x: 162, z: 66 }),
+    arrived: (p) => p.x > 158,
+    dusk: 0.15,
+  },
+  {
+    // 국제학사 앞 → 인문과학관 앞 (북쪽)
+    stage: 'path4',
+    bounds: (w) => [w.dorm, ...w.path4, w.hum],
+    barricade: (w) => w.barricade4,
+    arrows: (w) => w.arrows4,
+    card: '다음: 인문과학관 앞 — 북쪽 길로 가세요 ↑',
+    place: '인문과학관 가는 길',
+    go: '인문과학관 앞으로 이동하세요',
+    guide: () => ({ x: 165, z: 36 }),
+    arrived: (p) => p.z < 39,
+    dusk: 0.28,
+  },
+  {
+    // 인문과학관 앞 → 사회과학관 남쪽 끝을 돌아 → 광장 (서쪽으로 가다가 모퉁이에서 북쪽)
+    stage: 'path3',
+    bounds: (w) => [w.hum, ...w.path3, w.plaza],
+    barricade: (w) => w.barricade3,
+    arrows: (w) => w.arrows3,
+    card: '다음: 사회과학관 앞 — 서쪽 길로 가세요 ←',
     place: '사회과학관 가는 길',
     go: '사회과학관 앞으로 이동하세요',
-    guide: { x: 95, z: 12 },
-    arrived: (p) => p.z < 15,
-    dusk: 0.3,
+    guide: (p) => (p.x > PATH3_X + 4 ? { x: PATH3_GUIDE[0][0], z: PATH3_GUIDE[0][1] } : { x: PATH3_X, z: 15 }),
+    arrived: (p) => p.z < 17 && p.x < 119,
+    dusk: 0.4,
   },
   {
     stage: 'path',
@@ -211,7 +277,7 @@ const LINKS: LinkDef[] = [
     card: '다음: 본관 앞 — 왼쪽 길로 가세요 ←',
     place: '본관 가는 길',
     go: '본관 앞으로 이동하세요',
-    guide: { x: 18, z: 1 },
+    guide: () => ({ x: 18, z: 1 }),
     arrived: (p) => p.x < 24,
     dusk: 0.55,
   },
@@ -370,6 +436,16 @@ export class StudentMode implements StuCtx {
     } catch {
       /* 처음 고르는 값 */
     }
+    // 학생 모드에서는 Game.area(잡몹이 나오고 보스가 걷는 경계)를 학생 경로의 지금 구역으로 돌려준다.
+    // Game.area는 단계 이름으로 구역을 고르는데, 학생은 같은 구역을 거꾸로 돌므로 여기서 직접 정한다.
+    // (main.ts를 고치지 않으려고 이 Game 객체에만 덮어쓴다. 교직원 모드·타이틀에서는 원래 값)
+    const base = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(g), 'area')?.get;
+    if (base) {
+      Object.defineProperty(g, 'area', {
+        configurable: true,
+        get: () => (this.on && g.phase !== 'title' ? this.rect : (base.call(g) as Rect)),
+      });
+    }
   }
 
   get easy(): boolean {
@@ -471,8 +547,7 @@ export class StudentMode implements StuCtx {
     // 국물 웅덩이·여권·일거리
     this.haz.spill(0, -2, 0.1);
     this.haz.throwPassport(_v.set(0, 1.6, 4), new THREE.Vector3(0, 0, 0.01));
-    const work = this.g.models.food('gimbap', true);
-    work.item.add(k.workCorner());
+    const work = { obj: this.workModel() };
     work.obj.position.set(1.5, -1.6, -2);
     group.add(work.obj);
     k.warmTickets(Array.from({ length: 24 }, (_, i) => String(87 + i).padStart(3, '0')));
@@ -669,6 +744,12 @@ export class StudentMode implements StuCtx {
   reset(): void {
     this.ending?.cancel();
     this.ending = null;
+    const w = this.g.world;
+    for (const b of [w.barricade3, w.barricade4, w.barricade5]) {
+      b.visible = true;
+      b.position.y = 0;
+    }
+    for (const a of [w.arrows3, w.arrows4, w.arrows5]) a.visible = false;
     this.haz.clear();
     this.office.visible = false;
     this.towerModel.removeFromParent();
@@ -729,7 +810,8 @@ export class StudentMode implements StuCtx {
   private flipArrows(on: boolean): void {
     if (on === this.arrowsFlipped) return;
     this.arrowsFlipped = on;
-    for (const grp of [this.g.world.arrows, this.g.world.arrows2]) for (const a of grp.children) a.rotation.z += Math.PI;
+    const w = this.g.world;
+    for (const grp of [w.arrows, w.arrows2, w.arrows3, w.arrows4, w.arrows5]) for (const a of grp.children) a.rotation.z += Math.PI;
   }
 
   /** 던지는 것: 학생은 서류 비행기 (Game.fire가 부른다) */
@@ -835,14 +917,26 @@ export class StudentMode implements StuCtx {
       const r = 2.2 + Math.random() * 0.8;
       const p = this.freeSpot(g.pos.x - dz * side * r + dx * 0.8, g.pos.z + dx * side * r + dz * 0.8);
       if (side === workSide) {
-        const { obj, item } = g.models.food('gimbap', true);
-        item.add(this.kit.workCorner());
-        this.haz.placeWork(obj, p.x, p.z);
+        this.haz.placeWork(this.workModel(), p.x, p.z);
       } else {
         g.spawnPickup(real, p.x, p.z);
       }
       g.fx.confetti(_v.set(p.x, 0.6, p.z), 8, 2, 0xf6f1e1, 1.2, 0.5);
     }
+  }
+
+  /** 일거리: 삼각김밥 모형 + 삐져나온 서류 귀퉁이, 이름표는 2D처럼 "삼각김밥?" */
+  private workModel(): THREE.Group {
+    const { obj, item } = this.g.models.food('gimbap', true);
+    item.add(this.kit.workCorner());
+    const old = obj.children.find((c) => c instanceof THREE.Sprite);
+    const label = this.g.models.label('삼각김밥?', '#ffe066');
+    if (old) {
+      label.position.copy(old.position);
+      obj.remove(old);
+    } else label.position.y = 1.25;
+    obj.add(label);
+    return obj;
   }
 
   /** 구역 안, 화단·가로등 같은 장애물 밖 (Game.freeSpot과 같은 방식) */
@@ -1259,7 +1353,15 @@ export class StudentMode implements StuCtx {
   }
 
   guide(): { x: number; z: number } | null {
-    return this.link?.guide ?? null;
+    return this.link?.guide(this.g.pos) ?? null;
+  }
+
+  /** 지금 싸우는 구역 사각형 (Game.area 대신 쓴다 — 생성자 참고) */
+  get rect(): Rect {
+    const w = this.g.world;
+    const s = this.g.stage;
+    if (s === 'final' || s === 'done') return w.yard;
+    return ROUTE[Math.min(this.area, ROUTE.length - 1)].rect(w);
   }
 
   hurtNote(kind: HurtKind): string | undefined {
