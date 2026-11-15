@@ -1,6 +1,6 @@
 import stats from '../data/enemies.json';
 import type { StageScene } from '../scenes/StageScene';
-import { Enemy, type BossLike } from './Enemy';
+import { Enemy, pickLine, type BossLike } from './Enemy';
 import type { HitInfo } from './Fighter';
 import type { Player } from './Player';
 import { neutralPose, type Pose } from './Rig';
@@ -19,6 +19,15 @@ const THANKS: Record<ChonghakRole, string> = {
   protest: '요구안 접수 확인했습니다. 감사합니다!',
   sitin: '농성 해제합니다. 감사합니다!',
 };
+/** ★ 추가 대사 (문구 검토 11-4절, 2026-11-15 사용자 "추가"). 마무리 인사는 그대로.
+ *  김데시벨은 음파 때, 오시위는 요구안 던질 때 기존 대사와 섞이고, 박드러누움은 누워 있는 동안의 혼잣말에 섞인다 */
+const MORE: Record<ChonghakRole, string[]> = {
+  decibel: ['학우 여러분!', '들리십니까!', '마이크 테스트, 하나 둘!'],
+  protest: ['요구안 2번 항목 보셨어요?', '답변서 기다리겠습니다!'],
+  sitin: ['바닥이 생각보다 따뜻하네요.', '여기 와이파이 되나요?'],
+};
+/** 박드러누움이 누워서 하는 말 (기존 대사 + 추가 대사, 고르게 섞는다) */
+const SITIN_LINES = ['면담해 주실 때까지 안 일어납니다!', ...MORE.sitin];
 
 export class ChonghakMember extends Enemy {
   readonly kind = 'chonghak' as const;
@@ -68,7 +77,7 @@ export class ChonghakMember extends Enemy {
         this.vx = 0;
         this.vy = 0;
         if (this.stateT > 4 && Math.random() < dt * 0.25) {
-          this.say('면담해 주실 때까지 안 일어납니다!', 1.6);
+          this.say(pickLine(SITIN_LINES), 1.6);
           this.stateT = 0;
         }
         // 누워서 길을 막는다
@@ -88,11 +97,11 @@ export class ChonghakMember extends Enemy {
         if (this.actT > 0 || !player.targetable) break;
         if (this.role === 'decibel') {
           this.set('windup');
-          this.say('확성기 음파!', 0.9);
+          this.sayMix('확성기 음파!', MORE.decibel, 0.9);
         } else if (this.role === 'protest') {
           this.set('throw');
           this.shots = 0;
-          this.say('요구안 받아 주세요!', 1.2);
+          this.sayMix('요구안 받아 주세요!', MORE.protest, 1.2);
         } else if (Math.abs(dy) < 14 && Math.abs(dx) < 110) {
           this.set('windup');
           this.say('면담 요청합니다!', 0.9);

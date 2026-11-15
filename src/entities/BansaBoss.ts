@@ -16,6 +16,13 @@ import * as fx from '../fx';
 // - 결재판 내려치기, 결재 서류 세 장 날리기, "전결 돌진"(지나간 뒤 등이 보인다).
 
 const S = stats.bansaBoss;
+// ★ 추가 대사 (문구 검토 11-2절, 2026-11-15 사용자 "추가"). 모두 기존 대사 자리에서 섞여 나온다
+/** 싸우는 중: 전결 돌진·결재 서류 날리기 때 */
+const MORE_FIGHT = ['결재 라인 다시 확인하세요.', '그건 처장 전결 사항입니다.', '협조 부서 서명부터 받아 오세요.'];
+/** 정면에서 막았을 때: 결재판으로 막기·던진 무기 되받아치기 때 */
+const MORE_BLOCK = ['반려가 아니라 반사입니다~'];
+/** 빈틈이 생길 때: 전결 돌진 뒤 등이 플레이어 쪽으로 보일 때 */
+const MORE_OPEN = ['앗, 뒤는 못 봤는데…'];
 
 export class BansaBoss extends Enemy implements BossLike {
   readonly kind = 'bansaBoss' as const;
@@ -74,7 +81,7 @@ export class BansaBoss extends Enemy implements BossLike {
 
   /** 되받아친 직후: 결재판이 들려 정면이 빈다 */
   onReflected(): void {
-    this.say('반사!', 0.9);
+    this.sayMix('반사!', MORE_BLOCK, 0.9);
     this.set('open');
     this.vx = 0;
     this.vy = 0;
@@ -107,13 +114,13 @@ export class BansaBoss extends Enemy implements BossLike {
         this.cycle++;
         if (this.cycle % 3 === 0) {
           this.set('dashWind');
-          this.say('전결 처리합니다!', 1.0);
+          this.sayMix('전결 처리합니다!', MORE_FIGHT, 1.0);
         } else if (Math.abs(dy) < 16 && Math.abs(dx) < 130) {
           this.set('windup');
         } else {
           this.set('throw');
           this.shots = 0;
-          this.say('결재 서류 받으세요', 1.2);
+          this.sayMix('결재 서류 받으세요', MORE_FIGHT, 1.2);
         }
         this.vx = 0;
         this.vy = 0;
@@ -166,7 +173,7 @@ export class BansaBoss extends Enemy implements BossLike {
           this.vx = 0;
           // 지나간 쪽을 본 채로 멈춘다: 등이 플레이어 쪽으로 보인다
           this.set('winded');
-          this.say('후… 전결 끝.', 1.0);
+          this.sayMix('후… 전결 끝.', MORE_OPEN, 1.0, 0.5);
         }
         break;
       }
@@ -208,7 +215,7 @@ export class BansaBoss extends Enemy implements BossLike {
       this.blocks++;
       if (this.scene.time.now - this.blockSaid > 1600) {
         this.blockSaid = this.scene.time.now;
-        this.say(this.blocks < 4 ? '결재판 보이시죠?' : '정면은 안 됩니다~', 1.0);
+        this.sayMix(this.blocks < 4 ? '결재판 보이시죠?' : '정면은 안 됩니다~', MORE_BLOCK, 1.0);
         fx.floatText(this.scene, this.x, this.y - this.height * this.baseScale - 24, '막힘! 등 뒤로 돌거나 던져 보세요', '#cfd6e3', 14);
       }
       return false;

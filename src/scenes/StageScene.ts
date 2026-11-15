@@ -89,12 +89,15 @@ const HELPER_FLOOR = 0.05;
 /** 잡몹을 처리했을 때 떨어뜨릴 확률: 보조배터리, 먹을 것 (상자가 주된 공급원이다) */
 const DROP_BATTERY = 0.035;
 const DROP_FOOD = 0.04;
-/** 잡몹이 가끔 떨어뜨리는 것 (각각): 연차 쿠폰(학생: 공결 확인서), 셔틀버스 시간표, 단톡방 공지 캡처 */
+/** 잡몹이 가끔 떨어뜨리는 것 (각각): 연차 쿠폰(학생: 공결 확인서), 셔틀버스 시간표, 단톡방 공지 캡처, 인감 도장(학생: 출석 스티커) */
 const DROP_PERK = 0.025;
-/** 연차 쿠폰(공결 확인서)이 기다려 주는 시간, 셔틀버스 시간표가 빠르게 해 주는 시간, 단톡방 공지 캡처로 잡몹이 멈추는 시간 (초) */
+const PERKS: PickupKind[] = ['shield', 'shuttle', 'capture', 'seal'];
+/** 연차 쿠폰(공결 확인서)이 기다려 주는 시간, 셔틀버스 시간표가 빠르게 해 주는 시간, 단톡방 공지 캡처로 잡몹이 멈추는 시간,
+ *  인감 도장(출석 스티커)으로 맨손 공격이 잡몹을 넘어뜨리는 시간 (초) */
 const SHIELD_SEC = 30;
 const SHUTTLE_SEC = 10;
 const CAPTURE_SEC = 2.5;
+const SEAL_SEC = 8;
 
 export interface StageData {
   run?: RunState;
@@ -888,7 +891,9 @@ export class StageScene extends Phaser.Scene {
       if (dx < -8 || dx > def.reach + e.halfW * 0.5) continue;
       if (Math.abs(p.z - e.z) > def.zReach) continue;
       hitSet.add(e);
-      if (e.takeHit({ dmg: def.dmg, dir: p.facing, kb: def.kb, knockdown: def.knockdown, tag: def.tag })) {
+      // 인감 도장(출석 스티커): 맨손 공격이 잡몹만 넘어뜨린다 (중간보스·보스·사람은 그대로)
+      const knockdown = def.knockdown || (def.bare === true && p.sealT > 0 && ORDINARY.has(e.kind));
+      if (e.takeHit({ dmg: def.dmg, dir: p.facing, kb: def.kb, knockdown, tag: def.tag })) {
         hits++;
         fx.stampMark(this, e.x - p.facing * 4, e.y - e.z - Math.min(e.height, 70) * 0.6, this.hitLabel(e));
         if (this.studentMode && e.persuadable && Math.random() < 0.3) this.persuadeText(e);
@@ -1180,6 +1185,17 @@ export class StageScene extends Phaser.Scene {
           this.freezeMobs(CAPTURE_SEC);
           fx.floatText(this, p.x, p.y - 128, '단톡방 공지 캡처! 잡몹이 잠깐 멈춰요', '#9fd3ff', 18);
           break;
+        case 'seal':
+          p.sealT = SEAL_SEC;
+          fx.floatText(
+            this,
+            p.x,
+            p.y - 128,
+            this.studentMode ? '출석 스티커! 8초 동안 맨손 공격이 넘어뜨려요' : '인감 도장! 8초 동안 맨손 공격이 넘어뜨려요',
+            '#ff9f9f',
+            18,
+          );
+          break;
         case 'work':
           if (!p.startReport(1.6, '일거리였다… 검토 중')) continue;
           break;
@@ -1453,13 +1469,13 @@ export class StageScene extends Phaser.Scene {
     this.cameras.main.flash(120, 255, 255, 255);
   }
 
-  /** 잡몹을 처리하면 가끔 보조배터리·먹을 것·연차 쿠폰(공결 확인서)·셔틀버스 시간표·단톡방 공지 캡처를 떨어뜨린다 */
+  /** 잡몹을 처리하면 가끔 보조배터리·먹을 것·연차 쿠폰(공결 확인서)·셔틀버스 시간표·단톡방 공지 캡처·인감 도장(출석 스티커)을 떨어뜨린다 */
   private randomDrop(e: Enemy): void {
     let r = Math.random();
     let kind: PickupKind | null = null;
     if (r < DROP_BATTERY) kind = 'battery';
     else if ((r -= DROP_BATTERY) < DROP_FOOD) kind = Math.random() < 0.6 ? 'gimbap' : 'americano';
-    else if ((r -= DROP_FOOD) < DROP_PERK * 3) kind = r < DROP_PERK ? 'shield' : r < DROP_PERK * 2 ? 'shuttle' : 'capture';
+    else if ((r -= DROP_FOOD) < DROP_PERK * PERKS.length) kind = PERKS[Math.min(PERKS.length - 1, Math.floor(r / DROP_PERK))];
     if (!kind) return;
     const left = this.cameras.main.scrollX;
     const x = Phaser.Math.Clamp(e.x, left + 40, left + GAME_W - 40);
@@ -1873,6 +1889,8 @@ export class StageScene extends Phaser.Scene {
       if (this.darkness.removed) {
         this.darkness = null;
         fx.floatText(this, p.x, p.y - 140, '불 켜짐!', '#ffe066', 20);
+        // 박국제학사: "어? 누가 불 켰어요?"
+        for (const e of this.enemies) if (e instanceof WindowStaff && e.kind === 'haksa') e.onLightsOn();
       }
     }
   }

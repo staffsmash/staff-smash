@@ -15,6 +15,9 @@ import * as fx from '../fx';
 // - 체력이 다해도 쓰러지지 않는다: "좋아요, 검토 끝났습니다." 하고 선 채로 승인(엔딩)으로 넘어간다.
 
 const S = stats.presidentBoss;
+/** ★ 싸우는 중 추가 대사 (문구 검토 11-2절 추가안, 2026-11-15 사용자 "비서실 확인받음").
+ *  거대 도장 내려치기·도장 떨어뜨리기 때 기존 대사와 섞인다 (두 페이즈 모두) */
+const MORE_LINES = ['서류가 꼼꼼하네요.', '학생 의견, 잘 듣고 있습니다.', '이 부분은 근거를 더 봅시다.', '졸업 축하는… 아직 이르죠?'];
 
 export class PresidentBoss extends Enemy implements BossLike {
   readonly kind = 'presidentBoss' as const;
@@ -94,11 +97,11 @@ export class PresidentBoss extends Enemy implements BossLike {
         this.cycle++;
         if (Math.abs(dy) < 16 && Math.abs(dx) < 130 && this.cycle % 3 !== 0) {
           this.set('windup');
-          this.say(this.phase === 1 ? '보류!' : '재검토!', 0.8);
+          this.sayMix(this.phase === 1 ? '보류!' : '재검토!', MORE_LINES, 0.8);
         } else {
           this.set('stamps');
           this.drops = 0;
-          this.say(this.phase === 1 ? '검토하겠습니다.' : '꼼꼼히 다시 봅시다.', 1.2);
+          this.sayMix(this.phase === 1 ? '검토하겠습니다.' : '꼼꼼히 다시 봅시다.', MORE_LINES, 1.2);
         }
         this.vx = 0;
         this.vy = 0;

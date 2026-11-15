@@ -172,7 +172,8 @@ export function createWeaponIcon(scene: Phaser.Scene, id: WeaponId): Phaser.Game
 }
 
 /** 밟으면 바로 먹는(쓰는) 물건: 음식, 일거리, 식권(체력 모두 회복), 보조배터리(필살기 게이지 +50),
- *  연차 쿠폰(학생: 공결 확인서 — 다음 한 번 막기), 셔틀버스 시간표(10초 빨리 걷기), 단톡방 공지 캡처(잡몹 2.5초 멈춤) */
+ *  연차 쿠폰(학생: 공결 확인서 — 다음 한 번 막기), 셔틀버스 시간표(10초 빨리 걷기), 단톡방 공지 캡처(잡몹 2.5초 멈춤),
+ *  인감 도장(학생: 출석 스티커 — 8초 동안 맨손 공격이 잡몹을 넘어뜨림) */
 export type FoodKind =
   | 'donkatsu'
   | 'gimbap'
@@ -182,7 +183,8 @@ export type FoodKind =
   | 'battery'
   | 'shield'
   | 'shuttle'
-  | 'capture';
+  | 'capture'
+  | 'seal';
 
 /** 작은 글씨 (아이콘 안) */
 function iconText(scene: Phaser.Scene, x: number, y: number, text: string, color: string, size = 11): Phaser.GameObjects.Text {
@@ -194,10 +196,29 @@ function iconText(scene: Phaser.Scene, x: number, y: number, text: string, color
   }).setOrigin(0.5);
 }
 
-/** 회복 아이템. 'work'(일거리)는 김밥처럼 생겼지만 서류 귀퉁이가 삐져나와 있다. student: 학생 모드 모양 (공결 확인서) */
+/** 회복 아이템. 'work'(일거리)는 김밥처럼 생겼지만 서류 귀퉁이가 삐져나와 있다. student: 학생 모드 모양 (공결 확인서·출석 스티커) */
 export function createFoodIcon(scene: Phaser.Scene, kind: FoodKind, student = false): Phaser.GameObjects.Container {
   const c = scene.add.container(0, 0);
-  if (kind === 'shield' && student) {
+  if (kind === 'seal' && student) {
+    // 출석 스티커: 흰 스티커 판, 큰 노란 동그라미 스티커에 "출석", 작은 초록·하늘색 스티커 둘
+    c.add(box(scene, 0, 0, 44, 32, 0xffffff));
+    const big = new Phaser.GameObjects.Arc(scene, -6, 0, 12, 0, 360, false, 0xffd34d);
+    big.setStrokeStyle(2, INK);
+    c.add(big);
+    c.add(iconText(scene, -6, 0, '출석', '#7a3d00', 9));
+    c.add(new Phaser.GameObjects.Arc(scene, 13, -7, 4.5, 0, 360, false, 0x5bd16b).setStrokeStyle(1.5, INK));
+    c.add(new Phaser.GameObjects.Arc(scene, 13, 7, 4.5, 0, 360, false, 0x6fb7ff).setStrokeStyle(1.5, INK));
+  } else if (kind === 'seal') {
+    // 인감 도장: 왼쪽에 나무 손잡이 도장(빨간 인면), 오른쪽 종이에 빨간 네모 "인감" 자국
+    c.add(box(scene, 7, 3, 32, 30, 0xfffaf0));
+    const mark = new Phaser.GameObjects.Rectangle(scene, 8, 4, 21, 19);
+    mark.setStrokeStyle(2, 0xd0202f);
+    c.add(mark);
+    c.add(iconText(scene, 8, 4, '인감', '#d0202f', 9));
+    c.add(box(scene, -15, -4, 11, 22, 0x9b6b3d));
+    c.add(box(scene, -15, -16, 15, 6, 0x6b4423));
+    c.add(box(scene, -15, 10, 15, 7, 0xb3262d));
+  } else if (kind === 'shield' && student) {
     // 공결 확인서: 흰 서류 한 장, 위쪽 남색 제목 띠, 글줄, 빨간 확인 도장
     c.add(box(scene, 0, 0, 32, 40, 0xffffff));
     c.add(box(scene, 0, -13, 32, 10, 0x1f3a6b, 0.5, 0.5, false));

@@ -3,7 +3,7 @@ import stats from '../data/enemies.json';
 import { FLOOR_BOTTOM, FLOOR_TOP, GAME_W } from '../config';
 import { TYPE_LABEL } from '../data/names';
 import type { StageScene } from '../scenes/StageScene';
-import { Enemy } from './Enemy';
+import { Enemy, pickLine } from './Enemy';
 import type { HitInfo } from './Fighter';
 import type { Clinger, Player } from './Player';
 import { neutralPose, type Pose } from './Rig';
@@ -33,6 +33,15 @@ const LINES: Record<StudentKind, string[]> = {
   tantrum: ['그런 말 못 들었는데요?', '규정이 어디 있는데요?', '저는 처음 듣는데요!'],
   graduation: ['한 번만요!', '이번 학기만 봐주세요!', '학점 하나만요…'],
   presidentMail: ['총장님께 직접 여쭤볼게요!', '총장실에 메일 보냈어요!', '이거 총장님도 아세요?'],
+};
+
+/** ★ 싸우는 중 추가 대사 (문구 검토 11-3절, 2026-11-15 사용자 "추가"). 기존 대사 자리에서 40% 확률로 섞여 나온다 */
+const MORE_LINES: Record<StudentKind, string[]> = {
+  wrongNumber: ['카톡으로 보내 주시면 안 돼요?', '아, 끝자리 하나 틀렸네요.', '비행기 모드였어요!'],
+  lateDoc: ['출력소 줄이 길었어요!', '메일로 내면 안 될까요?', '스캔본도 되죠?'],
+  tantrum: ['선배는 됐다던데요?', '다른 학교는 된다던데요?', '그 규정 언제 바뀌었어요?'],
+  graduation: ['취업 확정이에요, 제발요!', '부모님이 학위복 맞추셨어요…', '계절학기라도요!'],
+  presidentMail: ['참조에 총장님 넣었어요!', '제목에 [긴급] 붙였어요!', '답장 1시간 안에 오겠죠?'],
 };
 
 type StudentStats = { hp: number; speedX: number; speedY: number };
@@ -197,7 +206,7 @@ export class StudentEnemy extends Enemy implements Clinger {
             this.set('grab');
             this.vx = 0;
             this.vy = 0;
-            this.say('한 번만요!', 1.0);
+            this.sayMix('한 번만요!', MORE_LINES.graduation, 1.0);
           }
           break;
         }
@@ -205,8 +214,7 @@ export class StudentEnemy extends Enemy implements Clinger {
           this.set('windup');
           this.vx = 0;
           this.vy = 0;
-          const lines = LINES[this.kind];
-          this.say(lines[Math.floor(Math.random() * lines.length)], 1.4);
+          this.sayMix(pickLine(LINES[this.kind]), MORE_LINES[this.kind], 1.4);
         }
         break;
       }

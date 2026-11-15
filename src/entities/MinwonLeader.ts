@@ -14,6 +14,8 @@ import * as fx from '../fx';
 // 간부가 다시 줍기 전에 먼저 주우면(밟거나 L) 더 이상 사람을 부르지 못한다.
 
 const S = stats.minwon;
+/** ★ 싸우는 중 추가 대사 (문구 검토 11-3절, 2026-11-15 사용자 "추가"): 덤빌 때 기존 대사와 섞이고, 기다리는 동안 혼잣말로도 나온다 */
+const MORE_LINES = ['서명 300명 받았습니다!', '학생 의견 수렴 결과입니다!', '공식 답변 기한은 일주일입니다!'];
 
 export class MinwonLeader extends Enemy {
   readonly kind = 'minwon' as const;
@@ -67,8 +69,11 @@ export class MinwonLeader extends Enemy {
           this.set('windup');
           this.vx = 0;
           this.vy = 0;
-          this.say('학생 대표로 왔습니다!', 1.2);
+          this.sayMix('학생 대표로 왔습니다!', MORE_LINES, 1.2);
+          break;
         }
+        // 서명지를 든 동안은 거리를 두고 기다리므로 덤비지 않을 때도 가끔 말한다
+        this.chatter(dt, MORE_LINES);
         break;
       }
       case 'wave':
