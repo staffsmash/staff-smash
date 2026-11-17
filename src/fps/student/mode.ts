@@ -17,6 +17,7 @@ import { FRONT_X } from '../social';
 import type { World } from '../world';
 import { Bansa, Banryeo, Bujae, Hoho, STUDENT_BOSS_LINES, StudentBoss, StudentPresident, WindowStaff, type StaffKind, type StuCtx } from './bosses';
 import { AbsenceStamp, CancelBot, DocTower, RejectDoc, Ticket } from './enemies';
+import { AttendQR, DueBadge, spawnDue } from './mobs';
 import { StudentHazards } from './hazards';
 import { StudentKit } from './models';
 import { buildStudentPeople, staffHero, type StudentPeople } from './people';
@@ -92,7 +93,8 @@ const EYE = 1.6;
 /** 마지막 구역 (성적표 마지막 줄) */
 const FINAL_NAME = '본관 총장실';
 
-type Spawn = 'doc' | 'absence' | 'bot' | 'queue';
+/** due = 과제 마감 알림 떼, qr = 출석 QR 코드 (student/mobs.ts, 2번째 구역부터) */
+type Spawn = 'doc' | 'absence' | 'bot' | 'queue' | 'due' | 'qr';
 type BossKind = 'banryeo' | 'bansa' | 'bujae' | 'hoho';
 type V3 = THREE.Vector3;
 const v3 = (x: number, z: number) => new THREE.Vector3(x, 0, z);
@@ -167,7 +169,7 @@ const ROUTE: AreaDef[] = [
     name: '국제학사 앞',
     stage: 'dorm',
     rect: (w) => w.dorm,
-    wave: { doc: 4, absence: 2, bot: 1 },
+    wave: { doc: 3, absence: 2, bot: 1, due: 1, qr: 1 },
     staff: 'sikdang',
     boss: 'hoho',
     // 국제학사 현관에서 나온다
@@ -184,7 +186,7 @@ const ROUTE: AreaDef[] = [
     name: '인문과학관 앞',
     stage: 'hum',
     rect: (w) => w.hum,
-    wave: { doc: 5, bot: 1, absence: 2 },
+    wave: { doc: 3, bot: 1, absence: 2, due: 1, qr: 1 },
     staff: 'gukje',
     boss: 'bujae',
     // 인문과학관 현관에서 나온다 (김부재중 처장은 이 문으로 드나든다)
@@ -200,7 +202,7 @@ const ROUTE: AreaDef[] = [
     name: '사회과학관 앞',
     stage: 'plaza',
     rect: (w) => w.plaza,
-    wave: { doc: 4, bot: 2, absence: 1 },
+    wave: { doc: 3, bot: 2, absence: 1, due: 1, qr: 1 },
     staff: 'jinchwi',
     boss: 'bansa',
     // 사회과학관 현관에서 나온다
@@ -216,7 +218,7 @@ const ROUTE: AreaDef[] = [
     name: '본관 앞',
     stage: 'yard',
     rect: (w) => w.yard,
-    wave: { doc: 4, bot: 2, absence: 1, queue: 1 },
+    wave: { doc: 3, bot: 2, absence: 1, queue: 1, due: 1, qr: 1 },
     staff: 'hakjong',
     boss: null,
     // 본관 문에서 나온다
@@ -294,6 +296,8 @@ const DONE_TEXT: [new (...a: never[]) => Enemy, string, string][] = [
   [CancelBot, '펑!', 'bot'],
   [Ticket, '호출 완료', 'ticket'],
   [DocTower, '서류 탑 붕괴!', 'tower'],
+  [DueBadge, '제출 완료!', 'due'],
+  [AttendQR, '출석 인정', 'qr'],
 ];
 
 const COUNT_LABEL: Record<string, [string, string]> = {
@@ -302,6 +306,8 @@ const COUNT_LABEL: Record<string, [string, string]> = {
   bot: ['휴강 공지', '개'],
   ticket: ['대기번호표', '장'],
   tower: ['서류 탑', '개'],
+  due: ['과제 마감 알림', '개'],
+  qr: ['출석 QR 코드', '개'],
 };
 
 const PERSUADE = ['설득!', '반려 취소!', '한 번만 봐 주세요!', '서류 다 있어요!', '검토 부탁드려요!'];
@@ -316,6 +322,8 @@ const HURT: Partial<Record<HurtKind, string>> = {
   rental: '반려 서류에 맞음… (느려짐)',
   meeting: '결재 서류에 맞음… (느려짐)',
   wave: '전결 돌진에 밀림… (느려짐)',
+  note: '과제 마감 알림에 맞음… (느려짐)',
+  qr: '출석 QR 코드에 부딪힘… (느려짐)',
 };
 
 const BEST_KEY = 'staffsmash.fps.studentBest';
@@ -881,6 +889,12 @@ export class StudentMode implements StuCtx {
       const z = Math.max(a.minZ + 1, Math.min(a.maxZ - 1, g.pos.z + Math.sin(ang) * off));
       g.enemies.push(new AbsenceStamp(g, this.kit, x, z));
       this.h.hint('s-absence', '빨간 그림자에서 비키세요! 떨어진 결석 도장은 서류로 받기');
+    } else if (kind === 'due') {
+      g.enemies.push(...spawnDue(g, this.spawnPoint(_v, 2.5 + Math.random() * 1.5), g.diff.count));
+      this.h.hint('s-due', '과제 마감 알림 떼 — 한 대씩 맞히면 처리!', 2.8);
+    } else if (kind === 'qr') {
+      g.enemies.push(new AttendQR(g, this.spawnPoint(_v, 1.8)));
+      this.h.hint('s-qr', '출석 QR 코드 — 사라지기 전에 맞히세요! 놓치면 들이받아요', 3.2);
     } else {
       this.spawnQueue(QUEUE_LEN);
     }

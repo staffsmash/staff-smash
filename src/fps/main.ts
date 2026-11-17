@@ -12,6 +12,9 @@ import { Hazards, RING_H } from './hazards';
 import { Rescue } from './helpers';
 import { buildMidPeople, buildNewBossPeople, Gumto, MID_LINES, MID_TEXTS, Molla, ReviewPile, StaffMid, type MidKind, type MidPerson } from './mids';
 import { Models, type FoodKind } from './models';
+import { ClingBubble, DodgeBubble, Fax, MobKit, NoteBadge } from './mobs';
+import { SEAL_R, SealRolls } from './seal';
+import { AttendQR, DueBadge, stuMobTextures } from './student/mobs';
 import { Person, peopleKit, type Who } from './people';
 import { Props, type PerkHost } from './props';
 import {
@@ -92,7 +95,8 @@ const LOOK_TOUCH = 0.006;
 /** 구역: 0 본관 앞 → 1 사회과학관 앞 → 2 인문과학관 앞 → 3 국제학사 앞 → 4 대운동장 → 5 해 질 녘 본관 앞(총장) */
 const AREA_NAMES = ['본관 앞', '사회과학관 앞', '인문과학관 앞', '국제학사 앞', '대운동장', '해 질 녘 본관 앞'];
 
-type SpawnKind = 'mail' | 'bulk' | 'phone' | 'bubble' | 'bomb';
+/** note = 메신저 쪽지 알림 떼, fax = 팩스기 (mobs.ts, 사회과학관 앞부터) */
+type SpawnKind = 'mail' | 'bulk' | 'phone' | 'bubble' | 'bomb' | 'note' | 'fax';
 type Wave = Partial<Record<SpawnKind, number>>;
 
 /** 구역에 들어서면 몰려오는 민원 차례 (본관 앞 셋, 인문과학관 앞·국제학사 앞 하나씩. 나머지는 중간보스부터) */
@@ -102,8 +106,8 @@ const AREA_WAVES: Record<number, Wave[]> = {
     { mail: 6, bulk: 1, bubble: 2, phone: 1 },
     { mail: 6, bulk: 2, bubble: 2, bomb: 2, phone: 2 },
   ],
-  2: [{ mail: 5, bubble: 2, phone: 1 }],
-  3: [{ mail: 5, bulk: 1, bomb: 2, phone: 1 }],
+  2: [{ mail: 3, bubble: 2, phone: 1, note: 1, fax: 1 }],
+  3: [{ mail: 3, bulk: 1, bomb: 2, phone: 1, note: 1, fax: 1 }],
 };
 
 /** 구역마다 중간보스 (민원 학생) */
@@ -121,7 +125,7 @@ const MID_SPOTS: [THREE.Vector3, THREE.Vector3, THREE.Vector3][] = [
 /** 해 질 무렵이 이 분(게임 시간)에 걸쳐 진다 (교직원 모드. 구역이 뒤로 갈수록 더 빨리 어두워진다) */
 const STAFF_DUSK_MIN = 12;
 
-const SP_GAIN: Record<Kind, number> = { mail: 9, bulk: 16, phone: 12, bubble: 12, bomb: 14, boss: 0 };
+const SP_GAIN: Record<Kind, number> = { mail: 9, bulk: 16, phone: 12, bubble: 12, bomb: 14, boss: 0, note: 4, fax: 16, qr: 12 };
 
 const KIND_LABEL: Record<Kind, [string, string]> = {
   mail: ['새벽 3시 메일', '통'],
@@ -129,6 +133,9 @@ const KIND_LABEL: Record<Kind, [string, string]> = {
   phone: ['울리는 전화기', '대'],
   bubble: ['말풍선', '개'],
   bomb: ['서류 뭉치', '뭉치'],
+  note: ['메신저 쪽지 알림', '개'],
+  fax: ['팩스기', '대'],
+  qr: ['출석 QR 코드', '개'],
   boss: ['보스 결재', ''],
 };
 
@@ -137,6 +144,8 @@ const HINTS: Partial<Record<Kind, string>> = {
   phone: '빨간 그림자에서 비키세요! 떨어진 전화기는 도장으로 받기',
   bubble: '말풍선이 부르르 떨면 옆으로 피하세요!',
   bomb: '서류 뭉치는 도장으로 미리 터뜨리면 주변 민원까지 처리!',
+  note: '메신저 쪽지 알림 떼 — 한 대씩 맞히면 읽음 처리!',
+  fax: '팩스기 — 날아오는 종이는 도장으로 맞혀 없애세요. 세 번 맞히면 처리',
 };
 
 const HURT_NOTE: Partial<Record<HurtKind, string>> = {
@@ -152,6 +161,8 @@ const HURT_NOTE: Partial<Record<HurtKind, string>> = {
   wave: '회의 중… 회의록 작성 중',
   bigstamp: '보류! (느려짐)',
   error: '오류 창에 맞음… (느려짐)',
+  note: '메신저 알림 확인 중… (느려짐)',
+  fax: '팩스 용지에 맞음… (느려짐)',
 };
 
 type Phase = 'title' | 'play' | 'paused' | 'clear' | 'over';
@@ -212,6 +223,7 @@ const SHEET_R: Record<SheetKind, [number, number]> = {
   rental: [0.85, 1.0],
   meeting: [0.85, 1.0],
   packet: [0.6, 0.75],
+  fax: [0.55, 0.8],
 };
 
 /** 단톡방 공지 캡처로 멈춘 잡몹: 남은 시간, 몸 원점에서 맞는 점까지, 푸른 껍질과 "…" */
@@ -296,7 +308,7 @@ const ZERO = new THREE.Vector3();
 /** 교직원 모드 주인공 이름 (조력자가 부르는 이름) */
 const STAFF_NAME = '김국제';
 
-const blankCounts = (): Record<Kind, number> => ({ mail: 0, bulk: 0, phone: 0, bubble: 0, bomb: 0, boss: 0 });
+const blankCounts = (): Record<Kind, number> => ({ mail: 0, bulk: 0, phone: 0, bubble: 0, bomb: 0, boss: 0, note: 0, fax: 0, qr: 0 });
 const isBoss = (e: Enemy) => e.kind === 'boss';
 
 /** 수평 방향(플레이어 기준 yaw)을 -π~π 로 */
@@ -409,6 +421,15 @@ class Game implements Ctx {
   sealT = 0;
   /** 넘어진 잡몹 */
   downs = new Map<Enemy, Down>();
+  /** 인감 도장(출석 스티커)으로 한 번에 처리돼 구르는 잡몹 (seal.ts) */
+  readonly rolls = new SealRolls();
+  /** 새 잡몹(매달리는·피하는 말풍선, 메신저 쪽지 알림 떼, 팩스기) 모형과 지금 매달린 말풍선 (mobs.ts) */
+  readonly mobs = new MobKit({
+    camera: this.camera,
+    slowFor: (sec) => (this.slow = Math.max(this.slow, sec)),
+    hint: (key, text, sec) => this.hint(key, text, sec),
+    count: () => this.diff.count,
+  });
   /** 체력이 30% 이하로 떨어졌는데 조력자가 아직 못 왔다 (구역 카드·화면 전환이 끝나면 온다) */
   private rescueDue = false;
   dropCd = 4;
@@ -649,6 +670,7 @@ class Game implements Ctx {
     for (const t of speechTextures()) this.renderer.initTexture(t);
     for (const t of this.hz.textures) this.renderer.initTexture(t);
     for (const t of this.stu.textures) this.renderer.initTexture(t);
+    for (const t of [...this.mobs.textures, ...stuMobTextures()]) this.renderer.initTexture(t);
     this.renderer.render(this.scene, this.camera);
     unwarm();
     unwarmProps();
@@ -1545,7 +1567,8 @@ class Game implements Ctx {
     return out.set(x, y, z);
   }
 
-  private spawnKind(kind: SpawnKind): void {
+  /** few: 민원 차례가 없는 구역에 가끔 섞이는 새 잡몹 (알림 떼가 작다) */
+  private spawnKind(kind: SpawnKind, few = false): void {
     if (kind === 'phone') {
       this.spawnPhone();
       return;
@@ -1553,7 +1576,10 @@ class Game implements Ctx {
     if (kind === 'mail' || kind === 'bulk') {
       this.enemies.push(new Mail(this, kind === 'bulk', this.spawnPoint(_v, 2.5 + Math.random() * 3.5)));
     } else if (kind === 'bubble') {
-      this.enemies.push(new Bubble(this, this.spawnPoint(_v, 1.8 + Math.random() * 0.6)));
+      // 말풍선 자리: 원래 말풍선 · 매달리는 말풍선 · 피하는 말풍선 (mobs.ts)
+      this.enemies.push(this.mobs.bubble(this, this.spawnPoint(_v, 1.8 + Math.random() * 0.6)));
+    } else if (kind === 'note' || kind === 'fax') {
+      this.enemies.push(...this.mobs.spawn(kind, this, this.spawnPoint(_v, kind === 'fax' ? 0 : 2.5 + Math.random() * 1.5), few));
     } else {
       this.enemies.push(new Bomb(this, this.spawnPoint(_v, 1.4)));
     }
@@ -1798,7 +1824,7 @@ class Game implements Ctx {
   freezeMobs(sec: number): number {
     let n = 0;
     for (const e of this.enemies) {
-      if (!e.targetable || isBoss(e) || e instanceof DocTower) continue;
+      if (!e.targetable || isBoss(e) || e instanceof DocTower || e.pinned) continue;
       const had = this.frozen.get(e);
       if (had) {
         had.t = Math.max(had.t, sec);
@@ -1857,13 +1883,15 @@ class Game implements Ctx {
 
   /**
    * 기본 공격에 맞고 남은 잡몹을 넘어뜨린다. 사람(보스·창구 직원)·박반려 처장의 서류 탑·서류 뭉치(맞으면 터진다)는 빼고,
-   * 아직 하늘에서 떨어지는 중인 전화기·결석 도장도 뺀다 (그림자 자리에 떨어져야 한다). 이미 넘어져 있으면 그대로
+   * 아직 하늘에서 떨어지는 중인 전화기·결석 도장, 화면에 매달린 말풍선도 뺀다 (그림자 자리에 떨어져야 한다). 이미 넘어져 있으면 그대로.
+   * from: 밀어내는 자리 (기본은 플레이어, 도장이 맞은 자리 둘레는 그 자리 — sealHit)
    */
-  private knockDown(e: Enemy): void {
-    if (!e.targetable || isBoss(e) || e instanceof DocTower || e instanceof Bomb || this.downs.has(e)) return;
+  private knockDown(e: Enemy, from: THREE.Vector3 = this.pos): void {
+    if (!e.targetable || isBoss(e) || e instanceof DocTower || e instanceof Bomb || e.pinned || this.downs.has(e)) return;
     if ((e as { landing?: THREE.Vector3 | null }).landing) return;
     const o = e.obj;
-    const dir = new THREE.Vector3(e.center.x - this.pos.x, 0, e.center.z - this.pos.z);
+    const dir = new THREE.Vector3(e.center.x - from.x, 0, e.center.z - from.z);
+    if (dir.lengthSq() < 1e-4) dir.set(e.center.x - this.pos.x, 0, e.center.z - this.pos.z);
     if (dir.lengthSq() < 1e-6) dir.set(-Math.sin(this.yaw), 0, -Math.cos(this.yaw));
     dir.normalize();
     // 맞아서 부푼 크기는 그대로 두지 않는다 (넘어진 동안 몸 움직임을 건너뛴다)
@@ -2145,6 +2173,7 @@ class Game implements Ctx {
     this.swing = 1;
     this.thrown++;
     this.sound('throw', undefined, arm ? 0.65 : 0.8);
+    if (this.swat()) return;
     // 렌더 전에 불려도 맞도록 카메라 행렬 대신 yaw/pitch로 방향을 만든다
     _q.setFromEuler(_e.set(this.pitch, this.yaw, 0, 'YXZ'));
     const dir = _dir.set(0, 0, -1).applyQuaternion(_q);
@@ -2180,6 +2209,18 @@ class Game implements Ctx {
       const out = this.arms.spend();
       if (out) this.note(`${out} 끝! 다시 ${student ? '서류로' : '도장으로'}`, 1.6);
     }
+  }
+
+  /** 화면에 매달린 말풍선이 있으면 던지기가 조준 없이 그 말풍선에 맞는다 (mobs.ts — 두 번이면 떨어진다). 맞혔으면 true */
+  private swat(): boolean {
+    const cl = this.mobs.clinger;
+    if (!cl || !cl.targetable) return false;
+    this.hits++;
+    this.sound('hit');
+    const r = this.damage(cl, 1, 'stamp');
+    if (this.sealT > 0) this.sealHit(cl, cl.center, r);
+    this.hitMarker(r === 'kill');
+    return true;
   }
 
   /**
@@ -2339,10 +2380,24 @@ class Game implements Ctx {
     }
     const base = weak ? WEAK_DMG : e instanceof PersonBoss ? BODY_DMG : 1;
     const r = this.damage(e, reflected ? base : base * k, 'stamp');
-    // 인감 도장(출석 스티커): 기본 공격(도장·서류)에 맞고 남은 잡몹은 넘어진다 (무기는 아니다)
-    if (r === 'hit' && this.sealT > 0 && !s?.arm) this.knockDown(e);
+    // 인감 도장(출석 스티커): 기본 공격(도장·서류)이 잡몹을 넘어뜨리고 굴린다 (무기는 아니다, seal.ts)
+    if (this.sealT > 0 && !s?.arm) this.sealHit(e, at, r);
     this.hitMarker(r === 'kill' || weak);
     return reflected;
+  }
+
+  /**
+   * 인감 도장(출석 스티커)이 잡몹에 맞았다: 남으면 넘어지고, 한 번에 처리되면 뒤로 튕기며 한 바퀴 구른 뒤 사라지고,
+   * 맞은 자리 SEAL_R 안의 다른 잡몹도 넘어진다 (처리는 하지 않는다). 사람·서류 탑에 맞은 것은 빼고, 터진 서류 뭉치·떨어지는 중인 것은 구르지 않는다
+   */
+  private sealHit(e: Enemy, at: THREE.Vector3, r: 'none' | 'hit' | 'kill'): void {
+    if (r === 'none' || isBoss(e) || e instanceof DocTower) return;
+    if (r === 'hit') this.knockDown(e);
+    else if (!e.gone && !(e as { landing?: THREE.Vector3 | null }).landing) {
+      this.downs.delete(e);
+      this.rolls.start(e, this.pos);
+    }
+    for (const o of this.enemies) if (o !== e && o.center.distanceTo(at) <= SEAL_R) this.knockDown(o, at);
   }
 
   private hitMarker(kill: boolean): void {
@@ -2796,8 +2851,8 @@ class Game implements Ctx {
         e.noticeT -= dt;
         if (e.noticeT < 0) this.noticeHit(e);
       }
-      // 인감 도장으로 넘어진 잡몹·단톡방 공지 캡처로 멈춘 잡몹은 움직이지도 공격하지도 않는다
-      if (!e.gone && !this.holdDown(e, dt) && !this.holdFrozen(e)) e.update(edt, this);
+      // 인감 도장으로 넘어진(구르는) 잡몹·단톡방 공지 캡처로 멈춘 잡몹은 움직이지도 공격하지도 않는다
+      if (!e.gone && !this.rolls.hold(e, dt) && !this.holdDown(e, dt) && !this.holdFrozen(e)) e.update(edt, this);
     }
     // 학생 모드 총장실 옮기기처럼 판에서 바로 빠진 잡몹은 넘어진 목록에서도 뺀다
     if (this.downs.size) for (const e of this.downs.keys()) if (!e.obj.parent) this.downs.delete(e);
@@ -2850,6 +2905,10 @@ class Game implements Ctx {
         this.spawnAreaBoss();
       }
     }
+    // 민원 차례가 없는 사회과학관 앞·대운동장: 중간보스·보스와 싸우는 동안 새 잡몹(메신저 쪽지 알림 떼·팩스기)이 가끔 섞인다 (mobs.ts)
+    const a = areaOf(this.stage);
+    const tk = this.mobs.trickle(dt, (a === 1 || a === 4) && (this.fight === 'mid' || this.fight === 'boss'), this.minions());
+    if (tk) this.spawnKind(tk, true);
     const b = this.boss;
     if (b instanceof StaffMid && b.penalty > 0) {
       this.penaltyMin += b.penalty;
@@ -3016,3 +3075,4 @@ function clockText(min: number): string {
 const game = new Game();
 void game.init();
 if (DEBUG) Object.assign(window as object, { __fps: game, __fpsLib: { Mail, Phone, Bubble, Bomb, PersonBoss, Chonggwal, Bogo, Meeting, President, StaffMid, Gumto, Molla, THREE, FC } });
+if (DEBUG) Object.assign((window as unknown as { __fpsLib: object }).__fpsLib, { ClingBubble, DodgeBubble, NoteBadge, Fax, DueBadge, AttendQR });
