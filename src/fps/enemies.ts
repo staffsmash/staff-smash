@@ -11,13 +11,14 @@ import { drawTimer } from './textures';
 // - 울리는 전화기: 플레이어 자리에 빨간 그림자 → 하늘에서 떨어져 바닥에서 울린다.
 // - "교수님이 된다고 했는데요" 말풍선: 부르르 떤 뒤 곧장 돌진한다. 옆으로 피한다.
 // - 마감 1분 전 서류 뭉치: 째깍거리며 다가온다. 도장으로 맞히면 그 자리에서 터져 주변 민원까지 처리.
-// 보스(사람)는 bosses.ts.
+// 보스(사람)는 bosses.ts. 새 잡몹(말풍선 둘·메신저 쪽지 알림 떼·팩스기)은 mobs.ts, 학생 새 잡몹은 student/mobs.ts.
 
-export type Kind = 'mail' | 'bulk' | 'phone' | 'bubble' | 'bomb' | 'boss';
+/** note = 메신저 쪽지 알림(학생: 과제 마감 알림), fax = 팩스기, qr = 출석 QR 코드(학생) */
+export type Kind = 'mail' | 'bulk' | 'phone' | 'bubble' | 'bomb' | 'boss' | 'note' | 'fax' | 'qr';
 /** 다친 까닭 (잡몹 + 보스가 쓰는 것) */
 export type HurtKind = Kind | 'wave' | 'paper' | 'rental' | 'meeting' | 'packet' | 'bigstamp' | 'error';
-/** 날아오는 종이·물건 (도장으로 맞혀 없앨 수 있다) */
-export type SheetKind = 'paper' | 'rental' | 'meeting' | 'packet';
+/** 날아오는 종이·물건 (도장으로 맞혀 없앨 수 있다). fax = 팩스기가 쏘는 종이 */
+export type SheetKind = 'paper' | 'rental' | 'meeting' | 'packet' | 'fax';
 
 export interface Ctx {
   readonly scene: THREE.Scene;
@@ -66,6 +67,8 @@ export abstract class Enemy {
   baseScale = 1;
   /** 전체 공지 발송이 닿기까지 남은 시간 (-1 = 없음) */
   noticeT = -1;
+  /** 화면에 매달려 있다 (매달리는 말풍선): 단톡방 공지 캡처로 멈추지도, 인감 도장으로 넘어지지도 않는다 */
+  pinned = false;
 
   get targetable(): boolean {
     return !this.dead && !this.gone;

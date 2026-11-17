@@ -389,7 +389,8 @@ export class Models {
 
   /** 날아오는 종이·패킷 하나 */
   sheet(kind: SheetKind = 'paper'): THREE.Mesh {
-    if (kind === 'paper') return new THREE.Mesh(this.sheetGeo, this.sheetMat);
+    // 팩스기가 쏘는 종이도 같은 종이 (mobs.ts)
+    if (kind === 'paper' || kind === 'fax') return new THREE.Mesh(this.sheetGeo, this.sheetMat);
     if (kind === 'packet') return new THREE.Mesh(this.packetGeo, this.packetMat);
     const f = kind === 'rental' ? this.rentalMat : this.meetingMat;
     const e = this.docEdge;
