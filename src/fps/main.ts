@@ -37,6 +37,8 @@ import { StudentMode, type StudentHost } from './student/mode';
 import { loadLogos } from './textures';
 import { FRONT_X } from './social';
 import { buildWorld, type World } from './world';
+import { Budget } from './budget';
+import { dressFull, Vending } from './vending';
 
 // Staff Smash: HUFS 1인칭 시험판 (v4).
 // 본관 앞에서 세 차례 몰려오는 민원(메일·전화기·말풍선·서류 뭉치)을 도장으로 처리하고,
@@ -258,6 +260,8 @@ interface Pickup {
   item: THREE.Group;
   ttl: number;
   t: number;
+  /** 자판기 왕돈가스: 체력 모두 회복 (vending.ts) */
+  full?: boolean;
 }
 
 interface DirMark {
@@ -456,7 +460,11 @@ class Game implements Ctx {
     this.clampToBounds();
     for (const o of this.world.obstacles) this.pushOut(o);
     for (const o of this.props.solids) this.pushOut(o);
+    for (const o of this.vend.solids) this.pushOut(o);
   });
+  /** 교직원: 예산팀 직원 기절 이벤트 (budget.ts), 식권 자판기 (vending.ts) */
+  budget!: Budget;
+  vend!: Vending;
   private seen = new Set<string>();
   private last = performance.now();
   private viewmodel = new THREE.Group();
@@ -561,6 +569,8 @@ class Game implements Ctx {
     const perk = this.perkHost();
     this.props = new Props(perk);
     this.rescue = new Rescue(perk);
+    this.budget = new Budget(perk, this, () => areaOf(this.stage));
+    this.vend = new Vending(perk, this, MAX_HP);
     this.bounds = [this.world.yard];
     this.world.setDusk(0);
     this.warmup();
@@ -630,6 +640,7 @@ class Game implements Ctx {
     const unwarm = this.stu.warm(g);
     const unwarmProps = this.props.warm(g);
     const unwarmRescue = this.rescue.warm(g);
+    const unwarmMore = [this.budget.warm(g), this.vend.warm(g)];
     this.scene.add(g);
     const p = _v.set(0, 1.6, 6);
     this.fx.confetti(p, 4, 1);
@@ -684,6 +695,7 @@ class Game implements Ctx {
     unwarm();
     unwarmProps();
     unwarmRescue();
+    for (const f of unwarmMore) f();
     this.scene.remove(g);
     for (const pp of ppl) {
       g.remove(pp.root);
@@ -827,7 +839,8 @@ class Game implements Ctx {
       if (e.repeat) return;
       if ((e.code === 'Escape' || e.code === 'KeyP') && this.phase === 'play' && !document.pointerLockElement) this.pause();
       if (e.code === 'KeyQ') this.special();
-      if (e.code === 'KeyE' && this.phase === 'play') this.props.interact();
+      // E: 자판기 앞이면 식권 넣기, 아니면 경비원 인사·대출기 (둘은 멀리 떨어져 있다)
+      if (e.code === 'KeyE' && this.phase === 'play' && !this.vend.use()) this.props.interact();
       if (e.code === 'KeyM') this.toggleMute();
       if (e.code === 'Space' && this.phase === 'play') this.jump();
       if ((e.code === 'Enter' || e.code === 'Space') && (this.phase === 'clear' || this.phase === 'over')) {
@@ -1214,6 +1227,8 @@ class Game implements Ctx {
     for (const id of ['stamp1', 'stamp2']) $(id).classList.remove('on');
     this.props.clear();
     this.rescue.clear();
+    this.budget.clear();
+    this.vend.clear();
     this.arms.clear();
     this.stu.reset();
     this.phase = 'title';
@@ -1787,11 +1802,13 @@ class Game implements Ctx {
     return { x, z };
   }
 
-  spawnPickup(kind: FoodKind, x: number, z: number): void {
+  /** full: 자판기 왕돈가스 (체력 모두 회복, vending.ts) */
+  spawnPickup(kind: FoodKind, x: number, z: number, full = false): void {
     const { obj, item } = this.models.food(kind, this.mode === 'student');
+    if (full) dressFull(obj, item, this.models);
     obj.position.set(x, 0.05, z);
     this.scene.add(obj);
-    this.pickups.push({ kind, obj, item, ttl: kind === 'americano' || this.stage === 'yard' || this.stage === 'path' ? 15 : 40, t: Math.random() * 6 });
+    this.pickups.push({ kind, obj, item, ttl: kind === 'americano' || this.stage === 'yard' || this.stage === 'path' ? 15 : 40, t: Math.random() * 6, full });
   }
 
   private updatePickups(dt: number): void {
@@ -1814,7 +1831,14 @@ class Game implements Ctx {
   }
 
   private collect(p: Pickup): void {
-    if (p.kind === 'donkatsu') {
+    if (p.full) {
+      // 자판기 왕돈가스 (vending.ts)
+      this.hp = MAX_HP;
+      this.note('학식 왕돈가스! 체력 모두 회복');
+    } else if (p.kind === 'ticket' && this.mode === 'staff') {
+      // 교직원: 식권은 모아서 자판기에 넣는다 (vending.ts). 체력 회복 없음
+      this.vend.addTicket();
+    } else if (p.kind === 'donkatsu') {
       this.hp = Math.min(MAX_HP, this.hp + 4);
       this.note('학식 돈가스! 체력 +4');
     } else if (p.kind === 'gimbap') {
@@ -2174,11 +2198,11 @@ class Game implements Ctx {
     this.sound('pickup');
   }
 
-  /** 잠깐 멈춤 (강의실 열쇠·"보고해!"): 움직이지도 던지지도 못한다. 이미 멈춰 있으면 false */
-  freeze(sec: number, text: string): boolean {
+  /** 잠깐 멈춤 (강의실 열쇠·"보고해!"): 움직이지도 던지지도 못한다. 이미 멈춰 있으면 false. exact: 난이도로 줄이지 않는다 (예산팀 직원) */
+  freeze(sec: number, text: string, exact = false): boolean {
     if (this.freezeT > 0 || this.phase !== 'play' || this.stage === 'done') return false;
     // 초보는 짧게
-    this.freezeT = sec * Math.min(1, 0.45 + this.diff.speed * 0.55);
+    this.freezeT = exact ? sec : sec * Math.min(1, 0.45 + this.diff.speed * 0.55);
     this.note(text, this.freezeT + 0.4);
     this.sound('hurt', undefined, 0.5);
     this.buzz(30);
@@ -2369,6 +2393,11 @@ class Game implements Ctx {
           s.life = 0;
           break;
         }
+        // 예산팀 직원(튕겨 나간다, 다치지 않는다)·자판기
+        if (this.budget.stampHit(p, s.obj, s.vel) || this.vend.stampHit(p)) {
+          s.life = 0;
+          break;
+        }
       }
       if (a) this.arms.spin(s.obj, s.vel, a, dt);
       else if (this.mode === 'student') this.stu.orient(s.obj, s.vel);
@@ -2524,6 +2553,7 @@ class Game implements Ctx {
     for (const o of this.world.obstacles) this.pushOut(o);
     // 경비원·대출기·상자
     for (const o of this.props.solids) this.pushOut(o);
+    for (const o of this.vend.solids) this.pushOut(o);
     if (len > 0.1 && this.jumpY === 0) this.bob += dt * (running ? 13 : 9);
   }
 
@@ -2917,6 +2947,8 @@ class Game implements Ctx {
     this.updatePickups(dt);
     this.updateFrost(dt);
     this.props.update(dt);
+    this.budget.update(dt);
+    this.vend.update(dt);
     if (this.rescueDue) this.tryRescue();
     this.rescue.update(dt);
     this.fx.update(dt);
@@ -2932,7 +2964,8 @@ class Game implements Ctx {
         this.spawnKind(this.queue.pop() as SpawnKind);
         this.spawnT = 0.85;
       }
-    } else if (this.minions() === 0) {
+    } else if (this.minions() === 0 && !this.budget.busy) {
+      // 예산팀 직원이 와 있는 동안은 차례를 끝내지 않는다 (budget.ts)
       if (this.waveDelay < 0) this.waveDelay = 1.6;
       this.waveDelay -= dt;
       if (this.waveDelay <= 0) {
@@ -3040,6 +3073,7 @@ class Game implements Ctx {
     this.setText('perks', perks.join('  ·  '));
     this.setText('weapon', this.arms.hud());
     if (this.props) this.props.syncUi(this.phase === 'play');
+    if (this.vend) this.vend.syncUi(this.phase === 'play');
     // 보스 막대 = 결재 진행 (0% → 100%)
     const boss = this.boss;
     if (boss) {
@@ -3068,7 +3102,8 @@ class Game implements Ctx {
     // 회의 소집 고리가 곧 닿으면 점프 신호
     let cue = false;
     if (this.hz && this.phase === 'play' && this.jumpY < RING_H) {
-      const eta = this.hz.ringEta(this.pos.x, this.pos.z) / this.diff.speed;
+      // 예산팀 직원의 바닥 파동도 같은 신호 (budget.ts)
+      const eta = Math.min(this.hz.ringEta(this.pos.x, this.pos.z), this.budget.ringEta(this.pos.x, this.pos.z)) / this.diff.speed;
       cue = eta < 0.6;
     }
     this.setClass('jumpcue', 'on', cue);

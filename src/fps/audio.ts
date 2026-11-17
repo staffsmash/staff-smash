@@ -15,6 +15,7 @@ export type SfxName =
   | 'pop'
   | 'volley'
   | 'tick'
+  | 'calc'
   | 'open'
   | 'jump'
   | 'charge'
@@ -149,6 +150,11 @@ export class Sfx {
         break;
       case 'tick':
         this.tone(t, 'square', 1900, 0, 0.03, 0.12 * vol);
+        break;
+      case 'calc':
+        // 계산기 단추 "삑" (누를 때마다 음이 조금씩 다르다) + 단추 딸깍
+        this.tone(t, 'square', 1500 + Math.floor(Math.random() * 5) * 180, 0, 0.06, 0.11 * vol);
+        this.noiseBurst(t, 0.018, 'highpass', 4200, 4200, 0.12 * vol);
         break;
       case 'open':
         [392, 523, 659, 784].forEach((f, i) => this.tone(t + i * 0.09, 'triangle', f, 0, 0.22, 0.3 * vol));
