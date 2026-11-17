@@ -33,9 +33,9 @@ export interface PerkHost {
   readonly yaw: number;
   /** 지금 움직일 수 있는 구역 */
   readonly area: Rect;
-  /** 주인공 이름 (교직원 김국제, 학생은 고른 주인공) */
+  /** 고른 주인공 이름 (교직원·학생 모두) */
   playerName(): string;
-  /** 학생 모드에서 고른 주인공 id */
+  /** 고른 주인공 id (교직원 heroes.ts, 학생 students.ts) */
   heroId(): string;
   note(text: string, time?: number): void;
   hint(key: string, text: string, time?: number): void;
