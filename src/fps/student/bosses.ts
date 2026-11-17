@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import type { Rect } from '../blocks';
+import type { Roam } from '../bossmove';
 import { BODY_DMG, PersonBoss, President } from '../bosses';
 import type { Ctx } from '../enemies';
 import type { Person } from '../people';
@@ -229,6 +231,12 @@ export class WindowStaff extends StudentBoss {
     this.subT = 0;
   }
 
+  /** 서성일 때는 모두, 기믹·결재판을 든 동안은 옆걸음만 */
+  roam(): Roam {
+    const r = super.roam();
+    return r === 'all' && this.sub !== 'walk' ? 'step' : r;
+  }
+
   protected think(dt: number, c: Ctx): void {
     if (this.state === 'enter') {
       if (this.stateT < dt * 1.5) this.say(this.line, 2.4);
@@ -396,6 +404,8 @@ export class Banryeo extends StudentBoss {
   private spot = new THREE.Vector3();
   private sink = 0;
   private towerHp: number;
+  /** 탑을 쌓은 자리 (숨어 있는 동안 이 근처에서만 옆걸음) */
+  private readonly anchor = new THREE.Vector3();
 
   constructor(c: Ctx, s: StuCtx, person: Person, at: THREE.Vector3, spot: THREE.Vector3, exit: THREE.Vector3, towerHp: number) {
     super(c, s, person, at, exit, '반려… 철회합니다. 퇴근합니다…', '박반려 · 서류반려처장', 70, '반려 철회!');
@@ -423,6 +433,23 @@ export class Banryeo extends StudentBoss {
   private go(sub: BanSub): void {
     this.sub = sub;
     this.subT = 0;
+  }
+
+  /**
+   * 탑 뒤(쌓기·숨기·내밀기)에서는 탑 뒤 좁은 범위에서 옆걸음만, 물러날 때는 그대로,
+   * 탑이 무너져 나와 있을 때는 모두 (결재판을 든 동안은 옆걸음만)
+   */
+  roam(): Roam {
+    const r = super.roam();
+    if (r !== 'all') return r;
+    if (this.sub === 'out') return 'all';
+    return this.sub === 'build' || this.sub === 'retreat' ? 'none' : 'step';
+  }
+
+  roamRange(): Rect | null {
+    if (this.sub !== 'hide' && this.sub !== 'peek') return null;
+    const a = this.anchor;
+    return { minX: a.x - 0.6, maxX: a.x + 0.6, minZ: a.z - 0.6, maxZ: a.z + 0.6 };
   }
 
   protected think(dt: number, c: Ctx): void {
@@ -454,6 +481,7 @@ export class Banryeo extends StudentBoss {
           const d = Math.hypot(dx, dz) || 1;
           this.tower = this.s.raiseTower(o.x + (dx / d) * 1.8, o.z + (dz / d) * 1.8);
           this.tower.maxHp = this.tower.hp = this.towerHp;
+          this.anchor.copy(o);
           c.sound('volley', o, 0.8);
         }
         if (this.subT >= 0.6) {
@@ -594,6 +622,20 @@ export class Bansa extends StudentBoss {
     // 큰 결재판
     person.clip.scale.setScalar(1.4);
     this.talk = BANSA_TALK;
+    // 원래 "전결 처리합니다!" 하며 달려오므로 공통 달려오기는 쓰지 않는다
+    if (this.mover) this.mover.rush = false;
+  }
+
+  /** 서성일 때는 옆걸음·사라지기, 겨누고 달리는 동안은 그대로, 나머지는 옆걸음만 */
+  roam(): Roam {
+    const r = super.roam();
+    if (r !== 'all' || this.sub === 'walk') return r;
+    return this.sub === 'wind' || this.sub === 'dash' ? 'none' : 'step';
+  }
+
+  /** 몸은 정해진 빠르기로만 돈다 (다시 나타나도 곧바로 정면을 돌리지 않는다: 옆·등이 빈틈) */
+  roamFace(x: number, z: number, dt: number): void {
+    this.turnTo(x, z, Math.min(dt, 0.05), this.turnRate);
   }
 
   /** 결재판으로 정면을 막는 중인지 */
@@ -813,6 +855,13 @@ export class Bujae extends StudentBoss {
     return Math.max(0, this.awayT);
   }
 
+  /** 자리에 있을 때는 모두, 결재판을 들거나 전화를 받는 동안은 옆걸음만, 자리를 비우거나 문을 오갈 때는 그대로 */
+  roam(): Roam {
+    const r = super.roam();
+    if (r !== 'all' || this.sub === 'here') return r;
+    return this.sub === 'sign' || this.sub === 'look' || this.sub === 'call' ? 'step' : 'none';
+  }
+
   private go(sub: BujaeSub): void {
     this.sub = sub;
     this.subT = 0;
@@ -960,6 +1009,12 @@ export class Hoho extends StudentBoss {
     this.subT = 0;
   }
 
+  /** 서성일 때는 모두, 간식을 놓고 지켜보는 동안은 옆걸음만 */
+  roam(): Roam {
+    const r = super.roam();
+    return r === 'all' && this.sub !== 'walk' ? 'step' : r;
+  }
+
   protected think(dt: number, c: Ctx): void {
     if (this.state === 'enter') {
       if (this.stateT < dt * 1.5) this.say(HOHO_LINE, 2.4);
@@ -1040,6 +1095,10 @@ export class StudentPresident extends President {
     this.stormHint = '쏟아지는 오류 창(빨간 표시)과 패킷을 피하며 설득하세요';
     this.approveLine = '좋아요, 검토 끝났습니다.';
     this.doneText = '검토 완료!';
+    // 교직원 모드 총장전 새 대사(2026-11-17)는 학생 모드에 쓰지 않는다: 2D 그대로 "보류!" / "재검토!", 싸우는 중 한마디는 아래 talk
+    this.holdLine = '보류!';
+    this.reLine = '재검토!';
+    this.fightLines = [];
   }
 
   protected say(text: string, sec = 1.8): void {

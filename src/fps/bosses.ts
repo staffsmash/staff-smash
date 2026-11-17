@@ -1,7 +1,10 @@
 import * as THREE from 'three';
+import type { Rect } from './blocks';
+import { BossMove, diffOf, randRange, solidsOf, Wander, type Mover, type Roam } from './bossmove';
 import { Enemy, type Ctx, type SheetKind } from './enemies';
 import { FC, PODIUM } from './field';
 import { Person, type PoseIn, type Who } from './people';
+import type { DiffKey } from './settings';
 import { FRONT_X } from './social';
 
 // 1인칭 시험판 v4의 보스: 사람 넷 (2026-11-13 사용자 결정, 홍보실·비서실 확인).
@@ -49,7 +52,7 @@ function wrap(a: number): number {
 
 type St = 'sleep' | 'enter' | 'idle' | 'act' | 'lure' | 'charge' | 'stun' | 'descend' | 'server' | 'review' | 'approve' | 'leave' | 'stay';
 
-export abstract class PersonBoss extends Enemy {
+export abstract class PersonBoss extends Enemy implements Mover {
   readonly kind = 'boss' as const;
   readonly who: Who;
   readonly person: Person;
@@ -76,6 +79,8 @@ export abstract class PersonBoss extends Enemy {
   /** 걸어 나가며 하는 말 (비우면 말없이 나간다: 학생 모드는 결재 대사에 이미 들어 있다) */
   protected leaveLine: string;
   private leaveT = 0;
+  /** 공통 움직임: 옆걸음·사라졌다 나타나기·달려오기 (bossmove.ts). 총장은 null (Wander로 따로 움직인다) */
+  protected mover: BossMove | null = new BossMove(this);
 
   /** name·hp: 학생 모드 인물은 이름과 결재 양을 따로 준다 */
   constructor(
@@ -106,7 +111,45 @@ export abstract class PersonBoss extends Enemy {
   }
 
   get targetable(): boolean {
-    return !this.dead && !this.gone && this.state !== 'sleep';
+    return !this.dead && !this.gone && this.state !== 'sleep' && !this.mover?.hidden;
+  }
+
+  // ---------- 공통 움직임에 내주는 것 (bossmove.ts Mover) ----------
+
+  /** 지금 쓸 수 있는 움직임: 서성일 때는 모두, 결재판을 든 동안·기믹 중에는 옆걸음만, 등장·단계 연출 중에는 없음 */
+  roam(): Roam {
+    switch (this.state) {
+      case 'idle':
+        return 'all';
+      case 'sleep':
+      case 'enter':
+      case 'descend':
+      case 'server':
+      case 'approve':
+      case 'leave':
+      case 'stay':
+        return 'none';
+      default:
+        return 'step';
+    }
+  }
+
+  roamRange(): Rect | null {
+    return null;
+  }
+
+  roamSolids(c: Ctx): readonly Rect[] | null {
+    return solidsOf(c);
+  }
+
+  roamFix(_o: THREE.Vector3): void {}
+
+  stride(): void {
+    this.walking = true;
+  }
+
+  roamFace(x: number, z: number, dt: number, rate: number): void {
+    this.faceTo(x, z, dt, rate);
   }
 
   /** 결재판을 머리 위로 들고 있는지 (약점) */
@@ -207,6 +250,7 @@ export abstract class PersonBoss extends Enemy {
 
   /** 결재 완료: 승인 도장 → 한마디 → (총장 빼고) 퇴근 */
   die(): void {
+    this.mover?.cancel();
     this.setState('approve');
     this.raiseTo = 1;
     this.reachTo = 0;
@@ -221,7 +265,11 @@ export abstract class PersonBoss extends Enemy {
     this.walking = false;
     this.waving = false;
     if (this.dead) this.afterApprove(dt, c);
-    else this.think(dt, c);
+    else if (!this.mover?.drive(dt, c)) {
+      // 사라지기·달려오기 중에는 think를 쉰다
+      this.think(dt, c);
+      this.mover?.after(dt, c);
+    }
     this.syncPose(dt);
   }
 
@@ -293,6 +341,7 @@ export abstract class PersonBoss extends Enemy {
   dispose(): void {
     this.person.root.removeFromParent();
     this.person.updateStorm(0);
+    this.mover?.dispose();
   }
 }
 
@@ -398,6 +447,11 @@ export class Chonggwal extends PersonBoss {
   /** 본관 앞 화단 안으로는 안 들어간다 */
   private avoidBeds(): void {
     const o = this.obj.position;
+    if (o.z > -14.6 && o.z < -5.4 && Math.abs(o.x) > 6.6) o.x = Math.sign(o.x) * 6.6;
+  }
+
+  /** 옆걸음·사라졌다 나타날 자리도 화단을 피한다 */
+  roamFix(o: THREE.Vector3): void {
     if (o.z > -14.6 && o.z < -5.4 && Math.abs(o.x) > 6.6) o.x = Math.sign(o.x) * 6.6;
   }
 }
@@ -510,6 +564,8 @@ export class Bogo extends PersonBoss {
 
 /** 단상 위 서는 자리 */
 const STAND = new THREE.Vector3(PODIUM.x, 1.1, PODIUM.z + 0.4);
+/** 1단계에 단상 위에서 옆걸음하는 범위 (단상 폭 6.2m, 연단 뒤) */
+const PODIUM_TOP: Rect = { minX: PODIUM.x - 2.3, maxX: PODIUM.x + 2.3, minZ: STAND.z - 0.1, maxZ: STAND.z + 0.6 };
 
 export class Meeting extends PersonBoss {
   private volleyT = 4;
@@ -519,6 +575,7 @@ export class Meeting extends PersonBoss {
   private pendingT = 0;
   private ang = Math.PI / 2;
   private charges = 0;
+  private readonly descendFrom = STAND.clone();
 
   constructor(c: Ctx, person: Person) {
     super(c, person, STAND, new THREE.Vector3(FC.x - 6, 0, 56), '오늘 회의는 여기까지!');
@@ -528,6 +585,20 @@ export class Meeting extends PersonBoss {
   /** 플레이어가 운동장에 들어왔다 */
   wake(): void {
     if (this.state === 'sleep') this.setState('enter');
+  }
+
+  /** 1단계는 단상 위에서만 (옆걸음·연단 뒤로 사라졌다 다른 쪽에서 나타나기), 2단계는 운동장 어디서나 */
+  roam(): Roam {
+    const r = super.roam();
+    return r === 'all' && !this.phase2 ? 'hop' : r;
+  }
+
+  roamRange(): Rect | null {
+    return this.phase2 ? null : PODIUM_TOP;
+  }
+
+  roamSolids(c: Ctx): readonly Rect[] | null {
+    return this.phase2 ? super.roamSolids(c) : null;
   }
 
   private get chargeTime(): number {
@@ -576,6 +647,7 @@ export class Meeting extends PersonBoss {
         }
         if (!this.phase2 && this.hp <= this.maxHp / 2 && this.pending === 0) {
           this.phase2 = true;
+          this.descendFrom.copy(this.obj.position);
           this.setState('descend');
           this.chargeIn = 4;
           c.banner('부총장이 단상에서 내려옵니다!', '이제 운동장을 걸어 다니며 회의 소집 고리를 두 겹으로 보냅니다');
@@ -625,7 +697,9 @@ export class Meeting extends PersonBoss {
         this.raiseTo = 0;
         const k = Math.min(1, this.stateT / 1.6);
         const o = this.obj.position;
-        o.set(STAND.x, STAND.y * (1 - k), STAND.z - k * 4.2);
+        // 단상 위에서 옆걸음한 자리에서 계단 쪽으로
+        const f = this.descendFrom;
+        o.set(f.x + (STAND.x - f.x) * k, STAND.y * (1 - k), f.z + (STAND.z - 4.2 - f.z) * k);
         this.walking = true;
         this.faceTo(c.eye.x, c.eye.z, dt, 3);
         if (k >= 1) this.setState('idle');
@@ -658,6 +732,45 @@ const PRES_SPOT = new THREE.Vector3(0, 0, -15.6);
 /** 2단계 서버 랙 옆 */
 export const SERVER_SPOT = new THREE.Vector3(7.2, 0, -15.8);
 
+/** 총장이 서성이는 범위 (본관 계단 앞, 양쪽 화단 사이) */
+const PRES_BAND: Rect = { minX: -6.2, maxX: 6.2, minZ: -16.0, maxZ: -10.8 };
+
+/** 교직원 모드 총장전 새 대사 (2026-11-17 비서실 확인, 글자 그대로). 학생 모드·2D는 그대로 */
+const PRES_HOLD = '보류지만 더 보류입니다';
+const PRES_RE = '검토했지만 더 검토하세요';
+const PRES_FIGHT = ['학교를 위해 희생하세요', '그게 왜 안되죠? 되게 하세요'];
+/** 미리 그려 둘 총장 새 대사 */
+export const PRESIDENT_LINES: string[] = [PRES_HOLD, PRES_RE, ...PRES_FIGHT];
+
+/** 난이도별 총장 공격 박자 (적 시간 초). 초보는 예전과 비슷하게 */
+interface PresTune {
+  /** 결재판을 내린 뒤 다음 거대 도장까지 [최소, 최대] */
+  stampGap: [number, number];
+  /** 한 번에 떨어지는 거대 도장 수 [최소, 최대] (2단계는 하나 더까지) */
+  stamps: [number, number];
+  /** 도장 사이 [최소, 최대] */
+  dropGap: [number, number];
+  /** 플레이어가 가는 쪽을 앞질러 찍을 몫 */
+  lead: number;
+  /** 결재판 열림: 짧게 / 연달아 두 번 몫 (나머지는 길게) */
+  short: number;
+  double: number;
+  /** 서버 폭주 사이 [최소, 최대] */
+  storm: [number, number];
+  /** 거대 도장을 찍는 동안·결재판을 든 동안 움직이는 빠르기 배율 (0 = 선다) */
+  actMove: number;
+  reviewMove: number;
+}
+
+const PRES_TUNE: Record<DiffKey, PresTune> = {
+  easy: { stampGap: [2.6, 3.4], stamps: [3, 3], dropGap: [0.5, 0.62], lead: 0, short: 0.15, double: 0.15, storm: [14, 17], actMove: 0, reviewMove: 0 },
+  normal: { stampGap: [1.5, 3.4], stamps: [2, 4], dropGap: [0.36, 0.62], lead: 0.3, short: 0.3, double: 0.3, storm: [9, 15], actMove: 0.3, reviewMove: 0.45 },
+  hard: { stampGap: [1.1, 3.0], stamps: [3, 4], dropGap: [0.3, 0.55], lead: 0.5, short: 0.35, double: 0.35, storm: [7, 12], actMove: 0.4, reviewMove: 0.6 },
+};
+
+/** 거대 도장 하나가 그림자에서 떨어져 끝나기까지 (Hazards: 1.05 + 0.22초). 도장은 셋까지 동시에 있다 */
+const STAMP_LIFE = 1.3;
+
 export class President extends PersonBoss {
   private stampT = 3.2;
   private drops = 0;
@@ -665,15 +778,109 @@ export class President extends PersonBoss {
   private dropT = 0;
   private packetT = 0;
   private stormLeft = 0;
-  private side = 1;
-  private sideT = 0;
+  private stormDur = 6;
   private reviewSay = 0;
+  /** 불규칙한 걸음 (bossmove.ts Wander) */
+  private readonly wander = new Wander();
+  /** 이번 거대 도장들이 떨어질 때 (act 시작부터 초) */
+  private dropPlan: number[] = [];
+  /** 결재판 열림 차례: [열림, 닫힘, 열림…] 초 */
+  private winPlan: number[] = [2.2];
+  private winIdx = 0;
+  private winT = 0;
+  private lineT = 6 + Math.random() * 4;
+  private readonly lastEye = new THREE.Vector3(NaN, 0, 0);
+  /** 플레이어 빠르기 (적 시간, 거대 도장을 앞질러 찍을 때) */
+  private readonly pv = new THREE.Vector3();
   /** 2단계(수강신청 서버 폭주) 띠 아래 요령 — 학생 모드는 2D 학생판 문구로 바꾼다 */
   protected stormHint = '쏟아지는 오류 창(빨간 표시)과 패킷을 피하며 결재받으세요';
+  /** 거대 도장을 내려찍을 때 (1단계 / 2단계)와 싸우는 중 가끔 하는 말 — 학생 모드는 예전 대사로 되돌린다 */
+  protected holdLine = PRES_HOLD;
+  protected reLine = PRES_RE;
+  protected fightLines: readonly string[] = PRES_FIGHT;
 
   constructor(c: Ctx, person: Person) {
     super(c, person, PRES_SPOT, PRES_SPOT, '오늘 민원 처리, 수고 많았어요.');
     this.state = 'sleep';
+    // 사라지거나 달려오지 않는다 (Wander로 불규칙하게)
+    this.mover = null;
+  }
+
+  /** 불규칙한 걸음 한 프레임 (mul: 빠르기 배율, 0이면 선다) */
+  private roamPres(dt: number, c: Ctx, mul: number): void {
+    if (mul <= 0) {
+      this.wander.stop();
+      return;
+    }
+    if (this.wander.update(dt, this.obj.position, PRES_BAND, c.eye.x, c.eye.z, diffOf(c), this.phase2, mul)) this.walking = true;
+  }
+
+  /** 싸우는 중 가끔 한마디 (2단계에서 더 자주. 학생 모드는 없음) */
+  private fightTalk(dt: number): void {
+    if (this.fightLines.length === 0) return;
+    this.lineT -= dt;
+    if (this.lineT > 0) return;
+    if (this.person.tag.bubble.visible) {
+      this.lineT = 0.8;
+      return;
+    }
+    this.say(this.fightLines[Math.floor(Math.random() * this.fightLines.length)], 2.4);
+    this.lineT = this.phase2 ? randRange(6, 10) : randRange(11, 17);
+  }
+
+  /** 이번 거대 도장들: 수와 간격을 무작위로 (도장은 셋까지 동시에 있으니 넷째부터는 첫째가 끝난 뒤) */
+  private planDrops(c: Ctx): void {
+    const P = PRES_TUNE[diffOf(c)];
+    const quick = this.phase2 ? 0.75 : 1;
+    const n = Math.round(randRange(P.stamps[0], P.stamps[1] + (this.phase2 ? 1 : 0)));
+    const plan: number[] = [];
+    let t = 0.35;
+    for (let i = 0; i < n; i++) {
+      if (i > 0) t += randRange(P.dropGap[0], P.dropGap[1]) * quick;
+      if (i >= 3) t = Math.max(t, plan[i - 3] + STAMP_LIFE);
+      plan.push(t);
+    }
+    this.dropPlan = plan;
+  }
+
+  /** 결재판 열림 차례: 길게 / 짧게 / 연달아 두 번 */
+  private planWindow(c: Ctx): void {
+    const key = diffOf(c);
+    const P = PRES_TUNE[key];
+    const dbl = P.double + (this.phase2 ? 0.1 : 0);
+    const short = P.short + (this.phase2 ? 0.05 : 0);
+    const r = Math.random();
+    if (r < dbl) this.winPlan = [randRange(0.75, 1.0), randRange(0.35, 0.55), randRange(0.8, 1.1)];
+    else if (r < dbl + short) this.winPlan = [randRange(0.8, 1.1) * (key === 'easy' ? 1.3 : 1)];
+    else this.winPlan = [this.phase2 ? randRange(1.5, 2.0) : randRange(1.8, 2.5)];
+    this.winIdx = 0;
+    this.winT = 0;
+  }
+
+  private nextStamp(c: Ctx): number {
+    const P = PRES_TUNE[diffOf(c)];
+    return randRange(P.stampGap[0], P.stampGap[1]) * (this.phase2 ? 0.6 : 1);
+  }
+
+  private nextStorm(c: Ctx): number {
+    const P = PRES_TUNE[diffOf(c)];
+    return randRange(P.storm[0], P.storm[1]);
+  }
+
+  /** 거대 도장 하나: 플레이어 자리 (가끔은 가는 쪽을 앞질러) */
+  private dropStamp(c: Ctx): void {
+    const P = PRES_TUNE[diffOf(c)];
+    this.drops++;
+    let x = c.eye.x + (Math.random() - 0.5) * 1.2;
+    let z = c.eye.z + (Math.random() - 0.5) * 1.2;
+    if (Math.random() < P.lead) {
+      x += this.pv.x * STAMP_LIFE * 0.6;
+      z += this.pv.z * STAMP_LIFE * 0.6;
+    }
+    const a = c.area;
+    x = Math.max(a.minX + 1, Math.min(a.maxX - 1, x));
+    z = Math.max(a.minZ + 1, Math.min(a.maxZ - 1, z));
+    c.hz.drop('stamp', x, z, this.phase2 ? '재검토' : '보류');
   }
 
   /** 화면이 밝아지면 시작 */
@@ -682,6 +889,13 @@ export class President extends PersonBoss {
   }
 
   protected think(dt: number, c: Ctx): void {
+    // 플레이어 빠르기 (거대 도장을 앞질러 찍을 때)
+    if (!Number.isNaN(this.lastEye.x) && dt > 0) {
+      _b.set((c.eye.x - this.lastEye.x) / dt, 0, (c.eye.z - this.lastEye.z) / dt);
+      if (_b.lengthSq() < 400) this.pv.lerp(_b, Math.min(1, dt * 6));
+    }
+    this.lastEye.copy(c.eye);
+    const P = PRES_TUNE[diffOf(c)];
     switch (this.state) {
       case 'sleep':
         this.faceTo(c.eye.x, c.eye.z, dt, 3);
@@ -693,29 +907,26 @@ export class President extends PersonBoss {
         if (this.stateT > 2.4) this.setState('idle');
         break;
       case 'idle': {
-        this.sideT -= dt;
-        if (this.sideT <= 0) {
-          this.side = -this.side;
-          this.sideT = 3 + Math.random() * 2;
-        }
-        // 본관 계단 앞에서 좌우로 천천히
-        this.walkTo(Math.max(-6, Math.min(6, c.eye.x * 0.5 + this.side * 3)), -14.5, 1.4, dt, c, 0.8);
-        this.faceTo(c.eye.x, c.eye.z, dt);
+        // 본관 계단 앞에서 불규칙하게: 방향을 꺾고, 순간 빨라지고, 미끄러지고, 잠깐 멈춘다
+        this.roamPres(dt, c, 1);
+        this.faceTo(c.eye.x, c.eye.z, dt, 6);
+        this.fightTalk(dt);
         if (!this.phase2 && this.hp <= this.maxHp / 2) {
           this.phase2 = true;
           this.stormT = 0;
           this.say('잠깐, 수강신청 서버가…!', 1.8);
           c.banner('수강신청 서버 폭주!', this.stormHint);
           this.setState('server');
-          this.stormLeft = 6;
+          this.stormLeft = this.stormDur = 6;
           break;
         }
         if (this.phase2) {
           this.stormT -= dt;
-          if (this.stormT <= 0) {
+          // 거대 도장과 서버 폭주 차례도 무작위 (둘 다 때가 되면 반반)
+          if (this.stormT <= 0 && (this.stampT > 0 || Math.random() < 0.5)) {
             this.say('어? 수강신청 서버가…!', 1.6);
             this.setState('server');
-            this.stormLeft = 6;
+            this.stormLeft = this.stormDur = Math.round(randRange(5, 7) * 10) / 10;
             break;
           }
         }
@@ -724,64 +935,75 @@ export class President extends PersonBoss {
           this.setState('act');
           this.drops = 0;
           this.reachTo = 1;
-          this.say(this.phase2 ? '재검토!' : '보류!', 1.0);
+          this.planDrops(c);
+          const line = this.phase2 ? this.reLine : this.holdLine;
+          this.say(line, Math.max(1.0, line.length * 0.15));
         }
         break;
       }
       case 'act': {
-        // 거대 도장: 플레이어를 따라 차례로 셋
+        // 거대 도장: 플레이어를 따라 (수·간격은 무작위, 가끔은 가는 쪽을 앞질러)
         this.faceTo(c.eye.x, c.eye.z, dt, 6);
-        const gap = this.phase2 ? 0.42 : 0.55;
-        const k = Math.floor((this.stateT - 0.35) / gap);
-        if (this.stateT >= 0.35 && k >= this.drops && this.drops < 3) {
-          this.drops++;
-          c.hz.drop('stamp', c.eye.x + (Math.random() - 0.5) * 1.2, c.eye.z + (Math.random() - 0.5) * 1.2, this.phase2 ? '재검토' : '보류');
-        }
-        if (this.stateT >= 0.35 + gap * 3 + 0.4) {
+        this.roamPres(dt, c, P.actMove);
+        while (this.drops < this.dropPlan.length && this.stateT >= this.dropPlan[this.drops]) this.dropStamp(c);
+        if (this.stateT >= (this.dropPlan[this.dropPlan.length - 1] ?? 0.35) + 0.4) {
           this.reachTo = 0;
           this.openWindow();
+          this.planWindow(c);
           this.setState('review');
           this.say(this.reviewSay++ % 2 === 0 ? '검토하겠습니다.' : '꼼꼼히 다시 봅시다.', 1.6);
         }
         break;
       }
       case 'review':
-        // 결재판을 들어 살펴본다 (빈틈)
+        // 결재판을 들어 살펴본다 (빈틈). 길게 / 짧게 / 잠깐 내렸다 다시 드는 것이 무작위
         this.faceTo(c.eye.x, c.eye.z, dt);
-        if (this.stateT >= 2.2) {
-          this.raiseTo = 0;
-          this.stampT = this.phase2 ? 2.4 : 3.0;
-          this.setState('idle');
+        this.roamPres(dt, c, P.reviewMove);
+        this.fightTalk(dt);
+        this.winT += dt;
+        if (this.winT >= this.winPlan[this.winIdx]) {
+          this.winT = 0;
+          this.winIdx++;
+          if (this.winIdx >= this.winPlan.length) {
+            this.raiseTo = 0;
+            this.stampT = this.nextStamp(c);
+            this.setState('idle');
+          } else if (this.winIdx % 2 === 1) this.raiseTo = 0;
+          else this.openWindow();
         }
         break;
       case 'server': {
         // 수강신청 서버 폭주: 랙 옆으로 가서 살핀다. 오류 창이 떨어지고 패킷이 날아온다
         // 랙은 구역 가장자리라 구역 경계로 막지 않는다
         const there = this.walkTo(SERVER_SPOT.x - 1.6, SERVER_SPOT.z + 0.6, 3.2, dt, null, 0.4);
+        this.wander.stop();
         if (there) {
           this.faceTo(SERVER_SPOT.x, SERVER_SPOT.z, dt, 6);
           this.reachTo = Math.sin(this.t * 14) > 0 ? 0.7 : 0.4;
-          if (this.stormLeft === 6) this.say('서버 증설을 검토하겠습니다!', 2.0);
+          if (this.stormLeft === this.stormDur) this.say('서버 증설을 검토하겠습니다!', 2.0);
           this.stormLeft -= dt;
+          // 오류 창·패킷 박자도 무작위 (고급일수록 촘촘히)
+          const dense = diffOf(c) === 'hard' ? 0.85 : 1;
           this.dropT -= dt;
           if (this.dropT <= 0) {
-            this.dropT = 0.6;
+            this.dropT = diffOf(c) === 'easy' ? 0.6 : randRange(0.45, 0.75) * dense;
             const a = Math.random() * Math.PI * 2;
             const r = Math.random() * 2.6;
             c.hz.drop('error', c.eye.x + Math.cos(a) * r, c.eye.z + Math.sin(a) * r);
           }
           this.packetT -= dt;
           if (this.packetT <= 0) {
-            this.packetT = 0.85;
+            this.packetT = diffOf(c) === 'easy' ? 0.85 : randRange(0.6, 1.05) * dense;
             _a.set(SERVER_SPOT.x, 1.6, SERVER_SPOT.z + 0.6);
             _b.copy(c.eye).sub(_a).normalize().multiplyScalar(9);
             c.sheet(_a, _b, 'packet');
           }
           if (this.stormLeft <= 0) {
             this.say('휴, 서버 복구됐습니다.', 1.6);
-            this.stormT = 15;
+            this.stormT = this.nextStorm(c);
             this.reachTo = 0;
             this.openWindow();
+            this.planWindow(c);
             this.setState('review');
           }
         } else {
