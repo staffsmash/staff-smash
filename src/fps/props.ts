@@ -14,7 +14,7 @@ import { canvasTex, FONT, NAVY } from './textures';
 //   도장으로 경비원을 맞히면 "어허, 인사부터 하셔야죠." 하고 6초 동안 등을 돌린다. 경비원은 다치지 않고 민원도 그를 노리지 않는다.
 // - 학생 모드: 같은 자리에 "도서 무인 대출기"(기계). E(대여 버튼) → "도서 대여 완료!" → 무기 (전공책이 가장 잦다). 10초 동안 "대출 처리 중…".
 // - 부수는 상자: 구역마다 2~3개. 교직원 "조기출근 박스"(종이 상자), 학생 "수강편람"(두꺼운 책자 더미).
-//   2~3번 맞히면 부서지고 식권(25%)이나 음식이 나온다. 상자는 민원(잡몹)이 아니다: 차례 정리·조준 보조와 상관없다.
+//   2~3번 맞히면 부서지고 식권(25%)이나 음식이 나온다 (2026-11-17: 교직원은 늘 식권 1장 → 자판기, vending.ts). 상자는 민원(잡몹)이 아니다: 차례 정리·조준 보조와 상관없다.
 // 사람·기계·상자는 걸어서 통과하지 못한다 (solids → Game.move).
 
 export type Place = 'yard' | 'plaza' | 'hum' | 'dorm' | 'field' | 'final';
@@ -79,8 +79,8 @@ const SPOTS: Record<'staff' | 'student', Record<Place, Spot>> = {
   },
 };
 
-/** 지금 구역과 (길 위라면) 다음 구역 */
-function placesOf(mode: 'staff' | 'student', stage: string): [Place, Place] {
+/** 지금 구역과 (길 위라면) 다음 구역 (자판기 vending.ts도 쓴다) */
+export function placesOf(mode: 'staff' | 'student', stage: string): [Place, Place] {
   if (stage === 'final' || stage === 'done') return ['final', 'final'];
   if (mode === 'student') {
     // 학생: 대운동장 → (국제학사 앞 → 인문과학관 앞 →) 사회과학관 앞 → 본관 앞 → 총장실
@@ -415,7 +415,8 @@ export class Props {
     h.sound('pop', _c);
     h.note(student ? '수강편람 사이에서 뭔가 떨어졌다!' : '조기출근 박스 개봉!', 1.8);
     const r = Math.random();
-    const kind: FoodKind = r < 0.25 ? 'ticket' : r < 0.55 ? 'gimbap' : r < 0.8 ? 'donkatsu' : 'americano';
+    // 교직원: 조기출근 박스는 늘 식권 1장 (자판기에 넣는다, vending.ts)
+    const kind: FoodKind = !student || r < 0.25 ? 'ticket' : r < 0.55 ? 'gimbap' : r < 0.8 ? 'donkatsu' : 'americano';
     h.spawnPickup(kind, c.x, c.z);
     this.rebuildSolids();
   }
