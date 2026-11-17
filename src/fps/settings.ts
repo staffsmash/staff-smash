@@ -24,9 +24,10 @@ export interface Diff {
 
 export const DIFFS: Record<DiffKey, Diff> = {
   // 2026-11-13 사용자: v2(옛 보통)도 "넘 어렵다" → 초보를 처음 고르는 값으로, 고급이 옛 보통 정도
+  // 2026-11-17 사용자: 중급 = 기준값(1.0), 고급은 그보다 확실히 어렵게 (초보는 그대로)
   easy: { label: '초보', speed: 0.7, damage: 0.4, bossHp: 0.6, count: 0.6, assist: 0.22, drop: 0.15, regen: 0.25 },
-  normal: { label: '중급', speed: 0.88, damage: 0.7, bossHp: 0.85, count: 0.85, assist: 0.1, drop: 0.05, regen: 0 },
-  hard: { label: '고급', speed: 1.05, damage: 1.1, bossHp: 1.1, count: 1, assist: 0, drop: 0, regen: 0 },
+  normal: { label: '중급', speed: 1, damage: 1, bossHp: 1, count: 1, assist: 0.05, drop: 0.02, regen: 0 },
+  hard: { label: '고급', speed: 1.18, damage: 1.4, bossHp: 1.3, count: 1.25, assist: 0, drop: 0, regen: 0 },
 };
 
 export const DIFF_KEYS: DiffKey[] = ['easy', 'normal', 'hard'];

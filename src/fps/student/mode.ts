@@ -74,6 +74,8 @@ export interface StudentHost {
   overlay(html: string): HTMLElement;
   hideOverlay(): void;
   showTitle(): void;
+  /** 교직원 선택 화면 (staffpick.ts) */
+  showStaff(): void;
   /** 판을 처음으로 되돌리고 타이틀로 */
   toTitle(): void;
   showSettings(): void;
@@ -572,24 +574,18 @@ export class StudentMode implements StuCtx {
 
   // ---------- 타이틀 · 선택 화면 ----------
 
-  /** 타이틀의 모드 단추 둘 */
+  /** 타이틀의 모드 단추 둘 (교직원 모드 → 교직원 선택 화면, 학생 모드 → 이 선택 화면) */
   modeButtons(): string {
-    const t = this.h.touch;
     return `
       <div class="modes">
-        <button id="startBtn" type="button">출근하기${t ? '' : ' (Enter·1)'}<small>교직원 모드 — 민원 처리하고 정시 퇴근</small></button>
-        <button id="studentBtn" class="stu" type="button">등교하기${t ? '' : ' (2)'}<small>학생 모드 — 반려된 서류 승인받기</small></button>
+        <button id="startBtn" type="button">교직원 모드</button>
+        <button id="studentBtn" class="stu" type="button">학생 모드</button>
       </div>`;
   }
 
   bindTitle(): void {
-    document.getElementById('startBtn')?.addEventListener('click', () => this.startStaff());
+    document.getElementById('startBtn')?.addEventListener('click', () => this.h.showStaff());
     document.getElementById('studentBtn')?.addEventListener('click', () => this.showSelect());
-  }
-
-  private startStaff(): void {
-    this.g.mode = 'staff';
-    this.g.start();
   }
 
   private portrait(h: StudentHeroDef): string {
@@ -642,7 +638,7 @@ export class StudentMode implements StuCtx {
     );
     document.getElementById('stuGo')?.addEventListener('click', () => this.startStudent());
     document.getElementById('stuSet')?.addEventListener('click', () => this.h.showSettings());
-    document.getElementById('stuTabStaff')?.addEventListener('click', () => this.h.showTitle());
+    document.getElementById('stuTabStaff')?.addEventListener('click', () => this.h.showStaff());
   }
 
   private pick(hero: StudentHeroDef, spell: SpellDef): void {
@@ -676,7 +672,7 @@ export class StudentMode implements StuCtx {
     if (title) {
       if (e.code === 'Enter' || e.code === 'Digit1' || e.code === 'Numpad1') {
         e.preventDefault();
-        this.startStaff();
+        this.h.showStaff();
         return true;
       }
       if (e.code === 'Digit2' || e.code === 'Numpad2') {
@@ -695,9 +691,11 @@ export class StudentMode implements StuCtx {
         this.startStudent();
         return true;
       case 'Escape':
+        this.h.showTitle();
+        return true;
       case 'Digit1':
       case 'Numpad1':
-        this.h.showTitle();
+        this.h.showStaff();
         return true;
       case 'ArrowLeft':
       case 'ArrowRight':

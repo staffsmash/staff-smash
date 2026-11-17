@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { heroById, type HeroId } from '../data/heroes';
+import { HEROES, heroById, type HeroId } from '../data/heroes';
 import { STUDENT_HEROES, type StudentHeroDef } from '../data/students';
 import { Person, type Look } from './people';
 import type { PerkHost } from './props';
@@ -8,14 +8,14 @@ import { prepareSpeech } from './speech';
 // 1인칭 시험판: 조력자 이벤트 (2026-11-14, 두 모드 공통. 2026-11-15 규칙 바꿈).
 // 구역마다(총장전 포함) 맞아서 체력이 처음 30% 이하로 떨어지면 반드시 한 번 동료·친구 2~3명이 뛰어 들어온다.
 // 한 방에 쓰러질 피해면 체력 1로 버티고 먼저 온다 (Game.hurt). 플레이어가 보는 쪽 앞에서 달려와 화면 안에 선다.
-// - 교직원 모드: 오학종지·이진취·박국제학사·김학생식당 가운데 (최장학은 1인칭에 쓰지 않는다)
+// - 교직원 모드: 주인공 6명 가운데 고른 사람을 뺀 다섯 명 가운데 (2026-11-17 교직원 고르기, staffpick.ts)
 // - 학생 모드: 고른 주인공을 뺀 학생 주인공들
 // 도착하면 살아 있는 잡몹을 모두 처리하고, 체력 +35%, 2초 무적, 보스(사람·창구 직원)는 결재 진행·설득 +10%
 // (다 채우지는 않는다: 5%는 남긴다 — Game.rescueHit). 첫째가 대사 1, 둘째가 대사 2를 말하고 걸어 나간다.
 // 조력자는 다치지 않는다 (적 목록에 없고, 도장·폭발·민원이 노리지 않는다).
 // 대사는 사용자가 정한 그대로다.
 
-const STAFF_IDS: HeroId[] = ['ohakjongji', 'leejinchwi', 'parkhaksa', 'kimsikdang'];
+const STAFF_IDS: HeroId[] = HEROES.map((h) => h.id);
 const SKIN = 0xf1c7a0;
 
 /** 부르는 말: 받침이 있으면 "아", 없으면 "야". 끝이 영문자면 한국어로 읽은 소리 (L·M·N·R = 받침) */
@@ -97,7 +97,8 @@ function wrap(a: number): number {
 }
 
 export class Rescue {
-  private readonly staff: Person[];
+  /** 교직원 주인공 6명 (고른 사람은 start에서 뺀다) */
+  private readonly staff = new Map<string, Person>();
   private readonly students = new Map<string, Person>();
   /** 띠 아래에 부르는 조력자 이름 */
   private readonly nameOf = new Map<Person, string>();
@@ -110,11 +111,11 @@ export class Rescue {
   private lines: [string, string] = ['', ''];
 
   constructor(private readonly h: PerkHost) {
-    this.staff = STAFF_IDS.map((id) => {
+    for (const id of STAFF_IDS) {
       const p = new Person('meeting', heroById(id).name, '#7CFC9A', staffLook(id));
+      this.staff.set(id, p);
       this.nameOf.set(p, heroById(id).name);
-      return p;
-    });
+    }
     for (const s of STUDENT_HEROES) {
       const p = new Person('meeting', s.name, '#7CFC9A', studentLook(s));
       // 학생은 결재판을 들지 않는다
@@ -122,8 +123,9 @@ export class Rescue {
       this.students.set(s.id, p);
       this.nameOf.set(p, s.name);
     }
-    // 대사 그림 (학생 주인공 넷 이름마다)
-    const lines = [...rescueLines(false, '김국제')];
+    // 대사 그림 (교직원 주인공 여섯·학생 주인공 넷 이름마다)
+    const lines: string[] = [];
+    for (const id of STAFF_IDS) lines.push(...rescueLines(false, heroById(id).name));
     for (const s of STUDENT_HEROES) lines.push(...rescueLines(true, s.name));
     prepareSpeech(lines);
   }
@@ -149,7 +151,9 @@ export class Rescue {
     this.hitAt = -1;
     this.said2 = false;
     this.lines = rescueLines(student, h.playerName());
-    const pool = student ? STUDENT_HEROES.filter((s) => s.id !== h.heroId()).map((s) => this.students.get(s.id) as Person) : this.staff.slice();
+    const pool = student
+      ? STUDENT_HEROES.filter((s) => s.id !== h.heroId()).map((s) => this.students.get(s.id) as Person)
+      : STAFF_IDS.filter((id) => id !== h.heroId()).map((id) => this.staff.get(id) as Person);
     for (let i = pool.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [pool[i], pool[j]] = [pool[j], pool[i]];
@@ -279,9 +283,9 @@ export class Rescue {
     this.hitAt = -1;
   }
 
-  /** 미리 그리기: 조력자 여덟 명 */
+  /** 미리 그리기: 조력자 열 명 */
   warm(group: THREE.Group): () => void {
-    const ppl = [...this.staff, ...this.students.values()];
+    const ppl = [...this.staff.values(), ...this.students.values()];
     ppl.forEach((p, i) => {
       p.root.position.set(-7 + i * 2, -1.6, -5);
       p.say('…', 1, false);

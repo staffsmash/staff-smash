@@ -27,6 +27,8 @@ import {
   type Settings,
 } from './settings';
 import { clearSubtitle, prepareSpeech, speechTextures, speechView, updateSubtitle } from './speech';
+import { StaffPick, type PickHost } from './staffpick';
+import { StaffSkills } from './staffskills';
 import { DocTower } from './student/enemies';
 import { StudentMode, type StudentHost } from './student/mode';
 import { loadLogos } from './textures';
@@ -293,8 +295,6 @@ const _r = new THREE.Vector3();
 const _dq = new THREE.Quaternion();
 const _dv = new THREE.Vector3();
 const ZERO = new THREE.Vector3();
-/** 교직원 모드 주인공 이름 (조력자가 부르는 이름) */
-const STAFF_NAME = '김국제';
 
 const blankCounts = (): Record<Kind, number> => ({ mail: 0, bulk: 0, phone: 0, bubble: 0, bomb: 0, boss: 0 });
 const isBoss = (e: Enemy) => e.kind === 'boss';
@@ -428,6 +428,14 @@ class Game implements Ctx {
   props!: Props;
   /** 조력자 이벤트 (helpers.ts) */
   rescue!: Rescue;
+  /** 교직원 모드 고르기: 주인공·필살기 (staffpick.ts) */
+  readonly pick = new StaffPick(this.pickHost());
+  /** 교직원 필살기 가운데 전체 공지 발송 말고 셋 (staffskills.ts) */
+  private readonly skills = new StaffSkills(this, () => {
+    this.clampToBounds();
+    for (const o of this.world.obstacles) this.pushOut(o);
+    for (const o of this.props.solids) this.pushOut(o);
+  });
   private seen = new Set<string>();
   private last = performance.now();
   private viewmodel = new THREE.Group();
@@ -680,6 +688,7 @@ class Game implements Ctx {
       overlay: (html) => this.overlay(html),
       hideOverlay: () => this.hideOverlay(),
       showTitle: () => this.showTitle(),
+      showStaff: () => this.pick.show(),
       toTitle: () => {
         this.resetRun();
         this.showTitle();
@@ -722,8 +731,8 @@ class Game implements Ctx {
       get area() {
         return g.area;
       },
-      playerName: () => (g.mode === 'student' ? g.stu.heroName : STAFF_NAME),
-      heroId: () => g.stu.heroId,
+      playerName: () => (g.mode === 'student' ? g.stu.heroName : g.pick.hero.name),
+      heroId: () => (g.mode === 'student' ? g.stu.heroId : g.pick.hero.id),
       note: (text, time) => g.note(text, time),
       hint: (key, text, time) => g.hint(key, text, time),
       banner: (title, sub) => g.banner(title, sub),
@@ -731,6 +740,32 @@ class Game implements Ctx {
       spawnPickup: (kind, x, z) => g.spawnPickup(kind, x, z),
       equip: (id) => g.equip(id),
       rescueHit: () => g.rescueHit(),
+    };
+  }
+
+  /** 교직원 선택 화면(staffpick.ts)이 빌려 쓰는 Game 안쪽 기능 */
+  private pickHost(): PickHost {
+    const g = this;
+    return {
+      touch: TOUCH,
+      get title() {
+        return g.phase === 'title';
+      },
+      get diff() {
+        return g.settings.diff;
+      },
+      get sleeve() {
+        return g.viewmodel.children[0] as THREE.Mesh;
+      },
+      overlay: (html) => g.overlay(html),
+      showTitle: () => g.showTitle(),
+      showStudent: () => g.stu.showSelect(),
+      showSettings: () => g.showSettings('title'),
+      bindDiff: (root) => bindSettings(root, g.settings, (key) => g.applySetting(key)),
+      begin: () => {
+        g.mode = 'staff';
+        g.start();
+      },
     };
   }
 
@@ -762,6 +797,8 @@ class Game implements Ctx {
       unlock();
       // 타이틀·학생 선택 화면의 모드 키(1·2·Enter), 학생 엔딩 건너뛰기
       if (this.stu.key(e)) return;
+      // 교직원 선택 화면 (방향키·Enter·Esc·2)
+      if (this.pick.key(e)) return;
       this.keys.add(e.code);
       if (e.code === 'Space' && this.phase === 'play') e.preventDefault();
       if (e.repeat) return;
@@ -978,35 +1015,22 @@ class Game implements Ctx {
     $('overlay').hidden = true;
   }
 
-  private diffSeg(): string {
-    return (Object.keys(DIFFS) as DiffKey[])
-      .map((k) => `<button type="button" data-diff="${k}" class="${this.settings.diff === k ? 'on' : ''}" aria-pressed="${this.settings.diff === k}">${DIFFS[k].label}</button>`)
-      .join('');
-  }
-
+  /** 시작 화면: 로고 · 제목 · 모드 단추 둘(교직원 → 교직원 선택 화면 staffpick.ts, 학생 → 학생 선택 화면) · 설정·기록판·2D 본편 */
   private showTitle(): void {
     this.phase = 'title';
-    const ctl = TOUCH
-      ? '왼쪽 화면 끌기 이동 · 오른쪽 화면 끌기 시점 · 빨간 버튼 도장(누른 채 끌면 조준) · 파란 버튼 점프 · 노란 버튼 필살기'
-      : '이동 WASD · 달리기 Shift · 점프 Space · 시점 마우스 · 도장 던지기 클릭 · 필살기 Q · 소리 M';
     const o = this.overlay(`
-      <div class="panel">
+      <div class="panel title">
         <img class="emblem" src="hufs/emblem-mono.png" alt=""> <img class="type" src="hufs/hufs-type.png" alt="HUFS">
-        <h1>STAFF SMASH <span class="tag">1인칭 시험판</span></h1>
-        <p class="big">오후 4시 52분, 본관 앞</p>
-        <p>퇴근 8분 전, 민원이 몰려옵니다. 도장으로 처리하고 결재를 받으세요.<br>김총괄 → 김보고 처장 → 오검토 처장 → 최몰라 처장 → 회의소집 부총장 → 총장 프레지던트 캉</p>
-        <p class="ctl">${ctl}</p>
-        <div class="srow center"><span class="slabel">난이도</span><div class="seg" role="group" aria-label="난이도">${this.diffSeg()}</div></div>
-        <p class="best">최고 기록 ${bestLine(this.settings.diff)}</p>
+        <h1>STAFF SMASH</h1>
         ${this.stu.modeButtons()}
-        <button id="setBtn" class="ghost" type="button">설정</button>
-        <a class="btn" href="./">본편(2D)으로</a>
-        <p class="foot">비공식 게임 · 닉네임 기록판</p>
+        <div class="tlinks"><button id="setBtn" type="button">설정</button><a href="./">2D 본편</a></div>
+        <p class="foot">비공식</p>
       </div>`);
-    bindSettings(o, this.settings, (key) => this.applySetting(key));
     this.stu.bindTitle();
     $('setBtn').addEventListener('click', () => this.showSettings('title'));
+    // 기록판 단추(board.ts)는 설정 다음 자리로
     addBoardButton(o);
+    $('setBtn').after($('boardBtn'));
   }
 
   private showSettings(from: 'title' | 'pause'): void {
@@ -1048,6 +1072,9 @@ class Game implements Ctx {
     }
     if (this.phase === 'title') {
       this.runDiff = this.settings.diff;
+      // 고른 교직원의 팔·이름 (학생 모드면 덧댄 것만 감춘다), 지난 판 필살기 연출 정리
+      this.pick.dress(this.mode === 'staff');
+      this.skills.clear();
       if (this.mode === 'student') this.stu.begin();
       else {
         this.mids = buildMidPeople();
@@ -1940,7 +1967,7 @@ class Game implements Ctx {
     return false;
   }
 
-  // ---------- 필살기: 전체 공지 발송 ----------
+  // ---------- 필살기: 전체 공지 발송 (교직원은 고른 업무 스킬, staffskills.ts) ----------
 
   special(): void {
     if (this.phase !== 'play' || this.sp < SP_MAX) return;
@@ -1949,25 +1976,31 @@ class Game implements Ctx {
     this.sp = 0;
     this.spReadyShown = false;
     this.sound('special');
-    // 학생 모드: 고른 외국어 주문 (효과는 같다)
+    // 학생 모드: 고른 외국어 주문 (효과는 같다). 교직원 모드: 고른 업무 스킬 (2D와 같은 띠)
+    const skill = this.pick.skill;
     if (this.mode === 'student') this.stu.castSpell();
-    else this.banner('전체 공지 발송!', '수신: 화면 안 모든 민원 · 회신 불필요');
+    else this.banner(skill.banner, skill.sub);
     const col = this.mode === 'student' ? this.stu.spellColor : 0xf5c542;
     this.flashT = 0.45;
     if (!this.settings.calm) this.fovKick = 1;
     this.swing = 1;
     const fwd = _w.set(-Math.sin(this.yaw), 0, -Math.cos(this.yaw));
-    this.fx.spray(_v.set(this.pos.x, EYE - 0.1, this.pos.z).addScaledVector(fwd, 3.5), fwd, 110, 30, 1.2, col);
-    this.fx.ring(this.pos.x, 0.08, this.pos.z, 1, 36, 0.8, col);
-    for (const e of this.enemies) {
-      if (!e.targetable) continue;
-      const dx = e.center.x - this.pos.x;
-      const dz = e.center.z - this.pos.z;
-      const d = Math.hypot(dx, dz);
-      if (d > 50) continue;
-      const cos = d > 0.01 ? (dx * fwd.x + dz * fwd.z) / d : 1;
-      if (cos < 0.34 && d > 3.5) continue;
-      e.noticeT = 0.05 + d / 45;
+    if (this.mode === 'staff' && skill.id !== 'notice') {
+      // 일괄 처리·규정집 낙하·내선 돌리기 (맞는 규칙은 전체 공지 발송과 같다: noticeT → noticeHit)
+      this.skills.cast(skill.id, fwd);
+    } else {
+      this.fx.spray(_v.set(this.pos.x, EYE - 0.1, this.pos.z).addScaledVector(fwd, 3.5), fwd, 110, 30, 1.2, col);
+      this.fx.ring(this.pos.x, 0.08, this.pos.z, 1, 36, 0.8, col);
+      for (const e of this.enemies) {
+        if (!e.targetable) continue;
+        const dx = e.center.x - this.pos.x;
+        const dz = e.center.z - this.pos.z;
+        const d = Math.hypot(dx, dz);
+        if (d > 50) continue;
+        const cos = d > 0.01 ? (dx * fwd.x + dz * fwd.z) / d : 1;
+        if (cos < 0.34 && d > 3.5) continue;
+        e.noticeT = 0.05 + d / 45;
+      }
     }
     for (const s of this.sheets) {
       if (!s.on) continue;
@@ -2519,7 +2552,7 @@ class Game implements Ctx {
       this.showTitle();
     });
     // 닉네임 기록판 (src/fps/board.ts)
-    attachRecordForm(o, { mode: 'fps-staff', stage: this.areaStats.length, cleared: false, elapsed: this.elapsed, hero: '김국제', diff: this.runDiff, clockMin: START_CLOCK + this.elapsed / 60 + this.penaltyMin });
+    attachRecordForm(o, { mode: 'fps-staff', stage: this.areaStats.length, cleared: false, elapsed: this.elapsed, hero: this.pick.hero.name, diff: this.runDiff, clockMin: START_CLOCK + this.elapsed / 60 + this.penaltyMin });
   }
 
   /** 근무평정: 처리 시간 40 + 받은 민원 피해 30 + 명중률 30 (본편 2D와 같은 S~D 구간) */
@@ -2583,7 +2616,7 @@ class Game implements Ctx {
       this.showTitle();
     });
     // 닉네임 기록판 (src/fps/board.ts)
-    attachRecordForm(o, { mode: 'fps-staff', stage: this.areaStats.length, cleared: true, elapsed: this.elapsed, hero: '김국제', diff: this.runDiff, clockMin: clock });
+    attachRecordForm(o, { mode: 'fps-staff', stage: this.areaStats.length, cleared: true, elapsed: this.elapsed, hero: this.pick.hero.name, diff: this.runDiff, clockMin: clock });
   }
 
   // ---------- 매 프레임 ----------
@@ -2820,6 +2853,8 @@ class Game implements Ctx {
     if (this.rescueDue) this.tryRescue();
     this.rescue.update(dt);
     this.fx.update(dt);
+    // 교직원 필살기: 돌진·떨어지는 규정집·내선 빛줄기 (staffskills.ts)
+    this.skills.update(dt);
   }
 
   /** 민원 차례: 줄을 세워 하나씩 내보내고, 다 처리하면 다음 차례 또는 중간보스 */
@@ -2908,7 +2943,8 @@ class Game implements Ctx {
     this.setStyle('hpbar', 'background', r > 0.5 ? '#5bd16b' : r > 0.25 ? '#f5c542' : '#e5484d');
     this.setStyle('spbar', 'width', `${Math.round(this.sp)}%`);
     const ready = this.sp >= SP_MAX;
-    this.setText('splabel', student ? this.stu.spLabel(ready) : ready ? (TOUCH ? '전체 공지 발송 — 노란 버튼' : '전체 공지 발송 — Q') : '전체 공지 발송');
+    const skillName = this.pick.skill.name;
+    this.setText('splabel', student ? this.stu.spLabel(ready) : ready ? (TOUCH ? `${skillName} — 노란 버튼` : `${skillName} — Q`) : skillName);
     this.setClass('sp', 'ready', ready);
     this.setClass('spBtn', 'ready', ready);
     let wave: string;
