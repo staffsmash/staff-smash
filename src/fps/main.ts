@@ -3,7 +3,7 @@ import { armName, Arms, ARMS, BOOMERANG_TURN, type ArmDef, type ArmId } from './
 import { Sfx, type SfxName } from './audio';
 import type { Rect } from './blocks';
 import { addBoardButton, attachRecordForm } from './board';
-import { BODY_DMG, BOSS_HINTS, BOSS_NAMES, Bogo, Chonggwal, Meeting, PersonBoss, President, SERVER_SPOT, WEAK_DMG } from './bosses';
+import { BODY_DMG, BOSS_HINTS, BOSS_NAMES, Bogo, Chonggwal, Meeting, PersonBoss, President, PRESIDENT_LINES, SERVER_SPOT, WEAK_DMG } from './bosses';
 import { DORM_ENTER_Z, FIELD_GATE_X, GATE_Z0, GATE_Z1, HUM_DOOR, HUM_ENTER_X, PATH3_GUIDE, DORM_DOOR, type Stage } from './campus';
 import { Bomb, Bubble, Mail, Phone, type Ctx, type Enemy, type HurtKind, type Kind, type SheetKind } from './enemies';
 import { FIELD_ENTER_Z, FC } from './field';
@@ -625,6 +625,7 @@ class Game implements Ctx {
     // 보스 대사 그림도 미리 만든다 (처음 말할 때 끊기지 않게)
     prepareSpeech(BOSS_LINES);
     prepareSpeech(MID_LINES);
+    prepareSpeech(PRESIDENT_LINES);
     this.fx.update(0.001);
     this.camera.position.set(0, EYE, 11);
     this.camera.rotation.set(0, 0, 0);
@@ -2121,6 +2122,17 @@ class Game implements Ctx {
     this.sound('hurt', undefined, 0.5);
     this.buzz(30);
     return true;
+  }
+
+  /** 달려온 보스와 부딪혔다: (dx, dz)만큼 밀리고 slow초 이상 느려진다 (bossmove.ts가 몇 프레임에 나눠 부른다) */
+  shove(dx: number, dz: number, slow: number): void {
+    if (this.phase !== 'play' || this.stage === 'done') return;
+    this.pos.x += dx;
+    this.pos.z += dz;
+    this.clampToBounds();
+    for (const o of this.world.obstacles) this.pushOut(o);
+    for (const o of this.props.solids) this.pushOut(o);
+    this.slow = Math.max(this.slow, slow);
   }
 
   jump(): void {

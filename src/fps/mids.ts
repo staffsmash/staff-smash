@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { assignStudentNames, TYPE_LABEL } from '../data/names';
 import { lambert, type Rect } from './blocks';
+import type { Roam } from './bossmove';
 import { PersonBoss } from './bosses';
 import { DORM_DOOR, HUM_DOOR } from './campus';
 import type { Ctx, Enemy } from './enemies';
@@ -339,6 +340,11 @@ export class StaffMid extends PersonBoss {
     this.note = info.note;
     this.lureT = easy ? 3.2 : 2.4;
     this.gimmickT = mid === 'deadline' ? 2.2 : 3.2;
+    // 전화번호 학생은 원래 사라졌다 나타나고, 마감 학생은 원래 돌진한다: 공통 움직임의 같은 기술은 끈다
+    if (this.mover) {
+      this.mover.vanish = mid !== 'wrongNumber';
+      this.mover.rush = mid !== 'deadline';
+    }
     for (const m of mp.notices) m.visible = false;
     if (mp.sheet) mp.sheet.visible = true;
     if (mid === 'presidentMail') {
@@ -361,6 +367,18 @@ export class StaffMid extends PersonBoss {
 
   get targetable(): boolean {
     return super.targetable && !this.hidden;
+  }
+
+  /**
+   * 공통 움직임: 서성일 때는 모두, 기믹·서류를 든 동안은 옆걸음만 (총장실 메일 학생은 메일을 쓰면서도),
+   * 숨어 있을 때·돌진할 때·서명지를 주우러 갈 때는 그대로
+   */
+  roam(): Roam {
+    const r = super.roam();
+    if (r !== 'all' || this.sub === 'walk') return r;
+    if (this.sub === 'lure' || this.sub === 'stun') return 'step';
+    if (this.sub === 'act') return this.mid === 'wrongNumber' || (this.mid === 'deadline' && this.cycle % 3 === 2) ? 'none' : 'step';
+    return 'none';
   }
 
   /** HUD에 덧붙이는 글 (2D bossExtra): 마감 시계·안내문 */
