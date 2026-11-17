@@ -99,19 +99,25 @@ const LOOK_TOUCH = 0.006;
 /** 구역: 0 본관 앞 → 1 사회과학관 앞 → 2 인문과학관 앞 → 3 국제학사 앞 → 4 대운동장 → 5 해 질 녘 본관 앞(총장) */
 const AREA_NAMES = ['본관 앞', '사회과학관 앞', '인문과학관 앞', '국제학사 앞', '대운동장', '해 질 녘 본관 앞'];
 
-/** note = 메신저 쪽지 알림 떼, fax = 팩스기 (mobs.ts, 사회과학관 앞부터) */
+/** note = 메신저 쪽지 알림 떼, fax = 팩스기 (mobs.ts, 본관 앞부터) */
 type SpawnKind = 'mail' | 'bulk' | 'phone' | 'bubble' | 'bomb' | 'note' | 'fax';
 type Wave = Partial<Record<SpawnKind, number>>;
 
-/** 구역에 들어서면 몰려오는 민원 차례 (본관 앞 셋, 인문과학관 앞·국제학사 앞 하나씩. 나머지는 중간보스부터) */
+/**
+ * 구역에 들어서면 몰려오는 민원 차례 (본관 앞 셋, 나머지 구역은 하나씩 — 끝나면 중간보스).
+ * 새 잡몹(메신저 쪽지 알림 떼·팩스기)은 본관 앞부터 섞인다 (사용자 2026-11-17 "더 시작부터").
+ * 사회과학관 앞·대운동장의 짧은 첫 차례는 예산팀 직원이 나올 자리이기도 하다 (budget.ts는 민원 차례 중에만 온다).
+ */
 const AREA_WAVES: Record<number, Wave[]> = {
   0: [
-    { mail: 5, phone: 1 },
-    { mail: 6, bulk: 1, bubble: 2, phone: 1 },
-    { mail: 6, bulk: 2, bubble: 2, bomb: 2, phone: 2 },
+    { mail: 5, phone: 1, note: 1 },
+    { mail: 6, bulk: 1, bubble: 2, phone: 1, fax: 1 },
+    { mail: 6, bulk: 2, bubble: 2, bomb: 2, phone: 2, note: 1, fax: 1 },
   ],
+  1: [{ mail: 3, bubble: 1, phone: 1, note: 1, fax: 1 }],
   2: [{ mail: 3, bubble: 2, phone: 1, note: 1, fax: 1 }],
   3: [{ mail: 3, bulk: 1, bomb: 2, phone: 1, note: 1, fax: 1 }],
+  4: [{ mail: 3, bubble: 1, bomb: 1, note: 1, fax: 1 }],
 };
 
 /** 구역마다 중간보스 (민원 학생) */
@@ -260,7 +266,7 @@ interface Pickup {
   item: THREE.Group;
   ttl: number;
   t: number;
-  /** 자판기 왕돈가스: 체력 모두 회복 (vending.ts) */
+  /** 자판기 치킨돈가스: 체력 모두 회복 (vending.ts) */
   full?: boolean;
 }
 
@@ -1398,7 +1404,7 @@ class Game implements Ctx {
     this.stage = 'plaza';
     this.bounds = [this.world.plaza];
     this.world.arrows.visible = false;
-    this.startMid();
+    this.startWaves(1);
   }
 
   private showBossBar(name: string): void {
@@ -1493,7 +1499,7 @@ class Game implements Ctx {
     // 철망 문 안쪽에 간식 두 개
     this.spawnPickup(this.hp <= 6 ? 'donkatsu' : 'gimbap', 131, 63.5);
     this.spawnPickup('americano', 131, 68.5);
-    this.startMid();
+    this.startWaves(4);
   }
 
   /** 부총장 결재 뒤: 구역 카드 → 화면이 어두워졌다가 해 질 녘 본관 앞으로 */
@@ -1802,7 +1808,7 @@ class Game implements Ctx {
     return { x, z };
   }
 
-  /** full: 자판기 왕돈가스 (체력 모두 회복, vending.ts) */
+  /** full: 자판기 치킨돈가스 (체력 모두 회복, vending.ts) */
   spawnPickup(kind: FoodKind, x: number, z: number, full = false): void {
     const { obj, item } = this.models.food(kind, this.mode === 'student');
     if (full) dressFull(obj, item, this.models);
@@ -1832,9 +1838,9 @@ class Game implements Ctx {
 
   private collect(p: Pickup): void {
     if (p.full) {
-      // 자판기 왕돈가스 (vending.ts)
+      // 자판기 치킨돈가스 (vending.ts)
       this.hp = MAX_HP;
-      this.note('학식 왕돈가스! 체력 모두 회복');
+      this.note('학식 치킨돈가스! 체력 모두 회복');
     } else if (p.kind === 'ticket' && this.mode === 'staff') {
       // 교직원: 식권은 모아서 자판기에 넣는다 (vending.ts). 체력 회복 없음
       this.vend.addTicket();
@@ -2833,8 +2839,10 @@ class Game implements Ctx {
         this.stu.step(dt);
         break;
       case 'yard':
+      case 'plaza':
       case 'hum':
       case 'dorm':
+      case 'field':
         if (this.fight === 'wave') this.stepWave(dt);
         break;
       case 'yardClear':
@@ -2985,9 +2993,9 @@ class Game implements Ctx {
         this.spawnAreaBoss();
       }
     }
-    // 민원 차례가 없는 사회과학관 앞·대운동장: 중간보스·보스와 싸우는 동안 새 잡몹(메신저 쪽지 알림 떼·팩스기)이 가끔 섞인다 (mobs.ts)
+    // 다섯 구역 모두: 중간보스·보스와 싸우는 동안 새 잡몹(메신저 쪽지 알림 떼·팩스기)이 가끔 섞인다 (mobs.ts, 총장전 제외)
     const a = areaOf(this.stage);
-    const tk = this.mobs.trickle(dt, (a === 1 || a === 4) && (this.fight === 'mid' || this.fight === 'boss'), this.minions());
+    const tk = this.mobs.trickle(dt, a <= 4 && (this.fight === 'mid' || this.fight === 'boss'), this.minions());
     if (tk) this.spawnKind(tk, true);
     const b = this.boss;
     if (b instanceof StaffMid && b.penalty > 0) {

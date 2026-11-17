@@ -11,14 +11,14 @@ import { canvasTex, FONT, NAVY } from './textures';
 // - 구역마다(상자가 있는 곳: 본관 앞·사회과학관 앞·인문과학관 앞·국제학사 앞·대운동장·해 질 녘 본관 앞) 자판기 1대.
 //   남색 몸체, 앞면에 "자판기", 단추·투입구·꺼내는 곳. 걸어서 지나가지 못하고 도장도 막힌다. 상자처럼 길이 열리면 다음 구역 것도 보인다.
 // - 가까이에서 바라보고 E(터치: 가까이 가면 나타나는 "넣기" 단추) → 식권 1장 → 자판기 앞에 무작위 아이템 하나 (무기는 없다).
-//   체력이 낮을수록 음식(삼각김밥·학식 돈가스)이 잘 나오고, 가끔 체력을 모두 채우는 학식 왕돈가스가 나온다.
+//   체력이 낮을수록 음식(삼각김밥·학식 돈가스)이 잘 나오고, 가끔 체력을 모두 채우는 학식 치킨돈가스가 나온다.
 //   식권이 없으면 "식권이 없습니다". E는 경비원 인사와 같은 키라서 경비원 앞에서는 경비원이 먼저다 (둘은 멀리 떨어져 있다).
 
 /** Game에서 그대로 쓰는 것 (Game이 이 모양에 맞는다) */
 export interface VendGame {
   readonly hp: number;
   readonly props: { readonly near: boolean };
-  /** full: 체력 모두 회복 (자판기 왕돈가스) */
+  /** full: 체력 모두 회복 (자판기 치킨돈가스) */
   spawnPickup(kind: FoodKind, x: number, z: number, full?: boolean): void;
 }
 
@@ -43,7 +43,7 @@ const HW = 0.55;
 const HD = 0.43;
 const HH = 2.05;
 const NEAR = 2.9;
-const FULL_LABEL = '학식 왕돈가스';
+const FULL_LABEL = '학식 치킨돈가스';
 /** 음식이 아닌 것 (무기는 없다) */
 const OTHERS: FoodKind[] = ['americano', 'battery', 'shield', 'shuttle', 'capture', 'seal'];
 
@@ -98,7 +98,7 @@ export class Vending {
       h.scene.add(obj);
       this.machines.push({ place, obj, x: s.at[0], z: s.at[1], fx: Math.sin(yaw), fz: Math.cos(yaw) });
     }
-    // 왕돈가스 이름표는 미리 만든다
+    // 치킨돈가스 이름표는 미리 만든다
     h.models.label(FULL_LABEL, '#ffe066');
     this.hudEl = document.getElementById('tickets') as HTMLElement;
     this.hintEl = document.getElementById('vendHint') as HTMLElement;
@@ -135,7 +135,7 @@ export class Vending {
     }
   }
 
-  /** 뽑기: 체력이 낮을수록 음식, 가끔 왕돈가스. 무기는 없다 (hpRatio: 시험용) */
+  /** 뽑기: 체력이 낮을수록 음식, 가끔 치킨돈가스. 무기는 없다 (hpRatio: 시험용) */
   draw(hpRatio = this.g.hp / this.maxHp): { kind: FoodKind; full: boolean } {
     const low = 1 - Math.max(0, Math.min(1, hpRatio));
     const r = Math.random();
@@ -289,7 +289,7 @@ export class Vending {
   }
 }
 
-/** 자판기 왕돈가스 모양: 돈가스를 크게, 이름표를 "학식 왕돈가스"로 (Game.spawnPickup) */
+/** 자판기 치킨돈가스 모양: 돈가스를 크게, 이름표를 "학식 치킨돈가스"로 (Game.spawnPickup) */
 export function dressFull(obj: THREE.Group, item: THREE.Group, models: Models): void {
   item.scale.setScalar(1.45);
   const old = obj.children.find((c) => (c as THREE.Sprite).isSprite);
