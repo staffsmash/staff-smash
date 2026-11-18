@@ -5,9 +5,11 @@ import { Person, type Look } from './people';
 import type { PerkHost } from './props';
 import { prepareSpeech } from './speech';
 
-// 1인칭 시험판: 조력자 이벤트 (2026-11-14, 두 모드 공통. 2026-11-15 규칙 바꿈).
-// 구역마다(총장전 포함) 맞아서 체력이 처음 30% 이하로 떨어지면 반드시 한 번 동료·친구 2~3명이 뛰어 들어온다.
-// 한 방에 쓰러질 피해면 체력 1로 버티고 먼저 온다 (Game.hurt). 플레이어가 보는 쪽 앞에서 달려와 화면 안에 선다.
+// 1인칭 시험판: 조력자 이벤트 (2026-11-14, 두 모드 공통. 2026-11-15 규칙 바꿈, 2026-11-18 다시 바꿈).
+// 구역마다(총장전 포함) 맞아서 체력이 처음 30% 이하로 떨어지면 한 번 굴린다 (Rescue.roll):
+// 1·2구역에서 민원에 묻힌 동료·친구를 구했으면 50%, 아무도 못 구했으면 5% (trapped.ts). 맞으면 동료·친구 2~3명이
+// 뛰어 들어온다 (구한 사람이 먼저). 한 방에 쓰러질 피해면 그때 굴려서, 맞으면 체력 1로 버티고 먼저 온다 (Game.hurt).
+// 플레이어가 보는 쪽 앞에서 달려와 화면 안에 선다.
 // - 교직원 모드: 주인공 6명 가운데 고른 사람을 뺀 다섯 명 가운데 (2026-11-17 교직원 고르기, staffpick.ts)
 // - 학생 모드: 고른 주인공을 뺀 학생 주인공들
 // 도착하면 살아 있는 잡몹을 모두 처리하고, 체력 +35%, 2초 무적, 보스(사람·창구 직원)는 결재 진행·설득 +10%
@@ -17,6 +19,17 @@ import { prepareSpeech } from './speech';
 
 const STAFF_IDS: HeroId[] = HEROES.map((h) => h.id);
 const SKIN = 0xf1c7a0;
+/** 체력 30% 아래에서 조력자가 올 확률: 구한 사람이 있으면 / 없으면 (사용자 2026-11-18) */
+export const RESCUE_CHANCE_SAVED = 0.5;
+export const RESCUE_CHANCE_NONE = 0.05;
+
+function shuffle<T>(a: T[]): T[] {
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
 
 /** 부르는 말: 받침이 있으면 "아", 없으면 "야". 끝이 영문자면 한국어로 읽은 소리 (L·M·N·R = 받침) */
 export function vocative(name: string): string {
@@ -103,8 +116,16 @@ export class Rescue {
   /** 띠 아래에 부르는 조력자 이름 */
   private readonly nameOf = new Map<Person, string>();
   private active: Helper[] = [];
-  /** 이번 판에 조력자가 왔던 구역 */
+  /** 이번 판에 조력자를 굴린 구역 (왔든 안 왔든 구역마다 한 번) */
   private used = new Set<string>();
+  /** 이번 판에 민원에 묻혔다가 구한 사람 id (trapped.ts) */
+  readonly saved: string[] = [];
+  /** 이번 판에 민원에 묻힌 사람 id (같은 사람이 두 번 묻히지 않는다) */
+  private trapped = new Set<string>();
+  /** 지금 구조 장면에 나와 있는 사람 (조력자로 뽑지 않는다) */
+  private onStage: string | null = null;
+  /** 마지막 굴림 (시험용): 확률과 결과 */
+  last = { chance: 0, ok: false };
   private t = 0;
   private hitAt = -1;
   private said2 = false;
@@ -134,31 +155,59 @@ export class Rescue {
     return this.active.length > 0;
   }
 
-  /** 이 구역(key)에서 아직 안 왔으면 true (앞 구역 조력자가 아직 걸어 나가는 중이어도 된다 — start가 치운다) */
+  /** 이 구역(key)에서 아직 안 굴렸으면 true (앞 구역 조력자가 아직 걸어 나가는 중이어도 된다 — start가 치운다) */
   canStart(key: string): boolean {
     return !this.used.has(key);
   }
 
-  /** 조력자 출발 (Game.tryRescue가 부른다) */
-  start(key: string): void {
+  /** 이 구역의 한 번뿐인 굴림: 구한 사람이 있으면 50%, 없으면 5%. 굴리면 그 구역은 끝 (Game.hurt·tryRescue) */
+  roll(key: string): boolean {
+    if (this.used.has(key)) return false;
+    this.used.add(key);
+    const chance = this.saved.length ? RESCUE_CHANCE_SAVED : RESCUE_CHANCE_NONE;
+    const ok = Math.random() < chance;
+    this.last = { chance, ok };
+    return ok;
+  }
+
+  private personOf(id: string): Person | undefined {
+    return this.h.mode === 'student' ? this.students.get(id) : this.staff.get(id);
+  }
+
+  /** 민원에 묻힐 사람 하나 (고른 주인공·이미 묻혔던 사람 빼고). 없으면 null (trapped.ts) */
+  pickTrapped(): { id: string; person: Person; name: string } | null {
+    const h = this.h;
+    const ids = (h.mode === 'student' ? STUDENT_HEROES.map((s) => s.id) : [...STAFF_IDS]).filter((id) => id !== h.heroId() && !this.trapped.has(id));
+    if (!ids.length) return null;
+    const id = ids[Math.floor(Math.random() * ids.length)];
+    const person = this.personOf(id) as Person;
+    this.trapped.add(id);
+    this.onStage = id;
+    return { id, person, name: this.nameOf.get(person) ?? '' };
+  }
+
+  /** 구조 장면이 끝나 무대에서 내려옴 (구했으면 saved에 넣는다) */
+  release(id: string, saved: boolean): void {
+    if (saved && !this.saved.includes(id)) this.saved.push(id);
+    if (this.onStage === id) this.onStage = null;
+  }
+
+  /** 조력자 출발 (Game.tryRescue가 부른다). 구한 사람이 먼저 온다 */
+  start(_key: string): void {
     const h = this.h;
     const student = h.mode === 'student';
     // 앞 구역 조력자가 아직 남아 있으면 바로 치운다
     for (const x of this.active) this.remove(x);
     this.active = [];
-    this.used.add(key);
     this.t = 0;
     this.hitAt = -1;
     this.said2 = false;
     this.lines = rescueLines(student, h.playerName());
-    const pool = student
-      ? STUDENT_HEROES.filter((s) => s.id !== h.heroId()).map((s) => this.students.get(s.id) as Person)
-      : STAFF_IDS.filter((id) => id !== h.heroId()).map((id) => this.staff.get(id) as Person);
-    for (let i = pool.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [pool[i], pool[j]] = [pool[j], pool[i]];
-    }
-    const n = Math.min(pool.length, Math.random() < 0.5 ? 2 : 3);
+    const all = (student ? STUDENT_HEROES.map((s) => s.id) : [...STAFF_IDS]).filter((id) => id !== h.heroId() && id !== this.onStage);
+    const first = shuffle(all.filter((id) => this.saved.includes(id)));
+    const rest = shuffle(all.filter((id) => !this.saved.includes(id)));
+    const pool = [...first, ...rest].map((id) => this.personOf(id) as Person);
+    const n = Math.min(pool.length, Math.max(first.length, Math.random() < 0.5 ? 2 : 3));
     const a = h.area;
     const cx = (x: number) => Math.max(a.minX + 1, Math.min(a.maxX - 1, x));
     const cz = (z: number) => Math.max(a.minZ + 1, Math.min(a.maxZ - 1, z));
@@ -280,6 +329,10 @@ export class Rescue {
     for (const x of this.active) this.remove(x);
     this.active = [];
     this.used.clear();
+    this.saved.length = 0;
+    this.trapped.clear();
+    this.onStage = null;
+    this.last = { chance: 0, ok: false };
     this.hitAt = -1;
   }
 

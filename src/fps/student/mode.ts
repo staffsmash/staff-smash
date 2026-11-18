@@ -89,6 +89,8 @@ export interface StudentHost {
   setDusk(k: number): void;
   /** 화면 오른쪽 아래 팔: 소매·손·도장 묶음 */
   readonly arm: { sleeve: THREE.Mesh; stamp: THREE.Group };
+  /** 친구 구조 장면(trapped.ts)이 안 끝났으면 민원 차례를 끝내지 않는다 */
+  holdWave(): boolean;
 }
 
 const EYE = 1.6;
@@ -478,6 +480,11 @@ export class StudentMode implements StuCtx {
   /** 지금 구역 번호 (0 대운동장 · 1 사회과학관 앞 · 2 본관 앞 · 3 총장실) */
   get areaNo(): number {
     return this.area;
+  }
+
+  /** 지금 민원(행정) 차례 중 (친구 구조 장면은 이때 나온다, trapped.ts) */
+  get inWave(): boolean {
+    return this.flow === 'wave';
   }
 
   /** 구역 카드·화면 전환·엔딩 중 (조력자가 오지 않는다) */
@@ -1235,7 +1242,7 @@ export class StudentMode implements StuCtx {
             this.spawn(this.queue.pop() as Spawn);
             this.spawnT = 0.9;
           }
-        } else if (g.minions() === 0) {
+        } else if (g.minions() === 0 && !this.h.holdWave()) {
           if (this.waveDelay < 0) this.waveDelay = 1.4;
           this.waveDelay -= dt;
           if (this.waveDelay <= 0) this.startStaff2();

@@ -12,7 +12,8 @@ import { Hazards, RING_H } from './hazards';
 import { Rescue } from './helpers';
 import { buildMidPeople, buildNewBossPeople, Gumto, MID_LINES, MID_TEXTS, Molla, ReviewPile, StaffMid, type MidKind, type MidPerson } from './mids';
 import { Models, type FoodKind } from './models';
-import { ClingBubble, DodgeBubble, Fax, MobKit, NoteBadge } from './mobs';
+import { badgeObj, ClingBubble, DodgeBubble, Fax, MobKit, NoteBadge } from './mobs';
+import { PileMob, Trap, type TrapHost } from './trapped';
 import { SEAL_R, SealRolls } from './seal';
 import { AttendQR, DueBadge, stuMobTextures } from './student/mobs';
 import { Person, peopleKit, type Who } from './people';
@@ -84,8 +85,13 @@ const DOWN_SLIDE = 2.2;
 /** 민원이 떨어뜨리는 것 가운데 연차 쿠폰·셔틀버스 시간표·단톡방 공지 캡처·인감 도장이 나올 몫 (각각) */
 const PERK_SHARE = 0.12;
 const PERKS: FoodKind[] = ['shield', 'shuttle', 'capture', 'seal'];
-/** 조력자: 맞아서 체력이 이 비율 이하로 떨어지면 그 구역에서 한 번 반드시 온다 */
+/** 조력자: 맞아서 체력이 이 비율 이하로 떨어지면 그 구역에서 한 번 굴린다 (구한 사람이 있으면 50%, 없으면 5% — helpers.ts) */
 const RESCUE_HP = 0.3;
+/** 보스(사람) 근접 (사용자 2026-11-18): 보스가 이 거리(m) 안에 있을 때 보스 공격에 맞으면 피해 CLOSE_MUL배 */
+const CLOSE_R = 4;
+const CLOSE_MUL = 1.5;
+/** 보스 공격 (잡몹이 아닌 것). 그 밖의 까닭은 맞은 물건이 보스 몸 가까이서 왔을 때만 */
+const BOSS_HURT: ReadonlySet<HurtKind> = new Set<HurtKind>(['wave', 'paper', 'rental', 'meeting', 'packet', 'bigstamp', 'error']);
 const SP_MAX = 100;
 const JUMP_V = 5.4;
 const GRAVITY = 16;
@@ -173,6 +179,7 @@ const HURT_NOTE: Partial<Record<HurtKind, string>> = {
   error: '오류 창에 맞음… (느려짐)',
   note: '메신저 알림 확인 중… (느려짐)',
   fax: '팩스 용지에 맞음… (느려짐)',
+  boss: '부딪혀 밀려남… (느려짐)',
 };
 
 type Phase = 'title' | 'play' | 'paused' | 'clear' | 'over';
@@ -471,6 +478,8 @@ class Game implements Ctx {
   /** 교직원: 예산팀 직원 기절 이벤트 (budget.ts), 식권 자판기 (vending.ts) */
   budget!: Budget;
   vend!: Vending;
+  /** 1·2구역: 민원에 묻힌 동료·친구 구조 장면 (trapped.ts) */
+  trap!: Trap;
   private seen = new Set<string>();
   private last = performance.now();
   private viewmodel = new THREE.Group();
@@ -577,6 +586,7 @@ class Game implements Ctx {
     this.rescue = new Rescue(perk);
     this.budget = new Budget(perk, this, () => areaOf(this.stage));
     this.vend = new Vending(perk, this, MAX_HP);
+    this.trap = new Trap(this.trapHost());
     this.bounds = [this.world.yard];
     this.world.setDusk(0);
     this.warmup();
@@ -743,6 +753,56 @@ class Game implements Ctx {
       buzz: (p) => this.buzz(p),
       setDusk: (k) => (this.dusk = k),
       arm: { sleeve: this.viewmodel.children[0] as THREE.Mesh, stamp: this.handStamp },
+      holdWave: () => this.trap.holds(),
+    };
+  }
+
+  /** 1·2구역 동료·친구 구조 장면(trapped.ts)이 빌려 쓰는 Game 안쪽 기능 */
+  private trapHost(): TrapHost {
+    const g = this;
+    const areaNo = () => (g.mode === 'student' ? g.stu.areaNo : areaOf(g.stage));
+    return {
+      scene: this.scene,
+      get mode() {
+        return g.mode;
+      },
+      get playing() {
+        return g.phase === 'play';
+      },
+      get pos() {
+        return g.pos;
+      },
+      get yaw() {
+        return g.yaw;
+      },
+      get area() {
+        return g.area;
+      },
+      solids: () => [...g.world.obstacles, ...g.props.solids, ...g.vend.solids],
+      areaNo,
+      // 민원 차례 중 (교직원 본관 앞은 2차 민원부터 — 1차는 처음 배우는 차례)
+      waveOk: () => (g.mode === 'student' ? g.stu.inWave : g.fight === 'wave' && (areaOf(g.stage) > 0 || g.wave >= 1)),
+      // 예산팀 직원이 와 있거나 조력자가 뛰어오는 중이거나 멈춰 있으면 기다린다.
+      // 교직원 모드는 예산팀 직원이 이 구역에 다녀간 뒤에 (줄이 다 나왔으면 바로)
+      free: () =>
+        !g.budget.busy &&
+        !g.rescue.busy &&
+        g.freezeT <= 0 &&
+        !g.rescueHeld() &&
+        (g.mode === 'student' || g.budget.shown.includes(areaOf(g.stage)) || g.queue.length === 0),
+      count: () => g.diff.count,
+      addPile: (slot, n, anchor) => {
+        const student = g.mode === 'student';
+        const model = student ? badgeObj(g.mobs.badge('D-1')) : g.models.mail(false).obj;
+        const e = new PileMob(g, model, student ? 'note' : 'mail', anchor, slot, n, student ? 1 : 1.15);
+        g.enemies.push(e);
+        return e;
+      },
+      pickTrapped: () => g.rescue.pickTrapped(),
+      release: (id, saved) => g.rescue.release(id, saved),
+      banner: (title, sub) => g.banner(title, sub),
+      note: (text, time) => g.note(text, time),
+      sound: (name, at, vol) => g.sound(name, at, vol),
     };
   }
 
@@ -1233,6 +1293,7 @@ class Game implements Ctx {
     for (const id of ['stamp1', 'stamp2']) $(id).classList.remove('on');
     this.props.clear();
     this.rescue.clear();
+    this.trap.clear();
     this.budget.clear();
     this.vend.clear();
     this.arms.clear();
@@ -2101,8 +2162,10 @@ class Game implements Ctx {
       return;
     }
     dmg *= this.diff.damage;
-    // 한 방에 쓰러질 피해라도 이 구역에 조력자가 아직 안 왔으면 체력 1로 버티고 조력자가 먼저 온다
-    const save = this.hp - dmg <= 0.001 && this.rescueReady();
+    // 보스(사람) 가까이에서 보스 공격에 맞으면 더 아프다 (달려오기 부딪힘은 따로 1.5 — bossmove.ts)
+    if (this.closeBossHit(from, kind)) dmg *= CLOSE_MUL;
+    // 한 방에 쓰러질 피해면 이 구역 조력자를 그때 굴린다: 오면 체력 1로 버티고 조력자가 먼저 온다
+    const save = this.hp - dmg <= 0.001 && this.rescueReady() && this.rescue.roll(this.rescueKey());
     this.hp = save ? 1 : Math.max(0, this.hp - dmg);
     this.damageTaken += dmg;
     this.invuln = 0.6;
@@ -2126,10 +2189,22 @@ class Game implements Ctx {
       this.gameOver();
       return;
     }
-    if (this.hp <= MAX_HP * RESCUE_HP) {
+    if (save) this.beginRescue();
+    else if (this.hp <= MAX_HP * RESCUE_HP) {
       this.rescueDue = true;
       this.tryRescue();
     }
+  }
+
+  /** 보스(사람·창구 직원)가 CLOSE_R 안에 있고, 맞은 것이 보스 공격이면 true */
+  private closeBossHit(from: THREE.Vector3, kind: HurtKind): boolean {
+    const b = this.boss;
+    if (!b || b.dead || b.state === 'sleep' || kind === 'boss') return false;
+    const o = b.obj.position;
+    if (Math.hypot(o.x - this.pos.x, o.z - this.pos.z) > CLOSE_R) return false;
+    if (BOSS_HURT.has(kind)) return true;
+    // 그 밖의 것(마감 폭발 등)은 보스 몸 가까이서 왔을 때만
+    return Math.hypot(from.x - o.x, from.z - o.z) < 1.8;
   }
 
   // ---------- 조력자 · 무기 ----------
@@ -2152,8 +2227,8 @@ class Game implements Ctx {
   }
 
   /**
-   * 체력 30% 이하: 동료·친구가 반드시 도우러 온다 (구역마다 한 번).
-   * 카드·화면 전환 중이면 기다렸다가 끝나면 온다 (그 사이 체력이 30%를 넘으면 취소). Game.hurt·step이 부른다
+   * 체력 30% 이하: 구역마다 한 번 굴린다 — 1·2구역에서 동료·친구를 구했으면 50%, 못 구했으면 5% (helpers.ts Rescue.roll).
+   * 카드·화면 전환 중이면 기다렸다가 끝나면 굴린다 (그 사이 체력이 30%를 넘으면 취소). Game.hurt·step이 부른다
    */
   private tryRescue(): void {
     if (this.hp <= 0 || this.hp > MAX_HP * RESCUE_HP || !this.rescue.canStart(this.rescueKey())) {
@@ -2162,7 +2237,11 @@ class Game implements Ctx {
     }
     if (!this.rescueReady()) return;
     this.rescueDue = false;
-    // 뛰어 들어오는 동안은 맞지 않는다 (도착하면 2초 무적)
+    if (this.rescue.roll(this.rescueKey())) this.beginRescue();
+  }
+
+  /** 조력자 출발: 뛰어 들어오는 동안은 맞지 않는다 (도착하면 2초 무적) */
+  private beginRescue(): void {
     this.invuln = Math.max(this.invuln, 1.4);
     this.rescue.start(this.rescueKey());
   }
@@ -2959,6 +3038,7 @@ class Game implements Ctx {
     this.vend.update(dt);
     if (this.rescueDue) this.tryRescue();
     this.rescue.update(dt);
+    this.trap.update(dt);
     this.fx.update(dt);
     // 교직원 필살기: 돌진·떨어지는 규정집·내선 빛줄기 (staffskills.ts)
     this.skills.update(dt);
@@ -2972,8 +3052,8 @@ class Game implements Ctx {
         this.spawnKind(this.queue.pop() as SpawnKind);
         this.spawnT = 0.85;
       }
-    } else if (this.minions() === 0 && !this.budget.busy) {
-      // 예산팀 직원이 와 있는 동안은 차례를 끝내지 않는다 (budget.ts)
+    } else if (this.minions() === 0 && !this.budget.busy && !this.trap.holds()) {
+      // 예산팀 직원이 와 있거나 동료 구조 장면이 안 끝났으면 차례를 끝내지 않는다 (budget.ts, trapped.ts)
       if (this.waveDelay < 0) this.waveDelay = 1.6;
       this.waveDelay -= dt;
       if (this.waveDelay <= 0) {
@@ -3071,6 +3151,8 @@ class Game implements Ctx {
       wave = `${ex || `${this.boss.shortName} 민원 처리 중`} · 처리 ${this.processed}건`;
     } else if (this.boss && !this.boss.dead && this.boss.targetable) wave = `${this.boss.bossName} 결재 받는 중 · 처리 ${this.processed}건`;
     else wave = `${places[this.stage]} · 처리 ${this.processed}건`;
+    const ts = this.trap.status();
+    if (ts) wave = `${ts} · ${wave}`;
     this.setText('wave', wave);
     this.setText('buff', this.buffT > 0 ? `아메리카노 ${Math.ceil(this.buffT)}초 · 빨리 던지기` : '');
     // 연차 쿠폰(공결 확인서)·셔틀버스 시간표
