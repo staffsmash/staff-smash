@@ -1,5 +1,6 @@
 // 1인칭 시험판의 효과음. 소리 파일 없이 WebAudio로 그때그때 만든다.
 // 브라우저 정책상 첫 클릭·터치·키 입력 뒤에 AudioContext를 만든다. M으로 끄고 켠다.
+// 2D 본편도 같은 것을 쓴다 (src/sound.ts의 sfx 하나를 두 게임이 같이 쓰고, 배경음악 src/music.ts도 이 AudioContext에 붙는다).
 
 export type SfxName =
   | 'throw'
@@ -23,7 +24,9 @@ export type SfxName =
   | 'weak'
   | 'squeal'
   | 'clear'
-  | 'offwork';
+  | 'offwork'
+  /** 2D 맨손·무기 휘두르기 (짧은 "휙") */
+  | 'swing';
 
 const MUTE_KEY = 'staffsmash.fps.muted';
 
@@ -37,6 +40,8 @@ export class Sfx {
   private master: GainNode | null = null;
   private noise: AudioBuffer | null = null;
   private last = new Map<SfxName, number>();
+  /** AudioContext가 생기거나 소리를 끄고 켤 때 알려 줄 곳 (배경음악) */
+  private listeners: (() => void)[] = [];
 
   constructor() {
     try {
@@ -44,6 +49,20 @@ export class Sfx {
     } catch {
       this.muted = false;
     }
+  }
+
+  /** 지금 쓰는 AudioContext (첫 입력 전에는 null) */
+  get context(): AudioContext | null {
+    return this.ctx;
+  }
+
+  /** AudioContext가 생기거나 소리를 끄고 켤 때 fn을 부른다 */
+  listen(fn: () => void): void {
+    this.listeners.push(fn);
+  }
+
+  private changed(): void {
+    for (const fn of this.listeners) fn();
   }
 
   /** 사용자 입력 안에서 부른다 */
@@ -63,8 +82,19 @@ export class Sfx {
       this.noise = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
       const d = this.noise.getChannelData(0);
       for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+      // iPhone(Safari): 입력 안에서 아주 짧은 무음을 한 번 틀어야 소리가 확실히 풀린다
+      try {
+        const src = this.ctx.createBufferSource();
+        src.buffer = this.ctx.createBuffer(1, 1, this.ctx.sampleRate);
+        src.connect(this.ctx.destination);
+        src.start(0);
+      } catch {
+        /* 무음을 못 틀어도 resume으로 풀린다 */
+      }
+      this.changed();
     }
-    if (this.ctx.state === 'suspended') void this.ctx.resume();
+    // 'interrupted'(iPhone에서 전화·다른 앱 소리로 끊김)도 다시 깨운다
+    if (this.ctx.state !== 'running' && this.ctx.state !== 'closed') void this.ctx.resume().catch(() => undefined);
   }
 
   private get level(): number {
@@ -89,6 +119,7 @@ export class Sfx {
     } catch {
       /* 저장 못 해도 이번 판에는 적용된다 */
     }
+    this.changed();
     return this.muted;
   }
 
@@ -99,7 +130,7 @@ export class Sfx {
     if (!ctx || !out || this.muted || this.volume <= 0.001 || vol <= 0.02) return;
     // 같은 소리가 한 프레임에 겹쳐 커지지 않게
     const now = ctx.currentTime;
-    const gap = name === 'hit' || name === 'throw' ? 0.045 : name === 'tick' ? 0.2 : name === 'wave' ? 0.25 : 0.03;
+    const gap = name === 'hit' || name === 'throw' || name === 'swing' ? 0.045 : name === 'tick' ? 0.2 : name === 'wave' ? 0.25 : 0.03;
     if (now - (this.last.get(name) ?? -1) < gap) return;
     this.last.set(name, now);
     const t = now + 0.005;
@@ -186,6 +217,9 @@ export class Sfx {
       case 'clear':
         [523, 659, 784, 1047].forEach((f, i) => this.tone(t + i * 0.1, 'triangle', f, 0, 0.3, 0.3 * vol));
         this.tone(t + 0.42, 'triangle', 1319, 0, 0.5, 0.22 * vol);
+        break;
+      case 'swing':
+        this.noiseBurst(t, 0.09, 'bandpass', 1400, 3200, 0.22 * vol, 1.8);
         break;
       case 'offwork':
         // 딩·동·댕·동 + 화음

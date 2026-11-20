@@ -9,6 +9,7 @@ import type { GameMode } from '../records';
 import { fadeTo, makeButton } from '../ui/button';
 import { HUFS_KEYS, HUFS_NAVY, hufsImage, loadHufsAssets } from '../hufs';
 import { goAppHome, isApp, titleLeft, titleShown } from '../pwa';
+import { addSoundControls } from '../ui/soundControls';
 
 // 타이틀: 교직원 모드(출근하기)와 학생 모드(등교하기) 중 하나를 고른다.
 // 키보드: Enter·1 = 교직원 모드, 2 = 학생 모드, B = 기록판.
@@ -75,6 +76,8 @@ export class TitleScene extends Phaser.Scene {
 
     // 홈 화면 앱으로 열었을 때만: 왼쪽 위 "처음으로" (두 게임 고르는 첫 화면 app.html)
     if (isApp()) makeButton(this, 68, 30, 108, 32, '처음으로', goAppHome, 0x2a3346);
+    // 오른쪽 위: 배경음악 크기·소리 끄고 켜기
+    addSoundControls(this);
 
     const help = touch
       ? '왼쪽 화면 드래그: 이동   A: 처리·공격   B: 점프   줍기: 무기 줍기·던지기   SP: 필살기'
