@@ -91,6 +91,8 @@ export interface SideHost {
   readonly mode: 'staff' | 'student';
   /** 판이 돌아가는 중 (일시정지·결과 화면이 아님) */
   readonly playing: boolean;
+  /** Boo에게 들려 날아가는 중 (쓰레기·상자를 줍지 않는다) */
+  readonly airborne: boolean;
   /** 잠깐 멈춤 중 (던지지도 먹지도 못한다) */
   readonly frozen: boolean;
   readonly pos: THREE.Vector3;
@@ -552,6 +554,7 @@ export class SideJob {
 
   private stepClean(): void {
     const h = this.h;
+    if (h.airborne) return;
     for (const it of this.trash) {
       if (!it.on) continue;
       const p = it.obj.position;
@@ -571,6 +574,7 @@ export class SideJob {
 
   private stepCarry(): void {
     const h = this.h;
+    if (h.airborne) return;
     if (!this.carrying) {
       for (const it of this.crates) {
         if (!it.on) continue;

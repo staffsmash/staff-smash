@@ -876,6 +876,9 @@ class Game implements Ctx {
       get frozen() {
         return g.freezeT > 0;
       },
+      get airborne() {
+        return g.boo.carrying;
+      },
       get pos() {
         return g.pos;
       },
