@@ -354,3 +354,9 @@ export class Rescue {
     };
   }
 }
+
+/** 주인공 자신의 블록 외형 (조력자와 같은 모양 — Boo가 들고 나는 3인칭 장면, boo.ts) */
+export function heroLook(student: boolean, id: string): Look {
+  if (student) return studentLook(STUDENT_HEROES.find((s) => s.id === id) ?? STUDENT_HEROES[0]);
+  return staffLook(heroById(id).id);
+}

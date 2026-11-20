@@ -23,7 +23,8 @@ export type SfxName =
   | 'weak'
   | 'squeal'
   | 'clear'
-  | 'offwork';
+  | 'offwork'
+  | 'alarm';
 
 const MUTE_KEY = 'staffsmash.fps.muted';
 
@@ -192,6 +193,13 @@ export class Sfx {
         [784, 659, 698, 523].forEach((f, i) => this.tone(t + i * 0.26, 'triangle', f, 0, 0.7, 0.32 * vol));
         [523, 659, 784, 1047].forEach((f) => this.tone(t + 1.15, 'triangle', f, 0, 1.3, 0.2 * vol));
         this.noiseBurst(t + 1.15, 0.8, 'bandpass', 2500, 900, 0.25 * vol, 1.2);
+        break;
+      case 'alarm':
+        // 휴대폰 아침 알람: 삐삐삐삐 네 번 (꿈 엔딩에서 점점 크게 되풀이한다)
+        for (let i = 0; i < 4; i++) {
+          this.tone(t + i * 0.12, 'square', 1760, 0, 0.07, 0.13 * vol);
+          this.tone(t + i * 0.12, 'sine', 880, 0, 0.07, 0.1 * vol);
+        }
         break;
     }
   }

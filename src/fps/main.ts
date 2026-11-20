@@ -44,6 +44,7 @@ import { buildWorld, type World } from './world';
 import { Budget } from './budget';
 import { dressFull, Vending } from './vending';
 import { Boo, type BooHost } from './boo';
+import { playDream } from './dream';
 
 // Staff Smash: HUFS 1인칭 시험판 (v4).
 // 본관 앞에서 세 차례 몰려오는 민원(메일·전화기·말풍선·서류 뭉치)을 도장으로 처리하고,
@@ -873,8 +874,9 @@ class Game implements Ctx {
       get playing() {
         return g.phase === 'play';
       },
+      // Boo가 들고 나는 동안은 구경만 한다: 아이템(F·R)도 못 쓴다 (boo.ts)
       get frozen() {
-        return g.freezeT > 0;
+        return g.freezeT > 0 || g.boo.carrying;
       },
       get airborne() {
         return g.boo.carrying;
@@ -943,6 +945,13 @@ class Game implements Ctx {
       get eyeY() {
         return EYE + g.jumpY;
       },
+      get feetY() {
+        return g.jumpY;
+      },
+      get student() {
+        return g.mode === 'student';
+      },
+      heroId: () => (g.mode === 'student' ? g.stu.heroId : g.pick.hero.id),
       get yaw() {
         return g.yaw;
       },
@@ -2281,7 +2290,8 @@ class Game implements Ctx {
   // ---------- 필살기: 전체 공지 발송 (교직원은 고른 업무 스킬, staffskills.ts) ----------
 
   special(): void {
-    if (this.phase !== 'play' || this.sp < SP_MAX) return;
+    // Boo가 들고 나는 동안은 구경만 한다 (boo.ts)
+    if (this.phase !== 'play' || this.sp < SP_MAX || this.boo.carrying) return;
     const s = this.stage;
     if (s !== 'yard' && s !== 'yardBoss' && s !== 'plaza' && s !== 'hum' && s !== 'dorm' && s !== 'field' && s !== 'final') return;
     this.sp = 0;
@@ -2520,7 +2530,8 @@ class Game implements Ctx {
   }
 
   fire(): void {
-    if (this.cooldown > 0 || this.phase !== 'play' || this.freezeT > 0) return;
+    // Boo가 들고 나는 동안은 구경만 한다 (boo.ts)
+    if (this.cooldown > 0 || this.phase !== 'play' || this.freezeT > 0 || this.boo.carrying) return;
     // 손에 든 무기가 있으면 그 무기를 던진다 (arms.ts)
     const arm = this.arms.def;
     const fast = this.buffT > 0;
@@ -2964,6 +2975,16 @@ class Game implements Ctx {
     };
   }
 
+  /** 꿈 엔딩 (dream.ts): 알람이 울리고 "…꿈이었다." — 끝나거나 건너뛰면 결과 화면 */
+  private dream(): void {
+    // 판은 멈추고(학생 엔딩처럼 'paused'), 일시정지 화면은 띄우지 않는다
+    this.phase = 'paused';
+    this.firing = false;
+    this.keys.clear();
+    document.exitPointerLock?.();
+    playDream({ canvas: this.renderer.domElement, beep: (vol) => this.sfx.play('alarm', vol) }, () => this.finish());
+  }
+
   private finish(): void {
     this.phase = 'clear';
     this.firing = false;
@@ -2982,6 +3003,7 @@ class Game implements Ctx {
     const o = this.overlay(`
       <div class="panel result">
         <h1><img class="emblem inline" src="hufs/emblem-mono.png" alt=""> 퇴근 승인! 오늘 업무 끝</h1>
+        <p class="dreamrec" style="margin: -2px 0 6px; font-size: 15px; color: #c9d3e6">(꿈속 기록)</p>
         <p class="big">${clockText(clock)} 퇴근 · ${offText}</p>
         <div class="sheet">
           <div class="grade g-${g.grade}"><small>근무평정</small>${g.grade}</div>
@@ -3026,6 +3048,10 @@ class Game implements Ctx {
       this.camera.rotation.y += (Math.random() - 0.5) * a;
       this.camera.rotation.z = (Math.random() - 0.5) * a * 0.6;
     }
+    // Boo가 들고 나는 동안은 3인칭: 카메라를 뒤 위로 빼고 1인칭 팔·도장·조준점을 숨긴다 (boo.ts)
+    const tp = this.boo ? this.boo.view(this.camera) : 0;
+    this.viewmodel.visible = tp <= 0;
+    this.setStyle('cross', 'opacity', tp > 0 ? '0' : '');
     // 도장 휘두르기
     // 팔을 앞으로 밀며 도장 머리를 숙인다 (소매가 화면을 가리지 않게)
     this.swing = Math.max(0, this.swing - dt * 5);
@@ -3195,7 +3221,7 @@ class Game implements Ctx {
         }
         if (this.doneT <= 3.3 && !$('stamp2').classList.contains('on')) this.bigStamp(2);
         if (this.doneT <= 0) {
-          this.finish();
+          this.dream();
           return;
         }
         break;

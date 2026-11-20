@@ -378,7 +378,7 @@ export class StudentEndingScene extends Phaser.Scene {
       ['Three Party Problem', '14px', '#c9d3e6'],
       ['배경은 서울캠퍼스 실제 건물을 블록으로 그렸습니다 · 로고: 한국외국어대학교 UI', '13px', '#c9d3e6'],
       ['', '10px', '#ffffff'],
-      ['Enter 또는 화면을 눌러 기록 남기기', '18px', '#f5c542'],
+      ['Enter 또는 화면을 눌러 이름 남기기', '18px', '#f5c542'],
     ];
     let y = 100;
     for (const [text, size, color] of lines) {

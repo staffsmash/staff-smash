@@ -92,7 +92,7 @@ export class RecordScene extends Phaser.Scene {
         .setOrigin(0.5);
     }
 
-    makeButton(this, cx - 120, 440, 220, 50, '기록 남기기 (Enter)', () => this.submit(false), 0x2f8f4e);
+    makeButton(this, cx - 120, 440, 220, 50, '이름 남기기 (Enter)', () => this.submit(false), 0x2f8f4e);
     makeButton(this, cx + 120, 440, 200, 50, '건너뛰기 (Esc)', () => this.submit(true), 0x6b7280);
     this.add
       .text(cx, GAME_H - 16, '건너뛰어도 플레이 수 집계를 위해 닉네임 없이 결과만 익명으로 남습니다', {

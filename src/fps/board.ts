@@ -464,7 +464,7 @@ export function addBoardButton(root: HTMLElement): void {
   b.addEventListener('click', () => openBoard());
 }
 
-/** 결과 화면(성공·실패 모두)에 닉네임 칸과 "기록 남기기" 단추를 넣는다 */
+/** 결과 화면(성공·실패 모두)에 닉네임 칸과 "이름 남기기" 단추를 넣는다 */
 export function attachRecordForm(root: HTMLElement, r: FpsResult): void {
   const panel = (root.querySelector('.panel') as HTMLElement | null) ?? root;
   // 결과 화면이 뜨자마자 서버에 물어 둔다 (새 서버인지 + 순위)
@@ -474,7 +474,7 @@ export function attachRecordForm(root: HTMLElement, r: FpsResult): void {
   box.innerHTML = `
     <div class="frec-row">
       <input id="frecName" type="text" maxlength="12" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="done" placeholder="닉네임 (비우면 익명)" aria-label="기록판 닉네임">
-      <button id="frecGo" type="button">기록 남기기</button>
+      <button id="frecGo" type="button">이름 남기기</button>
     </div>
     <p class="frec-note">실명·학번은 쓰지 마세요 · 닉네임 2~8자, 비우면 익명(순위 없이 플레이 수만)</p>
     <p class="frec-msg" aria-live="polite"></p>`;
