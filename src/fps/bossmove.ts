@@ -90,8 +90,8 @@ const RISE_T = 0.32;
 /** 숨은 동안 쓰는 깊이 (모형 배율 곱하기) */
 const SINK_D = 2.6;
 const PUSH_T = 0.22;
-/** 달려오기에 부딪혔을 때 피해 (난이도 배율 전) */
-const RUSH_DMG = 1.5;
+/** 달려오기에 부딪혔을 때 피해 (난이도 배율 전. 사용자 2026-11-20 1.5→4: 중급 4칸·고급 ×1.4 = 5.6칸, 체력 10칸 기준) */
+const RUSH_DMG = 4;
 const RECOVER_T = 0.38;
 const DUST = 0x9a8f80;
 
@@ -464,7 +464,8 @@ export class BossMove {
     c.sound('hit', c.eye, 1);
     c.quake(0.5, c.eye);
     c.fx.confetti(_v.copy(c.eye).setY(c.eye.y - 0.4), 10, 3, DUST, 1.2, 0.6);
-    // 부딪히면 체력도 닳는다 (사용자 2026-11-18, 난이도 피해 배율은 Game.hurt가 곱한다)
+    // 부딪히면 체력도 닳는다 (사용자 2026-11-18, 2026-11-20 4칸. 난이도 피해 배율은 Game.hurt가 곱하고, 근접 배율은 kind 'boss'라 안 곱한다).
+    // 한 번 달려올 때 한 번만 (this.hit), 맞은 뒤 0.6초 무적 (Game.hurt)
     c.hurt(RUSH_DMG, _v.set(o.x, 1.2, o.z), 'boss');
   }
 
