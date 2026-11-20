@@ -38,9 +38,9 @@ export class TitleScene extends Phaser.Scene {
     hufsImage(this, HUFS_KEYS.line, cx, 470, { h: 300, alpha: 0.07, tint: 0xffffff });
 
     this.add
-      .text(cx, 84, 'STAFF SMASH', {
+      .text(cx, 84, 'Three Party Problem', {
         fontFamily: FONT,
-        fontSize: '72px',
+        fontSize: '64px',
         fontStyle: 'bold',
         color: '#ffffff',
         stroke: '#2f6fd1',
@@ -48,16 +48,11 @@ export class TitleScene extends Phaser.Scene {
       })
       .setOrigin(0.5);
     // 학교 약명 시그니처 (심벌 + HUFS, 어두운 바탕이라 흰색)
-    hufsImage(this, HUFS_KEYS.line, cx - 112, 152, { h: 60, tint: 0xffffff });
-    const type = hufsImage(this, HUFS_KEYS.type, cx - 9, 152, { h: 40, tint: 0xffffff });
+    hufsImage(this, HUFS_KEYS.line, cx - 69, 152, { h: 60, tint: 0xffffff });
+    const type = hufsImage(this, HUFS_KEYS.type, cx + 34, 152, { h: 40, tint: 0xffffff });
     if (!type) {
-      this.add.text(cx - 9, 152, 'HUFS', { fontFamily: FONT, fontSize: '34px', fontStyle: 'bold', color: '#ffffff' }).setOrigin(0.5);
+      this.add.text(cx + 34, 152, 'HUFS', { fontFamily: FONT, fontSize: '34px', fontStyle: 'bold', color: '#ffffff' }).setOrigin(0.5);
     }
-    this.add.rectangle(cx + 104, 152, 70, 28, 0xd0202f).setAngle(-6);
-    this.add
-      .text(cx + 104, 152, '비공식', { fontFamily: FONT, fontSize: '16px', fontStyle: 'bold', color: '#ffffff' })
-      .setOrigin(0.5)
-      .setAngle(-6);
     this.add
       .text(cx, 198, '오후 4시 52분, 마감 8분 전 · 교직원은 정시 퇴근을, 학생은 서류 제출 승인을 노린다', {
         fontFamily: FONT,
@@ -91,13 +86,6 @@ export class TitleScene extends Phaser.Scene {
     caption(modeX.student, '학생 모드', '반려된 서류 승인받기');
     makeButton(this, cx, 418, 220, 42, touch ? '기록판' : '기록판 (B)', () => this.go('board'), 0x2f6fd1);
 
-    this.add
-      .text(cx, GAME_H - 34, '비공식 게임입니다.', {
-        fontFamily: FONT,
-        fontSize: '13px',
-        color: '#8b95a8',
-      })
-      .setOrigin(0.5);
     this.add
       .text(cx, GAME_H - 14, '게임이 끝나면 결과(스테이지·시각)가 익명으로 기록됩니다. 닉네임은 원할 때만 남깁니다.', {
         fontFamily: FONT,

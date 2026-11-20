@@ -1234,10 +1234,9 @@ class Game implements Ctx {
     const o = this.overlay(`
       <div class="panel title">
         <img class="emblem" src="hufs/emblem-mono.png" alt=""> <img class="type" src="hufs/hufs-type.png" alt="HUFS">
-        <h1>STAFF SMASH</h1>
+        <h1>Three Party Problem</h1>
         ${this.stu.modeButtons()}
         <div class="tlinks"><button id="setBtn" type="button">설정</button><a href="./">2D 본편</a></div>
-        <p class="foot">비공식</p>
       </div>`);
     this.stu.bindTitle();
     $('setBtn').addEventListener('click', () => this.showSettings('title'));
@@ -2911,7 +2910,6 @@ class Game implements Ctx {
         <p class="areas">${areas}</p>
         <p class="counts">${this.countsHtml()}</p>
         <p class="best">난이도 ${this.diff.label} · ${bestTxt}</p>
-        <p class="foot">비공식 게임</p>
         <button id="againBtn" type="button">다시 하기</button>
         <button id="titleBtn" class="ghost" type="button">처음 화면</button>
         <a class="btn" href="./">본편(2D)으로</a>
