@@ -87,9 +87,9 @@ const PERK_SHARE = 0.12;
 const PERKS: FoodKind[] = ['shield', 'shuttle', 'capture', 'seal'];
 /** 조력자: 맞아서 체력이 이 비율 이하로 떨어지면 그 구역에서 한 번 굴린다 (구한 사람이 있으면 50%, 없으면 5% — helpers.ts) */
 const RESCUE_HP = 0.3;
-/** 보스(사람) 근접 (사용자 2026-11-18): 보스가 이 거리(m) 안에 있을 때 보스 공격에 맞으면 피해 CLOSE_MUL배 */
+/** 보스(사람) 근접 (사용자 2026-11-18, 2026-11-20 1.5→2.5배): 보스가 이 거리(m) 안에서 보스 공격에 맞으면 피해 CLOSE_MUL배 (중급 1칸→2.5칸). 멀리서·잡몹은 그대로 */
 const CLOSE_R = 4;
-const CLOSE_MUL = 1.5;
+const CLOSE_MUL = 2.5;
 /** 보스 공격 (잡몹이 아닌 것). 그 밖의 까닭은 맞은 물건이 보스 몸 가까이서 왔을 때만 */
 const BOSS_HURT: ReadonlySet<HurtKind> = new Set<HurtKind>(['wave', 'paper', 'rental', 'meeting', 'packet', 'bigstamp', 'error']);
 const SP_MAX = 100;
@@ -2162,7 +2162,7 @@ class Game implements Ctx {
       return;
     }
     dmg *= this.diff.damage;
-    // 보스(사람) 가까이에서 보스 공격에 맞으면 더 아프다 (달려오기 부딪힘은 따로 1.5 — bossmove.ts)
+    // 보스(사람) 가까이에서 보스 공격에 맞으면 더 아프다 (달려오기 부딪힘은 따로 4 — bossmove.ts RUSH_DMG, 이 배율은 안 곱한다)
     if (this.closeBossHit(from, kind)) dmg *= CLOSE_MUL;
     // 한 방에 쓰러질 피해면 이 구역 조력자를 그때 굴린다: 오면 체력 1로 버티고 조력자가 먼저 온다
     const save = this.hp - dmg <= 0.001 && this.rescueReady() && this.rescue.roll(this.rescueKey());
