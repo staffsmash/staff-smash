@@ -33,6 +33,7 @@ import {
 import { clearSubtitle, prepareSpeech, speechTextures, speechView, updateSubtitle } from './speech';
 import { StaffPick, type PickHost } from './staffpick';
 import { StaffSkills } from './staffskills';
+import { Dating, type DatingHost } from './student/dating';
 import { DocTower } from './student/enemies';
 import { StudentMode, type StudentHost } from './student/mode';
 import { loadLogos } from './textures';
@@ -478,6 +479,8 @@ class Game implements Ctx {
   /** 교직원: 예산팀 직원 기절 이벤트 (budget.ts), 식권 자판기 (vending.ts) */
   budget!: Budget;
   vend!: Vending;
+  /** 학생 3~5구역 중 한 곳: 로테이션 소개팅 (student/dating.ts) */
+  dating!: Dating;
   /** 1·2구역: 민원에 묻힌 동료·친구 구조 장면 (trapped.ts) */
   trap!: Trap;
   private seen = new Set<string>();
@@ -586,6 +589,7 @@ class Game implements Ctx {
     this.rescue = new Rescue(perk);
     this.budget = new Budget(perk, this, () => areaOf(this.stage));
     this.vend = new Vending(perk, this, MAX_HP);
+    this.dating = new Dating(this.datingHost());
     this.trap = new Trap(this.trapHost());
     this.bounds = [this.world.yard];
     this.world.setDusk(0);
@@ -656,7 +660,7 @@ class Game implements Ctx {
     const unwarm = this.stu.warm(g);
     const unwarmProps = this.props.warm(g);
     const unwarmRescue = this.rescue.warm(g);
-    const unwarmMore = [this.budget.warm(g), this.vend.warm(g)];
+    const unwarmMore = [this.budget.warm(g), this.vend.warm(g), this.dating.warm(g)];
     this.scene.add(g);
     const p = _v.set(0, 1.6, 6);
     this.fx.confetti(p, 4, 1);
@@ -753,7 +757,45 @@ class Game implements Ctx {
       buzz: (p) => this.buzz(p),
       setDusk: (k) => (this.dusk = k),
       arm: { sleeve: this.viewmodel.children[0] as THREE.Mesh, stamp: this.handStamp },
-      holdWave: () => this.trap.holds(),
+      holdWave: () => this.trap.holds() || this.dating.holds(),
+    };
+  }
+
+  /** 학생 로테이션 소개팅(student/dating.ts)이 빌려 쓰는 Game 안쪽 기능 */
+  private datingHost(): DatingHost {
+    const g = this;
+    return {
+      touch: TOUCH,
+      scene: this.scene,
+      get mode() {
+        return g.mode;
+      },
+      get playing() {
+        return g.phase === 'play';
+      },
+      get pos() {
+        return g.pos;
+      },
+      get yaw() {
+        return g.yaw;
+      },
+      get area() {
+        return g.area;
+      },
+      solids: () => [...g.world.obstacles, ...g.props.solids, ...g.vend.solids],
+      areaNo: () => g.stu.areaNo,
+      waveOk: () => g.stu.inWave,
+      // 조력자·친구 구조 장면·구역 카드·멈춤이 끝난 뒤에
+      free: () => !g.rescue.busy && g.trap.state === 'idle' && g.freezeT <= 0 && !g.rescueHeld(),
+      heroName: () => g.stu.heroName,
+      healFull: () => (g.hp = MAX_HP),
+      resetInput: () => {
+        g.keys.clear();
+        g.firing = false;
+      },
+      banner: (title, sub) => g.banner(title, sub),
+      note: (text, time) => g.note(text, time),
+      sound: (name, at, vol) => g.sound(name, at, vol),
     };
   }
 
@@ -900,13 +942,15 @@ class Game implements Ctx {
       if (this.stu.key(e)) return;
       // 교직원 선택 화면 (방향키·Enter·Esc·2)
       if (this.pick.key(e)) return;
+      // 로테이션 소개팅 화살표 판: 방향키·WASD를 가져간다 (student/dating.ts)
+      if (this.dating.key(e)) return;
       this.keys.add(e.code);
       if (e.code === 'Space' && this.phase === 'play') e.preventDefault();
       if (e.repeat) return;
       if ((e.code === 'Escape' || e.code === 'KeyP') && this.phase === 'play' && !document.pointerLockElement) this.pause();
       if (e.code === 'KeyQ') this.special();
-      // E: 자판기 앞이면 식권 넣기, 아니면 경비원 인사·대출기 (둘은 멀리 떨어져 있다)
-      if (e.code === 'KeyE' && this.phase === 'play' && !this.vend.use()) this.props.interact();
+      // E: 소개팅 짝 앞이면 참가, 자판기 앞이면 식권 넣기, 아니면 경비원 인사·대출기 (둘은 멀리 떨어져 있다)
+      if (e.code === 'KeyE' && this.phase === 'play' && !this.dating.use() && !this.vend.use()) this.props.interact();
       if (e.code === 'KeyM') this.toggleMute();
       if (e.code === 'Space' && this.phase === 'play') this.jump();
       if ((e.code === 'Enter' || e.code === 'Space') && (this.phase === 'clear' || this.phase === 'over')) {
@@ -1294,6 +1338,7 @@ class Game implements Ctx {
     this.props.clear();
     this.rescue.clear();
     this.trap.clear();
+    this.dating.clear();
     this.budget.clear();
     this.vend.clear();
     this.arms.clear();
@@ -2808,7 +2853,9 @@ class Game implements Ctx {
     const dt = Math.min(0.05, (now - this.last) / 1000);
     this.last = now;
     if (this.phase === 'play') {
-      for (let i = 0; i < SPEED && this.phase === 'play'; i++) {
+      // 로테이션 소개팅 화살표 판이 떠 있으면 싸움(step)을 멈추고 판 시간만 돈다 (student/dating.ts)
+      if (this.dating.modal) this.dating.tickModal(dt);
+      for (let i = 0; i < SPEED && this.phase === 'play' && !this.dating.modal; i++) {
         this.botHook?.(dt);
         this.step(dt);
       }
@@ -3039,6 +3086,7 @@ class Game implements Ctx {
     if (this.rescueDue) this.tryRescue();
     this.rescue.update(dt);
     this.trap.update(dt);
+    this.dating.update(dt);
     this.fx.update(dt);
     // 교직원 필살기: 돌진·떨어지는 규정집·내선 빛줄기 (staffskills.ts)
     this.skills.update(dt);
@@ -3164,6 +3212,7 @@ class Game implements Ctx {
     this.setText('weapon', this.arms.hud());
     if (this.props) this.props.syncUi(this.phase === 'play');
     if (this.vend) this.vend.syncUi(this.phase === 'play');
+    if (this.dating) this.dating.syncUi(this.phase === 'play');
     // 보스 막대 = 결재 진행 (0% → 100%)
     const boss = this.boss;
     if (boss) {
