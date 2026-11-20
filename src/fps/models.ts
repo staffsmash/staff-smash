@@ -22,8 +22,9 @@ import {
 
 /** 줍는 물건: 음식 셋 + 식권(체력 모두 회복) + 보조배터리(필살기 게이지 +50)
  *  + 연차 쿠폰(학생: 공결 확인서 — 다음 한 번 막기) + 셔틀버스 시간표(10초 빨리 걷기) + 단톡방 공지 캡처(잡몹 2.5초 멈춤)
- *  + 인감 도장(학생: 출석 스티커 — 8초 동안 기본 공격에 맞은 잡몹이 넘어진다) */
-export type FoodKind = 'donkatsu' | 'gimbap' | 'americano' | 'ticket' | 'battery' | 'shield' | 'shuttle' | 'capture' | 'seal';
+ *  + 인감 도장(학생: 출석 스티커 — 8초 동안 기본 공격에 맞은 잡몹이 넘어진다)
+ *  + Boo 호출 벨(두 모드 같은 이름 — 보관했다가 G로 Boo를 부른다, boo.ts) */
+export type FoodKind = 'donkatsu' | 'gimbap' | 'americano' | 'ticket' | 'battery' | 'shield' | 'shuttle' | 'capture' | 'seal' | 'boo';
 
 export const FOOD_NAMES: Record<FoodKind, string> = {
   donkatsu: '학식 돈가스',
@@ -35,6 +36,7 @@ export const FOOD_NAMES: Record<FoodKind, string> = {
   shuttle: '셔틀버스 시간표',
   capture: '단톡방 공지 캡처',
   seal: '인감 도장',
+  boo: 'Boo 호출 벨',
 };
 
 /** 학생 모드에서 이름이 바뀌는 것 */
@@ -519,6 +521,20 @@ export class Models {
       add(item, new THREE.CylinderGeometry(0.1, 0.12, 0.4, 14), ivory, 0.27, 0.06, 0);
       add(item, new THREE.SphereGeometry(0.1, 12, 8), ivory, 0.27, 0.27, 0);
       add(item, new THREE.CylinderGeometry(0.13, 0.13, 0.05, 14), lam(0xc8202f), 0.27, -0.165, 0);
+    } else if (kind === 'boo') {
+      // Boo 호출 벨: 금색 손종 + 남색 손잡이 끝에 Boo 하늘색 구슬, 아래 추
+      const prof: THREE.Vector2[] = [];
+      for (let i = 0; i <= 8; i++) {
+        const k = i / 8;
+        prof.push(new THREE.Vector2(0.07 + 0.17 * k ** 2.2 + (k > 0.85 ? 0.03 : 0), 0.18 - 0.36 * k));
+      }
+      const bell = new THREE.Mesh(new THREE.LatheGeometry(prof, 18), new THREE.MeshLambertMaterial({ color: 0xf5c542, side: THREE.DoubleSide }));
+      bell.castShadow = true;
+      item.add(bell);
+      add(item, new THREE.CylinderGeometry(0.075, 0.075, 0.03, 14), lam(0xf5c542), 0, 0.18, 0);
+      add(item, new THREE.CylinderGeometry(0.035, 0.04, 0.2, 10), lam(0x14294f), 0, 0.29, 0);
+      add(item, new THREE.SphereGeometry(0.07, 12, 8), lam(0xa9d8ee), 0, 0.42, 0);
+      add(item, new THREE.SphereGeometry(0.045, 8, 6), lam(0x8a6a1c), 0, -0.2, 0);
     } else {
       // 보조배터리: 짙은 몸통 + 초록 충전 칸 넷(앞뒤) + 위쪽 단자와 흰 선
       add(item, new THREE.BoxGeometry(0.3, 0.48, 0.13), lam(0x2b2f38), 0, 0, 0);
