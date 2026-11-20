@@ -14,6 +14,7 @@ import { buildMidPeople, buildNewBossPeople, Gumto, MID_LINES, MID_TEXTS, Molla,
 import { Models, type FoodKind } from './models';
 import { badgeObj, ClingBubble, DodgeBubble, Fax, MobKit, NoteBadge } from './mobs';
 import { PileMob, Trap, type TrapHost } from './trapped';
+import { SideJob, type SideHost } from './sidejob';
 import { SEAL_R, SealRolls } from './seal';
 import { AttendQR, DueBadge, stuMobTextures } from './student/mobs';
 import { Person, peopleKit, type Who } from './people';
@@ -480,6 +481,8 @@ class Game implements Ctx {
   vend!: Vending;
   /** 1·2구역: 민원에 묻힌 동료·친구 구조 장면 (trapped.ts) */
   trap!: Trap;
+  /** 교직원 3~5구역: 미화·조리사 선생님 돕기 이벤트와 받은 아이템 F·R (sidejob.ts) */
+  side!: SideJob;
   private seen = new Set<string>();
   private last = performance.now();
   private viewmodel = new THREE.Group();
@@ -587,6 +590,7 @@ class Game implements Ctx {
     this.budget = new Budget(perk, this, () => areaOf(this.stage));
     this.vend = new Vending(perk, this, MAX_HP);
     this.trap = new Trap(this.trapHost());
+    this.side = new SideJob(this.sideHost());
     this.bounds = [this.world.yard];
     this.world.setDusk(0);
     this.warmup();
@@ -657,6 +661,7 @@ class Game implements Ctx {
     const unwarmProps = this.props.warm(g);
     const unwarmRescue = this.rescue.warm(g);
     const unwarmMore = [this.budget.warm(g), this.vend.warm(g)];
+    unwarmMore.push(this.side.warm(g));
     this.scene.add(g);
     const p = _v.set(0, 1.6, 6);
     this.fx.confetti(p, 4, 1);
@@ -806,6 +811,65 @@ class Game implements Ctx {
     };
   }
 
+  /** 3~5구역 돕기 이벤트·아이템(sidejob.ts)이 빌려 쓰는 Game 안쪽 기능 (교직원 모드만) */
+  private sideHost(): SideHost {
+    const g = this;
+    return {
+      touch: TOUCH,
+      scene: this.scene,
+      camera: this.camera,
+      fx: this.fx,
+      get mode() {
+        return g.mode;
+      },
+      get playing() {
+        return g.phase === 'play';
+      },
+      get frozen() {
+        return g.freezeT > 0;
+      },
+      get pos() {
+        return g.pos;
+      },
+      get eyeY() {
+        return EYE + g.jumpY;
+      },
+      get yaw() {
+        return g.yaw;
+      },
+      get pitch() {
+        return g.pitch;
+      },
+      get area() {
+        return g.area;
+      },
+      get hp() {
+        return g.hp;
+      },
+      maxHp: MAX_HP,
+      solids: () => [...g.world.obstacles, ...g.props.solids, ...g.vend.solids],
+      areaNo: () => areaOf(g.stage),
+      waveOk: () => g.mode === 'staff' && g.fight === 'wave',
+      // 구조 장면(trapHost.free)과 같은 조건 + 구조 장면이 끝난 뒤
+      free: () =>
+        !g.budget.busy &&
+        !g.rescue.busy &&
+        g.freezeT <= 0 &&
+        !g.rescueHeld() &&
+        g.trap.state === 'idle' &&
+        (g.budget.shown.includes(areaOf(g.stage)) || g.queue.length === 0),
+      enemies: () => g.enemies,
+      isBoss,
+      itemHit: (e, stamps) => g.itemHit(e, stamps),
+      minions: () => g.minions(),
+      spawnMob: () => g.spawnKind(Math.random() < 0.75 ? 'mail' : 'phone'),
+      heal: (n) => (g.hp = Math.min(MAX_HP, g.hp + n)),
+      banner: (title, sub) => g.banner(title, sub),
+      note: (text, time) => g.note(text, time),
+      sound: (name, at, vol) => g.sound(name, at, vol),
+    };
+  }
+
   /** 경비원·대출기·상자·조력자(props.ts, helpers.ts)가 빌려 쓰는 Game 안쪽 기능 */
   private perkHost(): PerkHost {
     const g = this;
@@ -905,8 +969,11 @@ class Game implements Ctx {
       if (e.repeat) return;
       if ((e.code === 'Escape' || e.code === 'KeyP') && this.phase === 'play' && !document.pointerLockElement) this.pause();
       if (e.code === 'KeyQ') this.special();
-      // E: 자판기 앞이면 식권 넣기, 아니면 경비원 인사·대출기 (둘은 멀리 떨어져 있다)
-      if (e.code === 'KeyE' && this.phase === 'play' && !this.vend.use()) this.props.interact();
+      // E: 돕기 이벤트(미화·조리사 선생님) 앞이면 돕기, 자판기 앞이면 식권 넣기, 아니면 경비원 인사·대출기
+      if (e.code === 'KeyE' && this.phase === 'play' && !this.side.use() && !this.vend.use()) this.props.interact();
+      // F: 빗자루·쓰레기통 폭탄 던지기, R: 소고기콩나물밥·교직원 식당 통닭 먹기 (sidejob.ts)
+      if (e.code === 'KeyF' && this.phase === 'play') this.side.useItem();
+      if (e.code === 'KeyR' && this.phase === 'play') this.side.eat();
       if (e.code === 'KeyM') this.toggleMute();
       if (e.code === 'Space' && this.phase === 'play') this.jump();
       if ((e.code === 'Enter' || e.code === 'Space') && (this.phase === 'clear' || this.phase === 'over')) {
@@ -1294,6 +1361,7 @@ class Game implements Ctx {
     this.props.clear();
     this.rescue.clear();
     this.trap.clear();
+    this.side.clear();
     this.budget.clear();
     this.vend.clear();
     this.arms.clear();
@@ -2147,6 +2215,16 @@ class Game implements Ctx {
     }
   }
 
+  /**
+   * 빗자루·쓰레기통 폭탄(sidejob.ts)이 맞았다: 잡몹은 처리(서류 뭉치는 터뜨리지 않고 처리 — noticeHit과 같다),
+   * 보스(사람)는 다치지 않고 도장 몸통 stamps발만큼 결재 진행만
+   */
+  private itemHit(e: Enemy, stamps: number): void {
+    if (!e.targetable) return;
+    if (isBoss(e)) this.damage(e, BODY_DMG * stamps, 'special');
+    else this.noticeHit(e);
+  }
+
   // ---------- 플레이어 ----------
 
   hurt(dmg: number, from: THREE.Vector3, kind: HurtKind = 'mail'): void {
@@ -2628,7 +2706,8 @@ class Game implements Ctx {
     const running = k.has('ShiftLeft') || k.has('ShiftRight') || this.stick.length() > 0.95;
     // 적이 없는 길에서는 조금 빨리 걷는다
     const onPath = this.stage === 'path' || this.stage === 'path2' || this.stage === 'path3' || this.stage === 'path4' || this.stage === 'path5';
-    const speed = (running ? RUN : WALK) * (this.slow > 0 ? 0.55 : 1) * (onPath ? 1.35 : 1) * (this.shuttleT > 0 ? SHUTTLE_MUL : 1);
+    // 조리사 선생님 돕기: 상자를 든 동안 조금 느려진다 (sidejob.ts)
+    const speed = (running ? RUN : WALK) * (this.slow > 0 ? 0.55 : 1) * (onPath ? 1.35 : 1) * (this.shuttleT > 0 ? SHUTTLE_MUL : 1) * this.side.speedMul;
     const sin = Math.sin(this.yaw);
     const cos = Math.cos(this.yaw);
     // 앞 = (-sin, -cos), 오른쪽 = (cos, -sin)
@@ -3039,6 +3118,7 @@ class Game implements Ctx {
     if (this.rescueDue) this.tryRescue();
     this.rescue.update(dt);
     this.trap.update(dt);
+    this.side.update(dt);
     this.fx.update(dt);
     // 교직원 필살기: 돌진·떨어지는 규정집·내선 빛줄기 (staffskills.ts)
     this.skills.update(dt);
@@ -3052,8 +3132,8 @@ class Game implements Ctx {
         this.spawnKind(this.queue.pop() as SpawnKind);
         this.spawnT = 0.85;
       }
-    } else if (this.minions() === 0 && !this.budget.busy && !this.trap.holds()) {
-      // 예산팀 직원이 와 있거나 동료 구조 장면이 안 끝났으면 차례를 끝내지 않는다 (budget.ts, trapped.ts)
+    } else if (this.minions() === 0 && !this.budget.busy && !this.trap.holds() && !this.side.holds()) {
+      // 예산팀 직원이 와 있거나 동료 구조 장면·돕기 이벤트가 안 끝났으면 차례를 끝내지 않는다 (budget.ts, trapped.ts, sidejob.ts)
       if (this.waveDelay < 0) this.waveDelay = 1.6;
       this.waveDelay -= dt;
       if (this.waveDelay <= 0) {
@@ -3153,6 +3233,8 @@ class Game implements Ctx {
     else wave = `${places[this.stage]} · 처리 ${this.processed}건`;
     const ts = this.trap.status();
     if (ts) wave = `${ts} · ${wave}`;
+    const ss = this.side?.status();
+    if (ss) wave = `${ss} · ${wave}`;
     this.setText('wave', wave);
     this.setText('buff', this.buffT > 0 ? `아메리카노 ${Math.ceil(this.buffT)}초 · 빨리 던지기` : '');
     // 연차 쿠폰(공결 확인서)·셔틀버스 시간표
@@ -3164,6 +3246,7 @@ class Game implements Ctx {
     this.setText('weapon', this.arms.hud());
     if (this.props) this.props.syncUi(this.phase === 'play');
     if (this.vend) this.vend.syncUi(this.phase === 'play');
+    if (this.side) this.side.syncUi(this.phase === 'play');
     // 보스 막대 = 결재 진행 (0% → 100%)
     const boss = this.boss;
     if (boss) {
