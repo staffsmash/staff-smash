@@ -666,7 +666,8 @@ export class StaffMid extends PersonBoss {
     o.z = Math.max(a.minZ + 1, Math.min(a.maxZ - 1, o.z));
     if (!this.dashHit && c.feet < 1.2 && Math.hypot(c.eye.x - o.x, c.eye.z - o.z) < 1.4) {
       this.dashHit = true;
-      c.hurt(1.5, this.person.chest, 'bomb');
+      // 부딪힘은 다른 보스 달려오기와 같은 4칸 (사용자 2026-11-20, 근접 배율 없이)
+      c.hurt(4, this.person.chest, 'bomb', false);
     }
     if (this.subT >= 1.0 || out) this.toLure(this.easy ? 2.4 : 1.7);
   }

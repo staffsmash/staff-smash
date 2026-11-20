@@ -31,7 +31,8 @@ export interface Ctx {
   readonly feet: number;
   /** 지금 움직일 수 있는 구역 (말풍선 돌진이 멈추는 경계) */
   readonly area: Rect;
-  hurt(dmg: number, from: THREE.Vector3, kind?: HurtKind): void;
+  /** close = false: 보스 가까이라도 근접 배율을 붙이지 않는다 (잡몹 폭발·이미 정한 부딪힘 피해) */
+  hurt(dmg: number, from: THREE.Vector3, kind?: HurtKind, close?: boolean): void;
   /** 잠깐 멈춤 (강의실 열쇠·"보고해!"). 이미 멈춰 있으면 false */
   freeze(sec: number, text: string): boolean;
   sound(name: SfxName, at?: THREE.Vector3, vol?: number): void;
