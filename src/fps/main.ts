@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { appHomeLink, titleLeft, titleShown } from '../pwa';
 import { armName, Arms, ARMS, BOOMERANG_TURN, type ArmDef, type ArmId } from './arms';
 import { Sfx, type SfxName } from './audio';
 import type { Rect } from './blocks';
@@ -1212,6 +1213,7 @@ class Game implements Ctx {
 
   private overlay(html: string): HTMLElement {
     const o = $('overlay');
+    titleLeft();
     o.innerHTML = html;
     o.hidden = false;
     o.scrollTop = 0;
@@ -1226,6 +1228,7 @@ class Game implements Ctx {
 
   private hideOverlay(): void {
     $('overlay').hidden = true;
+    titleLeft();
   }
 
   /** 시작 화면: 로고 · 제목 · 모드 단추 둘(교직원 → 교직원 선택 화면 staffpick.ts, 학생 → 학생 선택 화면) · 설정·기록판·2D 본편 */
@@ -1236,7 +1239,7 @@ class Game implements Ctx {
         <img class="emblem" src="hufs/emblem-mono.png" alt=""> <img class="type" src="hufs/hufs-type.png" alt="HUFS">
         <h1>STAFF SMASH</h1>
         ${this.stu.modeButtons()}
-        <div class="tlinks"><button id="setBtn" type="button">설정</button><a href="./">2D 본편</a></div>
+        <div class="tlinks">${appHomeLink()}<button id="setBtn" type="button">설정</button><a href="./">2D 본편</a></div>
         <p class="foot">비공식</p>
       </div>`);
     this.stu.bindTitle();
@@ -1244,6 +1247,7 @@ class Game implements Ctx {
     // 기록판 단추(board.ts)는 설정 다음 자리로
     addBoardButton(o);
     $('setBtn').after($('boardBtn'));
+    titleShown();
   }
 
   private showSettings(from: 'title' | 'pause'): void {

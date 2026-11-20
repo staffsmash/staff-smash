@@ -6,6 +6,13 @@
       name="viewport"
       content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no"
     />
+    <!-- 홈 화면에 추가하면 앱(Three Party Problem)처럼 열린다: manifest·아이콘은 public/, 첫 화면은 app.html (src/pwa.ts) -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Three Party" />
     <meta name="theme-color" content="#1d1f24" />
     <meta name="description" content="Staff Smash: HUFS — 비공식 벨트스크롤 액션 게임 (M0 프로토타입)" />
     <title>Staff Smash: HUFS (비공식)</title>
