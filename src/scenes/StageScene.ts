@@ -838,7 +838,7 @@ export class StageScene extends Phaser.Scene {
         .text(
           GAME_W / 2,
           GAME_H / 2 + 70,
-          this.pad ? '화면을 탭해서 기록 남기기' : 'Enter 기록 남기기   ·   R 처음부터 다시',
+          this.pad ? '화면을 탭해서 이름 남기기' : 'Enter 이름 남기기   ·   R 처음부터 다시',
           { fontFamily: FONT, fontSize: '20px', fontStyle: 'bold', color: '#f5c542' },
         )
         .setOrigin(0.5),

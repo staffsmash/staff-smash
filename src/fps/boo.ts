@@ -2,6 +2,10 @@ import * as THREE from 'three';
 import type { SfxName } from './audio';
 import type { Rect } from './blocks';
 import type { Enemy } from './enemies';
+import { HEROES } from '../data/heroes';
+import { STUDENT_HEROES } from '../data/students';
+import { heroLook } from './helpers';
+import { Person } from './people';
 import { HeadTag, prepareSpeech } from './speech';
 
 // 1인칭 두 모드: Boo(한국외대 공식 캐릭터) 호출 벨 (사용자 2026-11-20).
@@ -9,11 +13,17 @@ import { HeadTag, prepareSpeech } from './speech';
 //   한 판에 최대 BELL_MAX(2)번, 1구역(교직원 본관 앞 areaOf 0 · 학생 대운동장 stu.areaNo 0)에서는 안 나온다.
 //   한 번에 하나만 보관한다 (들고 있거나 바닥에 놓여 있으면 더 떨어지지 않는다).
 // - 쓰기: G (터치: 벨이 있을 때만 보이는 "Boo" 버튼). 판이 멈췄거나(일시정지·소개팅 판) 기절(freezeT)·구역 카드·화면 전환 중에는 못 쓴다.
-// - 동작: Boo가 뒤쪽 하늘에서 날아와(ARRIVE_T) 플레이어를 붙잡아 들어 올리고 FLY_T(3초) 동안 날아서,
+// - 동작: Boo가 뒤쪽 하늘에서 날아와(ARRIVE_T) 플레이어를 붙잡아 들어 올리고 FLY_T(9초, 2026-11-21 3초 → 9초) 동안 날아서,
 //   지금 구역 사각형 안·장애물 밖에서 둘레(COUNT_R) 적(잡몹·보스)이 가장 적은 곳에 내려 준다 (보스전·총장전도 같은 구역 안).
-//   부른 순간부터 내릴 때까지 맞지 않고(Game.invuln), 내린 뒤 GRACE(1초) 더 무적. 날아가는 동안 도장은 위에서 그대로 던진다.
+//   날아오르기(RISE_T) → 구역 위 높이 약 8m에서 크게 한 바퀴(LOOP_T) → 한 바퀴를 마친 순간 내릴 곳을 다시 골라 내려앉는다.
+//   부른 순간부터 내릴 때까지 맞지 않고(Game.invuln), 내린 뒤 GRACE(1초) 더 무적. 9초는 업무 시계로 그대로 흐른다.
+//   들고 나는 동안은 구경만 한다 (사용자 2026-11-21 "구경 전용"): 던지기·필살기·아이템(F·R)을 쓰지 못한다 (main.ts).
 //   이동(WASD·스틱)·점프는 무시 (Game.step이 move·updateJump 대신 carry를 부른다). 내려 준 뒤 Boo는 날아서 떠난다.
-// - Boo는 다치지 않는다 (적 목록에 없다 — 도장이 지나간다).
+// - 3인칭 (사용자 2026-11-21): Boo가 붙잡으면 카메라가 TP_IN(0.6초) 동안 플레이어 뒤 위(약 6m 뒤·3m 위)로 빠지고,
+//   Boo가 두 팔로 들어 올린 주인공 블록 모형(helpers.ts heroLook)과 위에서 퍼덕이는 Boo가 보인다. 마우스·터치로
+//   카메라를 돌려 볼 수 있다 (yaw·pitch를 그대로 쓴다). 내려앉으면 TP_OUT(0.5초) 동안 다시 1인칭으로 (보던 방향 그대로).
+//   3인칭 동안 1인칭 팔·도장(무기)·조준점과 화면 위쪽 발은 숨긴다 (Game.tick이 view를 부른다).
+// - Boo와 주인공은 다치지 않는다 (적 목록에 없다 — 도장이 지나간다).
 
 /** 잡몹 하나를 처리할 때 벨이 떨어질 확률 (시험용으로 바꿀 수 있게 인스턴스 값으로도 둔다) */
 export const BELL_CHANCE = 0.015;
@@ -21,9 +31,25 @@ export const BELL_CHANCE = 0.015;
 export const BELL_MAX = 2;
 /** 날아오는 시간, 들고 나는 시간, 떠나는 시간, 내린 뒤 무적 (초) */
 export const ARRIVE_T = 0.7;
-export const FLY_T = 3;
+export const FLY_T = 9;
 const LEAVE_T = 2;
 export const GRACE = 1;
+/** 날아오르는 시간, 구역 위 한 바퀴 시간 (그 뒤 FLY_T까지 내려앉는다, 초) */
+const RISE_T = 1.6;
+const LOOP_T = 4.6;
+/** 한 바퀴 둘레: 구역 끝에서 띄우는 거리, 가장 큰 반지름 (m) */
+const LOOP_EDGE = 3.5;
+const LOOP_MAX_R = 18;
+/** 3인칭으로 빠지는 시간, 1인칭으로 돌아오는 시간 (초) */
+const TP_IN = 0.6;
+const TP_OUT = 0.5;
+/** 3인칭 카메라: 바라보는 점 높이(발 기준), 뒤로 떨어진 거리, 기본 올려 보는 각 (6m 뒤 · 3m 위) */
+const TP_LOOK_Y = 1.7;
+const TP_DIST = Math.hypot(6, 3);
+const TP_EL = Math.atan2(3, 6);
+/** 들려 가는 주인공 모형 배율 (머리끝 약 1.95m — Boo 배 밑이 머리에 닿지 않게), 들어 올린 손 높이 (발 기준) */
+const HERO_S = 0.9;
+const HAND_Y = 2.27 * HERO_S;
 /** 들어 올리는 높이 (발 기준, m) */
 const LIFT_H = 8;
 /** 내릴 곳을 고를 때 적을 세는 둘레 (m) */
@@ -63,6 +89,12 @@ export interface BooHost {
   readonly pos: THREE.Vector3;
   /** 눈높이 (들어 올린 높이 포함) */
   readonly eyeY: number;
+  /** 발이 땅에서 뜬 높이 */
+  readonly feetY: number;
+  /** 학생 모드 (3인칭 주인공 모형을 고른다) */
+  readonly student: boolean;
+  /** 고른 주인공 id (교직원 HeroId · 학생 StudentHeroId) */
+  heroId(): string;
   readonly yaw: number;
   pitch: number;
   readonly area: Rect;
@@ -297,6 +329,17 @@ const ease = (k: number) => {
 
 const _a = new THREE.Vector3();
 const _b = new THREE.Vector3();
+const _c = new THREE.Vector3();
+const _up = new THREE.Vector3(0, 1, 0);
+const _m = new THREE.Matrix4();
+const _q = new THREE.Quaternion();
+
+/** 각도를 -π~π로 */
+function wrap(a: number): number {
+  while (a > Math.PI) a -= Math.PI * 2;
+  while (a < -Math.PI) a += Math.PI * 2;
+  return a;
+}
 
 /** 시험용: 마지막으로 옮긴 기록 */
 export interface BooTrip {
@@ -309,6 +352,8 @@ export interface BooTrip {
   landFromCount: number;
   landToCount: number;
   rect: Rect;
+  /** 한 바퀴를 마친 뒤 내릴 곳을 다시 골랐다 (to·fromCount·toCount는 그때 값) */
+  repicked: boolean;
 }
 
 export class Boo {
@@ -335,12 +380,35 @@ export class Boo {
   private readonly dir = new THREE.Vector3(0, 0, 1);
   private uiKey = '';
   private readonly el: BooDom;
+  // 날아가는 길: 들고 난 구역 사각형, 한 바퀴 타원(가운데·반지름·시작 각·도는 쪽), 두 번 거른 위치, 다시 골랐는지
+  private rect: Rect = { minX: 0, maxX: 0, minZ: 0, maxZ: 0 };
+  private cx = 0;
+  private cz = 0;
+  private rx = 1;
+  private rz = 1;
+  private th0 = 0;
+  private spin = 1;
+  private readonly f1 = new THREE.Vector3();
+  private readonly f2 = new THREE.Vector3();
+  private repicked = false;
+  /** 몸이 향하는 쪽 (날아가는 쪽, 라디안 — 모형 +z 기준) */
+  private heading = 0;
+  // 3인칭: 들려 가는 주인공 모형 (교직원 여섯·학생 넷, 미리 만든다)
+  private readonly heroes = new Map<string, Person>();
+  private readonly meG = new THREE.Group();
+  private me: Person | null = null;
+  /** 3인칭 정도 0(1인칭)~1 */
+  private tpK = 0;
 
   constructor(private readonly h: BooHost) {
     this.tag.group.position.y = H + 0.3;
     this.m.root.add(this.tag.group);
     this.m.root.visible = false;
     h.scene.add(this.m.root);
+    for (const x of HEROES) this.heroes.set(`t:${x.id}`, this.heroModel(heroLook(false, x.id)));
+    for (const x of STUDENT_HEROES) this.heroes.set(`s:${x.id}`, this.heroModel(heroLook(true, x.id)));
+    this.meG.visible = false;
+    h.scene.add(this.meG);
     this.feet.position.set(0, 0.5, -0.6);
     this.feet.scale.setScalar(0.75);
     h.camera.add(this.feet);
@@ -419,25 +487,81 @@ export class Boo {
     }
     if (this.state !== 'fly') return;
     const t = Math.min(this.t, FLY_T);
-    const up = Math.min(ease(t / 0.75), ease((FLY_T - t) / 0.7));
-    const y = up * (LIFT_H + Math.sin(t * 5) * 0.25);
-    const k = ease((t - 0.35) / (FLY_T - 0.95));
-    h.carryTo(this.start.x + (this.target.x - this.start.x) * k, this.start.z + (this.target.z - this.start.z) * k, y);
+    // 높이: 날아올라 약 8m에서 살짝 오르내리다가 마지막에 내려앉는다
+    const up = Math.min(ease(t / 1.3), ease((FLY_T - t) / 1.7));
+    const y = up * (LIFT_H + Math.sin(t * 2.2) * 0.35);
+    // 따라갈 점: 한 바퀴 시작점으로 → 타원을 한 바퀴 → (다시 고른) 내릴 곳으로
+    const loopEnd = RISE_T + LOOP_T;
+    let px: number;
+    let pz: number;
+    if (t < RISE_T) {
+      const k = ease(t / RISE_T);
+      const [ex, ez] = this.loopAt(this.th0);
+      px = this.start.x + (ex - this.start.x) * k;
+      pz = this.start.z + (ez - this.start.z) * k;
+    } else if (t < loopEnd) {
+      [px, pz] = this.loopAt(this.th0 + this.spin * Math.PI * 2 * ((t - RISE_T) / LOOP_T));
+    } else {
+      // 한 바퀴를 마친 순간 내릴 곳을 다시 고른다 (그새 적이 움직였으니 지금 가장 안전한 곳)
+      if (!this.repicked) {
+        this.repicked = true;
+        this.pickTarget(this.rect, false);
+      }
+      const k = ease((t - loopEnd) / (FLY_T - loopEnd - 0.6));
+      const [ex, ez] = this.loopAt(this.th0);
+      px = ex + (this.target.x - ex) * k;
+      pz = ez + (this.target.z - ez) * k;
+    }
+    // 두 번 걸러 부드럽게 (구역 사각형 안 점들의 평균이라 사각형 밖으로 나가지 않는다), 마지막 1.3초는 내릴 곳에 정확히 맞춘다
+    const a = 1 - Math.exp(-dt * 3.2);
+    this.f1.x += (px - this.f1.x) * a;
+    this.f1.z += (pz - this.f1.z) * a;
+    this.f2.x += (this.f1.x - this.f2.x) * a;
+    this.f2.z += (this.f1.z - this.f2.z) * a;
+    const b = ease((t - (FLY_T - 1.3)) / 1.1);
+    const x = this.f2.x + (this.target.x - this.f2.x) * b;
+    const z = this.f2.z + (this.target.z - this.f2.z) * b;
+    // 몸은 날아가는 쪽을 본다
+    const dx = x - h.pos.x;
+    const dz = z - h.pos.z;
+    if (dx * dx + dz * dz > 1e-5) this.heading += wrap(Math.atan2(dx, dz) - this.heading) * Math.min(1, dt * 4);
+    h.carryTo(x, z, y);
     h.guard(0.3);
-    // 들어 올리며 아래를 내려다보고, 내릴 때 다시 앞을 본다 (마우스·터치로 계속 돌릴 수 있다)
-    if (t < 0.9 && h.pitch > -0.55) h.pitch += (-0.55 - h.pitch) * Math.min(1, dt * 4);
-    else if (t > FLY_T - 0.8 && h.pitch < 0) h.pitch += (0 - h.pitch) * Math.min(1, dt * 3);
+    // 내려앉을 때 다시 앞을 본다 (마우스·터치로 계속 돌릴 수 있다 — 3인칭에서는 카메라 높이)
+    if (t > FLY_T - 0.8 && h.pitch < 0) h.pitch += (0 - h.pitch) * Math.min(1, dt * 3);
     if (this.t >= FLY_T) this.land();
+  }
+
+  /** 한 바퀴 타원 위 한 점 (x, z) */
+  private loopAt(th: number): [number, number] {
+    return [this.cx + this.rx * Math.sin(th), this.cz + this.rz * Math.cos(th)];
   }
 
   private takeOff(): void {
     const h = this.h;
     this.state = 'fly';
     this.t = 0;
-    this.pickTarget();
+    this.repicked = false;
+    this.rect = { ...this.curRect() };
+    this.pickTarget(this.rect, true);
     _a.set(this.target.x - this.start.x, 0, this.target.z - this.start.z);
     if (_a.lengthSq() > 0.01) this.dir.copy(_a.normalize());
     else this.dir.set(-Math.sin(h.yaw), 0, -Math.cos(h.yaw));
+    // 한 바퀴 타원: 구역 가운데, 끝에서 LOOP_EDGE 띄우고, 지금 자리 쪽에서 시작해 보던 쪽으로 돈다
+    const r = this.rect;
+    this.cx = (r.minX + r.maxX) / 2;
+    this.cz = (r.minZ + r.maxZ) / 2;
+    this.rx = Math.max(0.5, Math.min(LOOP_MAX_R, (r.maxX - r.minX) / 2 - LOOP_EDGE));
+    this.rz = Math.max(0.5, Math.min(LOOP_MAX_R, (r.maxZ - r.minZ) / 2 - LOOP_EDGE));
+    this.th0 = Math.atan2((this.start.x - this.cx) / this.rx, (this.start.z - this.cz) / this.rz);
+    const tx = Math.cos(this.th0) * this.rx;
+    const tz = -Math.sin(this.th0) * this.rz;
+    this.spin = -Math.sin(h.yaw) * tx - Math.cos(h.yaw) * tz >= 0 ? 1 : -1;
+    this.f1.set(this.start.x, 0, this.start.z);
+    this.f2.copy(this.f1);
+    this.heading = Math.atan2(-Math.sin(h.yaw), -Math.cos(h.yaw));
+    // 들려 갈 주인공 모형 (지금 모드·고른 주인공)
+    this.showMe();
     h.guard(FLY_T + 0.3);
     h.note(T.flying, FLY_T);
     h.sound('pickup');
@@ -489,10 +613,12 @@ export class Boo {
     return h.bounds.find(inR) ?? h.area;
   }
 
-  /** 지금 구역 안·장애물 밖 후보 점 가운데 둘레 적이 가장 적은 곳 (같으면 가장 가까운 적이 먼 곳) */
-  private pickTarget(): void {
+  /**
+   * 구역 사각형 r 안·장애물 밖 후보 점 가운데 둘레 적이 가장 적은 곳 (같으면 가장 가까운 적이 먼 곳).
+   * first: 날아오를 때 (기록을 새로 쓴다). 아니면 한 바퀴를 마친 뒤 다시 고른 것 (내릴 곳만 고친다)
+   */
+  private pickTarget(r: Rect, first: boolean): void {
     const h = this.h;
-    const r = this.curRect();
     const solids = h.solids();
     const w = r.maxX - r.minX;
     const d = r.maxZ - r.minZ;
@@ -516,6 +642,13 @@ export class Boo {
     const pick = best ?? near;
     if (pick) this.target.set(pick[0], 0, pick[1]);
     else this.target.copy(this.start);
+    if (!first && this.last) {
+      this.last.to = { x: this.target.x, z: this.target.z };
+      this.last.fromCount = this.count(this.start.x, this.start.z);
+      this.last.toCount = this.count(this.target.x, this.target.z);
+      this.last.repicked = true;
+      return;
+    }
     this.last = {
       from: { x: this.start.x, z: this.start.z },
       to: { x: this.target.x, z: this.target.z },
@@ -524,12 +657,69 @@ export class Boo {
       landFromCount: -1,
       landToCount: -1,
       rect: { ...r },
+      repicked: false,
     };
+  }
+
+  // ---------- 3인칭: 들려 가는 주인공 ----------
+
+  /** 주인공 블록 모형 하나 (결재판·이름표 없이, HERO_S 배율) */
+  private heroModel(look: ReturnType<typeof heroLook>): Person {
+    const p = new Person('meeting', '', '#ffffff', { ...look, scale: HERO_S });
+    p.clip.visible = false;
+    p.tag.group.visible = false;
+    return p;
+  }
+
+  /** 지금 모드·고른 주인공의 모형을 붙인다 */
+  private showMe(): void {
+    const h = this.h;
+    const p = this.heroes.get(`${h.student ? 's' : 't'}:${h.heroId()}`) ?? this.heroes.values().next().value ?? null;
+    if (this.me && this.me !== p) this.meG.remove(this.me.root);
+    this.me = p;
+    if (p && p.root.parent !== this.meG) {
+      p.root.position.set(0, 0, 0);
+      p.root.rotation.set(0, 0, 0);
+      this.meG.add(p.root);
+    }
+  }
+
+  /** 매달린 자세: k = 1이면 두 팔을 머리 위로 뻗어 Boo의 손을 잡고 다리는 대롱대롱, 0이면 선 자세 */
+  private hang(p: Person, k: number): void {
+    const sw = Math.sin(this.anim * 3.2) * 0.32 * k;
+    // 손은 머리 조금 뒤 (Boo가 등 뒤 위에서 잡아 얼굴이 보이게)
+    p.armL.rotation.set(-0.1 + (-Math.PI - 0.2) * k, 0, -0.1 * k);
+    p.armR.rotation.set(-0.1 + (-Math.PI - 0.2) * k, 0, 0.1 * k);
+    p.legL.rotation.x = sw + 0.12 * k;
+    p.legR.rotation.x = -sw + 0.12 * k;
+    p.head.rotation.x = -0.08 * k;
+  }
+
+  /**
+   * 카메라 (Game.tick이 1인칭 자리를 잡은 뒤 부른다): 3인칭 정도만큼 플레이어 뒤 위로 옮기고 그 정도(0~1)를 돌려준다.
+   * yaw = 카메라가 도는 방향, pitch = 올려다보면 카메라가 낮아진다 (마우스·터치로 돌린다)
+   */
+  view(cam: THREE.Camera): number {
+    if (this.tpK <= 0) return 0;
+    const h = this.h;
+    const k = ease(this.tpK);
+    const el = Math.max(-0.2, Math.min(1.25, TP_EL - h.pitch * 0.8));
+    const look = _a.set(h.pos.x, h.feetY + TP_LOOK_Y, h.pos.z);
+    const eye = _b.set(
+      look.x + Math.sin(h.yaw) * Math.cos(el) * TP_DIST,
+      Math.max(0.4, look.y + Math.sin(el) * TP_DIST),
+      look.z + Math.cos(h.yaw) * Math.cos(el) * TP_DIST,
+    );
+    _m.lookAt(eye, look, _up);
+    _q.setFromRotationMatrix(_m);
+    cam.position.lerp(eye, k);
+    cam.quaternion.slerp(_q, k);
+    return k;
   }
 
   // ---------- 모형 움직임 ----------
 
-  /** 매 단계 (Boo 모형·말풍선·화면 위 발) */
+  /** 매 단계 (Boo 모형·말풍선·화면 위 발·들려 가는 주인공) */
   update(dt: number): void {
     const h = this.h;
     this.anim += dt;
@@ -546,8 +736,15 @@ export class Boo {
       this.feet.visible = false;
       return;
     }
-    // 붙잡는 자리: 플레이어 머리 바로 위 조금 뒤 (위를 올려다보면 배와 발이 보인다. 팔이 화면을 가리지 않게 높이 둔다)
+    // 3인칭: 붙잡혀 나는 동안 빠지고, 내려앉으면 돌아온다
+    if (this.state === 'fly') this.tpK = Math.min(1, this.tpK + dt / TP_IN);
+    else this.tpK = Math.max(0, this.tpK - dt / TP_OUT);
+    const tk = ease(this.tpK);
+    // 붙잡는 자리 — 1인칭: 플레이어 머리 바로 위 조금 뒤 (위를 올려다보면 배와 발이 보인다. 팔이 화면을 가리지 않게 높이 둔다)
+    // 3인칭: 주인공이 머리 위로 뻗은 두 손 바로 위 (Boo 손이 주인공 손을 잡는다)
     const hold = _a.set(h.pos.x + Math.sin(h.yaw) * 0.4, h.eyeY + 1.0, h.pos.z + Math.cos(h.yaw) * 0.4);
+    // 3인칭: 주인공 머리 조금 뒤 위 (주인공 얼굴이 Boo 배에 가리지 않게)
+    if (tk > 0) hold.lerp(_c.set(h.pos.x - Math.sin(this.heading) * 0.3, h.feetY + HAND_Y - 0.12, h.pos.z - Math.cos(this.heading) * 0.3), tk);
     const root = mm.root;
     let face: THREE.Vector3;
     let lean = 0;
@@ -560,8 +757,9 @@ export class Boo {
       grip = k;
     } else if (this.state === 'fly') {
       root.position.copy(hold);
-      face = this.dir;
-      lean = 0.3 * Math.sin(Math.min(1, this.t / FLY_T) * Math.PI);
+      face = _b.set(Math.sin(this.heading), 0, Math.cos(this.heading)).lerp(this.dir, 1 - tk);
+      // 3인칭에서는 손이 맞닿게 똑바로 (1인칭일 때만 앞으로 기운다)
+      lean = 0.3 * Math.sin(Math.min(1, this.t / FLY_T) * Math.PI) * (1 - tk);
       grip = 1;
     } else {
       const k = this.t / LEAVE_T;
@@ -580,14 +778,26 @@ export class Boo {
     mm.armR.rotation.set(-0.12 * grip, 0, -0.12 - 1.0 * (1 - grip) - armFlap);
     const sw = Math.sin(this.anim * 6) * 0.3;
     // 들고 나는 동안 다리는 뒤로 늘어진다 (올려다볼 때 신발이 얼굴 앞을 가리지 않게)
-    const trail = this.state === 'fly' ? -0.55 : 0;
+    // (3인칭에서는 반대로 뒤쪽으로 — 주인공 얼굴 앞을 가리지 않게)
+    const trail = this.state === 'fly' ? -0.55 + 1.5 * tk : 0;
     mm.legL.rotation.x = trail + sw + lean * 0.6;
     mm.legR.rotation.x = trail - sw + lean * 0.6;
     this.tag.update(dt);
-    // 화면 위쪽 가장자리의 발: 들고 날 때만, 위를 올려다보면 (진짜 Boo가 보이므로) 숨긴다
-    const want = this.state === 'fly' && h.pitch < 0.3 ? 1 : 0;
+    // 들려 가는 주인공: 3인칭으로 어느 정도 빠졌을 때만 보인다 (카메라가 몸 안에 있을 때는 숨긴다)
+    const me = this.me;
+    this.meG.visible = !!me && this.tpK > 0.15;
+    if (me && this.meG.visible) {
+      this.meG.position.set(h.pos.x, h.feetY, h.pos.z);
+      this.meG.rotation.set(0, this.heading, 0);
+      // 매달려 흔들린다 (날 때만)
+      const swing = this.state === 'fly' ? 1 : 0;
+      me.root.rotation.set(Math.sin(this.anim * 1.7) * 0.05 * swing, 0, Math.sin(this.anim * 2.3) * 0.06 * swing);
+      this.hang(me, this.state === 'fly' ? 1 : tk);
+    }
+    // 화면 위쪽 가장자리의 발: 1인칭으로 들고 날 때만 (3인칭이면 숨긴다), 위를 올려다보면 (진짜 Boo가 보이므로) 숨긴다
+    const want = this.state === 'fly' && this.tpK <= 0 && h.pitch < 0.3 ? 1 : 0;
     this.feetK += (want - this.feetK) * Math.min(1, dt * 8);
-    this.feet.visible = this.feetK > 0.02;
+    this.feet.visible = this.tpK <= 0 && this.feetK > 0.02;
     this.feet.position.y = 0.52 - 0.14 * this.feetK;
     this.feet.rotation.x = Math.sin(this.anim * 6) * 0.12;
     this.feet.children[0].rotation.x = Math.sin(this.anim * 6) * 0.15;
@@ -601,6 +811,8 @@ export class Boo {
     this.tag.hide();
     this.feet.visible = false;
     this.feetK = 0;
+    this.tpK = 0;
+    this.meG.visible = false;
   }
 
   /** 판을 처음으로 (다시 하기·처음 화면): 벨·횟수도 */
@@ -625,7 +837,7 @@ export class Boo {
     this.el.btn?.classList.toggle('on', on);
   }
 
-  /** 미리 그리기 (모형·이름표·말풍선·화면 위 발) */
+  /** 미리 그리기 (모형·이름표·말풍선·화면 위 발·들려 가는 주인공 열 명) */
   warm(group: THREE.Group): () => void {
     const root = this.m.root;
     root.visible = true;
@@ -634,9 +846,20 @@ export class Boo {
     this.tag.say(T.call, 1, false);
     this.tag.update(0.016);
     this.feet.visible = true;
+    const ppl = [...this.heroes.values()];
+    ppl.forEach((p, i) => {
+      p.root.position.set(-9 + i * 1.6, -1.6, -8);
+      this.hang(p, 1);
+      group.add(p.root);
+    });
     return () => {
       group.remove(root);
       this.h.scene.add(root);
+      for (const p of ppl) {
+        group.remove(p.root);
+        p.root.position.set(0, 0, 0);
+        this.hang(p, 0);
+      }
       this.hide();
     };
   }
