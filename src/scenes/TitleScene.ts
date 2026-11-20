@@ -8,6 +8,7 @@ import { createStaffRig, createStudentHeroRig } from '../entities/rigs';
 import type { GameMode } from '../records';
 import { fadeTo, makeButton } from '../ui/button';
 import { HUFS_KEYS, HUFS_NAVY, hufsImage, loadHufsAssets } from '../hufs';
+import { goAppHome, isApp, titleLeft, titleShown } from '../pwa';
 
 // 타이틀: 교직원 모드(출근하기)와 학생 모드(등교하기) 중 하나를 고른다.
 // 키보드: Enter·1 = 교직원 모드, 2 = 학생 모드, B = 기록판.
@@ -30,6 +31,9 @@ export class TitleScene extends Phaser.Scene {
     this.controls = new Controls();
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.controls.destroy());
     this.cameras.main.fadeIn(200, 0, 0, 0);
+    // 휴대폰 브라우저 설치 안내(src/pwa.ts)는 타이틀에서만
+    titleShown();
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, titleLeft);
     const cx = GAME_W / 2;
     const touch = this.sys.game.device.input.touch;
 
@@ -68,6 +72,9 @@ export class TitleScene extends Phaser.Scene {
     student.root.setPosition(850, 450).setScale(1.7);
     student.root.scaleX = -1.7;
     this.rigs = [staff, student];
+
+    // 홈 화면 앱으로 열었을 때만: 왼쪽 위 "처음으로" (두 게임 고르는 첫 화면 app.html)
+    if (isApp()) makeButton(this, 68, 30, 108, 32, '처음으로', goAppHome, 0x2a3346);
 
     const help = touch
       ? '왼쪽 화면 드래그: 이동   A: 처리·공격   B: 점프   줍기: 무기 줍기·던지기   SP: 필살기'

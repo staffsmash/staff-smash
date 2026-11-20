@@ -10,6 +10,8 @@ export default defineConfig({
       input: {
         main: 'index.html',
         fps: 'fps.html',
+        // 홈 화면 앱의 첫 화면 (manifest start_url)
+        app: 'app.html',
       },
     },
   },
