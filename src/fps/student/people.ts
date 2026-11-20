@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { HEROES, type HeroDef } from '../../data/heroes';
 import { lambert } from '../blocks';
+import { staffLook } from '../looks';
 import { Person, peopleKit, type Look } from '../people';
 import type { StaffKind } from './bosses';
 
@@ -9,7 +10,8 @@ import type { StaffKind } from './bosses';
 // - 반사반사 결재부총장: createDeanRig('bansa') — 남색 정장, 보라 넥타이, 넘긴 짙은 회색 머리, 금 배지, 큰 결재판
 // - 김부재중 처장: createSupervisorRig('bujae') — 회색 정장, 금색 넥타이, 짙은 머리, 왼손에 늘 휴대폰
 // - 허허실실 부총장: createSupervisorRig('hoho') — 초록 정장, 주황 넥타이, 회색 옆머리, 금 배지, 웃는 입, 왼손에 간식 봉투
-// - 창구 직원: createStaffRig(HEROES 외형) + 손에 든 물건(addWindowProp) — 셔츠·넥타이·사원증 (김학생식당은 앞치마)
+// - 창구 직원: createStaffRig(HEROES 외형) + 손에 든 물건(addWindowProp) — 셔츠·넥타이·사원증.
+//   11차: 외형은 looks.ts staffLook (여성은 블라우스·리본·치마, 안경 모양·머리띠·규정집까지 2D와 같다)
 // 총장은 교직원 모드 모형을 그대로 쓴다. people.ts의 Who는 모양 고르기에만 쓰이므로 처장·부총장·창구 직원은 'meeting'으로 둔다.
 
 const SKIN = 0xf1c7a0;
@@ -126,22 +128,7 @@ export interface StudentPeople {
 export function buildStudentPeople(): StudentPeople {
   const staff = {} as Record<StaffKind, Person>;
   for (const kind of STAFF_KINDS) {
-    const h = staffHero(kind).look;
-    const look: Look = {
-      top: h.shirt,
-      pants: h.pants ?? 0x2d3b63,
-      tie: h.tie,
-      skin: SKIN,
-      hair: h.hair,
-      hairStyle: h.longHair ? 'long' : 'full',
-      jacket: false,
-      glasses: h.glasses,
-      apron: h.apron,
-      noTie: h.apron,
-      lanyard: !h.apron,
-      left: 'none',
-      scale: 1.5,
-    };
+    const look = staffLook(staffHero(kind).look, 1.5);
     const p = new Person('meeting', `${staffHero(kind).name} · 창구`, '#9fd3ff', look);
     addProp(p, kind);
     staff[kind] = p;

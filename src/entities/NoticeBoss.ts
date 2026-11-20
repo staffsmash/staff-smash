@@ -1,12 +1,13 @@
 import Phaser from 'phaser';
 import stats from '../data/enemies.json';
 import { TYPE_LABEL } from '../data/names';
+import { studentByName } from '../data/students';
 import type { StageScene } from '../scenes/StageScene';
 import { Enemy, pickLine, type BossLike } from './Enemy';
 import type { HitInfo } from './Fighter';
 import type { Player } from './Player';
 import { neutralPose, type Pose } from './Rig';
-import { createStudentRig } from './rigs';
+import { createNamedStudentRig } from './rigs';
 import { studentPose } from './StudentEnemy';
 import * as fx from '../fx';
 
@@ -15,6 +16,7 @@ import * as fx from '../fx';
 // - 가까우면 "그래서요?!" 3연타.
 // - 안내문을 3번 붙여야(안내문 롤로 치거나 던지기) 처리된다. 그 전에는 체력이 1에서 멈춘다.
 // - 처리되면 쓰러지지 않고 인사하고 돌아간다.
+// - 11차: 외형은 이름을 따르고(createNamedStudentRig), 나타날 때 나라말로 인사한다.
 
 const S = stats.noticeBoss;
 const QUESTIONS = [
@@ -50,7 +52,7 @@ export class NoticeBoss extends Enemy implements BossLike {
       scene,
       x,
       y,
-      createStudentRig(scene, { jacket: 0x8a1f2c, hair: 0x1f1a17, earphones: true }),
+      createNamedStudentRig(scene, name, { jacket: 0x8a1f2c, hair: 0x1f1a17, earphones: true }),
       S.hp,
       64,
       enterTargetX,
@@ -75,6 +77,8 @@ export class NoticeBoss extends Enemy implements BossLike {
       this.marks.push(m);
     }
     this.setLabel(name, '#ff9f9f');
+    const hello = studentByName(name)?.hello;
+    if (hello) this.say(hello, 2.6);
     this.sync();
   }
 

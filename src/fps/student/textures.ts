@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { StudentHeroLook } from '../../data/students';
+import { drawPortraitHead } from '../looktex';
 import { canvasTex, FONT, NAVY } from '../textures';
 
 // 학생 모드 그림 (모두 캔버스). 외형·색은 본편 2D studentRigs.ts 값을 옮겼다.
@@ -303,18 +304,33 @@ export function passportTex(): THREE.CanvasTexture {
   });
 }
 
-/** 선택 화면 주인공 얼굴 (블록형 앞모습, 2D createStudentHeroRig 색) */
+/** 선택 화면 주인공 얼굴 (블록형 앞모습, 2D createStudentHeroRig 색). 11차: 남녀 머리·야구잠바·체크 셔츠 */
 export function heroPortrait(look: StudentHeroLook): string {
   const c = document.createElement('canvas');
   c.width = 96;
   c.height = 112;
   const g = c.getContext('2d') as CanvasRenderingContext2D;
   const hex = (n: number) => `#${n.toString(16).padStart(6, '0')}`;
-  const skin = '#f1c7a0';
-  // 몸통 (후드티 또는 재킷 + 티셔츠)
+  // 몸통 (후드티 · 재킷 + 티셔츠 · 야구잠바 · 체크 셔츠)
   g.fillStyle = hex(look.jacket);
   g.fillRect(16, 70, 64, 42);
-  if (look.hoodie) {
+  if (look.check) {
+    g.fillStyle = 'rgba(0,0,0,0.28)';
+    for (let x = 16; x < 80; x += 14) g.fillRect(x, 70, 5, 42);
+    for (let y = 74; y < 112; y += 14) g.fillRect(16, y, 64, 5);
+    g.fillStyle = 'rgba(255,255,255,0.4)';
+    for (let x = 25; x < 80; x += 14) g.fillRect(x, 70, 2, 42);
+  }
+  if (look.varsity) {
+    // 외대 야구잠바: 흰 소매, 줄무늬 목깃, 가슴 "H"
+    g.fillStyle = '#f4f4f4';
+    g.fillRect(16, 74, 10, 38);
+    g.fillRect(70, 74, 10, 38);
+    g.fillRect(36, 72, 24, 2);
+    g.fillRect(53, 84, 4, 16);
+    g.fillRect(63, 84, 4, 16);
+    g.fillRect(53, 90, 14, 4);
+  } else if (look.hoodie) {
     g.fillStyle = 'rgba(0,0,0,0.18)';
     g.fillRect(28, 92, 40, 14);
     g.fillStyle = '#f4f4f4';
@@ -328,38 +344,13 @@ export function heroPortrait(look: StudentHeroLook): string {
   g.fillRect(16, 72, 7, 40);
   g.fillRect(73, 72, 7, 40);
   // 머리
-  if (look.longHair) {
-    g.fillStyle = hex(look.hair);
-    g.fillRect(18, 18, 60, 62);
-  }
-  g.fillStyle = skin;
-  g.fillRect(24, 22, 48, 48);
-  g.fillStyle = hex(look.hair);
-  g.fillRect(22, 14, 52, 14);
-  g.fillRect(22, 14, 8, 24);
-  if (!look.longHair) g.fillRect(66, 14, 8, 18);
-  g.fillStyle = INK;
-  g.fillRect(34, 42, 6, 8);
-  g.fillRect(56, 42, 6, 8);
-  g.fillStyle = '#8a3b2b';
-  g.fillRect(42, 58, 12, 3);
-  if (look.glasses) {
-    g.strokeStyle = '#7fa6c2';
-    g.lineWidth = 3;
-    g.strokeRect(29, 38, 15, 14);
-    g.strokeRect(52, 38, 15, 14);
-    g.beginPath();
-    g.moveTo(44, 44);
-    g.lineTo(52, 44);
-    g.stroke();
-  }
-  if (look.earphones) {
-    g.fillStyle = '#f4f4f4';
-    g.fillRect(19, 46, 6, 10);
-    g.fillRect(71, 46, 6, 10);
-  }
-  g.strokeStyle = INK;
-  g.lineWidth = 2;
-  g.strokeRect(24, 22, 48, 48);
+  drawPortraitHead(g, {
+    hair: hex(look.hair),
+    style: look.bob ? 'bob' : look.ponytail ? 'ponytail' : look.longHair ? 'long' : 'short',
+    female: look.female,
+    glasses: look.glasses,
+    glassesStyle: look.glassesStyle,
+    earphones: look.earphones,
+  });
   return c.toDataURL();
 }

@@ -9,9 +9,10 @@ import { isWeaponId, type WeaponId } from './weapons';
 import * as fx from '../fx';
 
 // 무기를 건네주는 것 (맞지 않고 넘어지지 않으며, 적은 상관하지 않는다).
-// - 교직원 모드 "경비원"(이름 없는 가상 인물): 앞에서 L(줍기 버튼)로 인사하면 무기를 준다.
-//   공격이나 던진 무기로 건드리면 6초 동안 인사를 받아 주지 않는다. 보스 기믹 무기는 경비원이 던져 준다.
-//   그 구역에 경비원이 없으면 화면 끝에서 잠깐 들어와 던져 주고 나간다 (courier).
+// - 교직원 모드 "경비 선생님"(이름 없는 가상 인물): 앞에서 L(줍기 버튼)로 인사하면 무기를 준다.
+//   공격이나 던진 무기로 건드리면 6초 동안 인사를 받아 주지 않는다. 보스 기믹 무기는 경비 선생님이 던져 준다.
+//   그 구역에 경비 선생님이 없으면 화면 끝에서 잠깐 들어와 던져 주고 나간다 (courier).
+//   11차(2026-11-21): 남녀가 번갈아 선다 — 스테이지의 자리 순서대로 남·여 (StageScene), 들어왔다 나가는 사람도 번갈아.
 // - 학생 모드 "도서 무인 대출기"(사람이 아닌 기계): 앞에서 L(줍기 버튼)로 대여하면 무기가 나온다 (전공책이 가장 자주).
 // 주고받는 흐름(무기 장착·바닥에 떨어뜨리기)은 StageScene이 맡고, 여기서는 모양·말풍선·동작·대기 시간만 다룬다.
 
@@ -23,7 +24,7 @@ export const GIFT_COOLDOWN = 8;
 export const REFUSE_SEC = 6;
 
 export const GIVER_TEXT = {
-  guardName: '경비원',
+  guardName: '경비 선생님',
   kioskName: '도서 무인 대출기',
   /** 플레이어(교직원)의 인사 */
   hello: '안녕하세요!',
@@ -32,12 +33,14 @@ export const GIVER_TEXT = {
   guardRude: '어허, 인사부터 하셔야죠.',
   guardRefuse: '흠… 조금 있다가 오세요.',
   /** 보스 기믹 무기를 던져 줄 때 (떠오르는 글자) */
-  guardToss: '경비원: 이거 쓰세요!',
+  guardToss: '경비 선생님: 이거 쓰세요!',
   kioskGive: '도서 대여 완료!',
   kioskCooldown: '대출 처리 중…',
 } as const;
 
 const WALK = 230;
+/** 들어왔다 나가는 경비 선생님은 올 때마다 남녀가 바뀐다 */
+let courierFemale = false;
 
 type GuardPose = 'idle' | 'bow' | 'toss' | 'flinch';
 type CourierState = 'enter' | 'stay' | 'leave';
@@ -46,7 +49,7 @@ export class Giver {
   readonly kind: GiverKind;
   readonly name: string;
   readonly items: WeaponId[];
-  /** 기믹 무기를 던져 주러 잠깐 들어온 경비원 (인사를 받지 않는다) */
+  /** 기믹 무기를 던져 주러 잠깐 들어온 경비 선생님 (인사를 받지 않는다) */
   readonly courier: boolean;
   x: number;
   readonly y: number;
@@ -56,7 +59,7 @@ export class Giver {
   removed = false;
   /** 다음 선물까지 남은 시간 */
   cooldown = 0;
-  /** 인사를 받지 않는 남은 시간 (경비원을 건드렸다) */
+  /** 인사를 받지 않는 남은 시간 (경비 선생님을 건드렸다) */
   refuseT = 0;
   private readonly scene: StageScene;
   private readonly rig: Rig | null;
@@ -79,7 +82,8 @@ export class Giver {
   private targetX = 0;
   private onArrive: (() => void) | null = null;
 
-  constructor(scene: StageScene, kind: GiverKind, x: number, y: number, items: string[], courier = false) {
+  /** female: 경비 선생님을 여성 외형으로 (대출기는 상관없다) */
+  constructor(scene: StageScene, kind: GiverKind, x: number, y: number, items: string[], courier = false, female = false) {
     this.scene = scene;
     this.kind = kind;
     this.x = x;
@@ -89,7 +93,7 @@ export class Giver {
     if (this.items.length === 0) this.items = [kind === 'kiosk' ? 'clipboard' : 'stapler'];
     if (kind === 'guard') {
       this.name = GIVER_TEXT.guardName;
-      this.rig = createGuardRig(scene);
+      this.rig = createGuardRig(scene, female);
       this.body = null;
       this.screen = null;
       this.halfW = 20;
@@ -116,9 +120,10 @@ export class Giver {
     this.sync();
   }
 
-  /** 화면 끝에서 들어와 targetX에서 onArrive를 부르고(무기를 던지고) 다시 나가는 경비원 */
+  /** 화면 끝에서 들어와 targetX에서 onArrive를 부르고(무기를 던지고) 다시 나가는 경비 선생님 (남녀 번갈아) */
   static courierIn(scene: StageScene, fromX: number, y: number, targetX: number, onArrive: () => void): Giver {
-    const g = new Giver(scene, 'guard', fromX, y, [], true);
+    courierFemale = !courierFemale;
+    const g = new Giver(scene, 'guard', fromX, y, [], true, courierFemale);
     g.targetX = targetX;
     g.onArrive = onArrive;
     g.facing = targetX >= fromX ? 1 : -1;
@@ -137,7 +142,7 @@ export class Giver {
     return !this.removed && this.x > left + 20 && this.x < left + GAME_W - 20;
   }
 
-  /** 무기가 나오는(경비원 손, 대출기 구멍) 자리 */
+  /** 무기가 나오는(경비 선생님 손, 대출기 구멍) 자리 */
   get handPos(): { x: number; y: number; z: number } {
     if (this.kind === 'kiosk') return { x: this.x - 6, y: this.y + 2, z: 54 };
     return { x: this.x + this.facing * 22, y: this.y, z: 64 };
@@ -180,7 +185,7 @@ export class Giver {
     this.blinkT = 0.7;
   }
 
-  /** 플레이어의 공격·던진 무기에 맞았다. 경비원만 반응한다 (다치지 않고 움찔할 뿐). 반응했으면 true */
+  /** 플레이어의 공격·던진 무기에 맞았다. 경비 선생님만 반응한다 (다치지 않고 움찔할 뿐). 반응했으면 true */
   rudeHit(): boolean {
     if (this.kind !== 'guard' || this.removed) return false;
     this.refuseT = REFUSE_SEC;

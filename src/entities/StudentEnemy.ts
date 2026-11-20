@@ -2,15 +2,18 @@ import Phaser from 'phaser';
 import stats from '../data/enemies.json';
 import { FLOOR_BOTTOM, FLOOR_TOP, GAME_W } from '../config';
 import { TYPE_LABEL } from '../data/names';
+import { studentByName } from '../data/students';
 import type { StageScene } from '../scenes/StageScene';
 import { Enemy, pickLine } from './Enemy';
 import type { HitInfo } from './Fighter';
 import type { Clinger, Player } from './Player';
 import { neutralPose, type Pose } from './Rig';
-import { createStudentRig, type StudentLook } from './rigs';
+import { createNamedStudentRig, type StudentLook } from './rigs';
 import * as fx from '../fx';
 
 // 중간보스 민원 학생 (가상 인물, 이름은 매 판 무작위). 학생은 넘어지지 않고, 처리되면 인사하고 돌아간다.
+// 11차(2026-11-21): 몸·머리·성별은 이름을 따른다 (students.ts, createNamedStudentRig). 유형마다 다른 것은 손에 든 물건뿐.
+// 처음 나타날 때 나라말로 인사한다 (hello).
 // - 전화번호 잘못 입력한 학생: 화면 여기저기로 순간이동한다.
 // - 서류 제출이 늦은 학생: 처리한 줄 알았는데 서류를 들고 한 번 더 온다.
 // - 규정을 읽지 않고 떼쓰는 학생: 정면 공격을 막는다. 뒤에서 치거나 무엇이든 던져 맞히면 가드가 풀린다.
@@ -19,6 +22,7 @@ import * as fx from '../fx';
 
 export type StudentKind = 'wrongNumber' | 'lateDoc' | 'tantrum' | 'graduation' | 'presidentMail';
 
+/** 이름이 students.ts에 없을 때만 쓰는 과잠 차림 (예전 유형별 외형) */
 const LOOKS: Record<StudentKind, StudentLook> = {
   wrongNumber: { jacket: 0x23315a, hair: 0x2a2420 },
   lateDoc: { jacket: 0x2f5d3a, hair: 0x5b3a24, longHair: true },
@@ -149,7 +153,7 @@ export class StudentEnemy extends Enemy implements Clinger {
 
   constructor(scene: StageScene, kind: StudentKind, x: number, y: number, enterTargetX: number, name: string) {
     const st = stats[kind] as StudentStats;
-    super(scene, x, y, createStudentRig(scene, LOOKS[kind]), st.hp, 50, enterTargetX);
+    super(scene, x, y, createNamedStudentRig(scene, name, LOOKS[kind]), st.hp, 50, enterTargetX);
     this.kind = kind;
     this.st = st;
     this.baseScale = 1.1;
@@ -167,6 +171,8 @@ export class StudentEnemy extends Enemy implements Clinger {
     if (kind === 'graduation') rig.itemF.add(rig.part(0, 0, 18, 24, 0xffffff, 0.5, 0)); // 졸업 사정 서류
 
     this.setLabel(`${name} · ${TYPE_LABEL[kind]}`);
+    const hello = studentByName(name)?.hello;
+    if (hello) this.say(hello, 2.4);
     this.sync();
   }
 

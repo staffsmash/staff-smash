@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { HEROES, heroById, type HeroId } from '../data/heroes';
-import { STUDENT_HEROES, type StudentHeroDef } from '../data/students';
-import { Person, type Look } from './people';
+import { STUDENT_HEROES } from '../data/students';
+import { staffLook, studentLook } from './looks';
+import { Person } from './people';
 import type { PerkHost } from './props';
 import { prepareSpeech } from './speech';
 
@@ -16,9 +17,9 @@ import { prepareSpeech } from './speech';
 // (다 채우지는 않는다: 5%는 남긴다 — Game.rescueHit). 첫째가 대사 1, 둘째가 대사 2를 말하고 걸어 나간다.
 // 조력자는 다치지 않는다 (적 목록에 없고, 도장·폭발·민원이 노리지 않는다).
 // 대사는 사용자가 정한 그대로다.
+// 11차(2026-11-21): 외형은 looks.ts (2D와 같은 남녀 외형). 학생 친구는 뛰어 들어오면서 나라말로 인사한다 (hello).
 
 const STAFF_IDS: HeroId[] = HEROES.map((h) => h.id);
-const SKIN = 0xf1c7a0;
 /** 체력 30% 아래에서 조력자가 올 확률: 구한 사람이 있으면 / 없으면 (사용자 2026-11-18) */
 export const RESCUE_CHANCE_SAVED = 0.5;
 export const RESCUE_CHANCE_NONE = 0.05;
@@ -47,48 +48,6 @@ export function rescueLines(student: boolean, name: string): [string, string] {
   return ['서류 마감기간이니 제가 대신 해드릴게요!', `${name}님! 전화 대신 받아드려요!`];
 }
 
-function staffLook(id: HeroId): Look {
-  const h = heroById(id).look;
-  return {
-    top: h.shirt,
-    pants: h.pants ?? 0x2d3b63,
-    tie: h.tie,
-    skin: SKIN,
-    hair: h.hair,
-    brow: h.hair,
-    hairStyle: h.longHair ? 'long' : 'full',
-    jacket: false,
-    glasses: h.glasses,
-    lanyard: !h.apron,
-    apron: h.apron,
-    left: 'none',
-    scale: 1.45,
-  };
-}
-
-function studentLook(s: StudentHeroDef): Look {
-  const l = s.look;
-  return {
-    top: l.jacket,
-    pants: l.pants ?? 0x2d3240,
-    tie: l.jacket,
-    noTie: true,
-    skin: SKIN,
-    hair: l.hair,
-    brow: l.hair,
-    hairStyle: l.longHair ? 'long' : 'full',
-    jacket: false,
-    glasses: l.glasses,
-    hoodie: l.hoodie,
-    tee: l.hoodie ? undefined : (l.tee ?? 0xf4f4f4),
-    bag: l.bag,
-    earphones: l.earphones,
-    shoes: l.shoes,
-    left: 'none',
-    scale: 1.35,
-  };
-}
-
 type HState = 'in' | 'act' | 'talk' | 'out' | 'done';
 
 interface Helper {
@@ -115,6 +74,8 @@ export class Rescue {
   private readonly students = new Map<string, Person>();
   /** 띠 아래에 부르는 조력자 이름 */
   private readonly nameOf = new Map<Person, string>();
+  /** 학생 친구의 나라말 인사 (뛰어 들어올 때) */
+  private readonly helloOf = new Map<Person, string>();
   private active: Helper[] = [];
   /** 이번 판에 조력자를 굴린 구역 (왔든 안 왔든 구역마다 한 번) */
   private used = new Set<string>();
@@ -133,21 +94,22 @@ export class Rescue {
 
   constructor(private readonly h: PerkHost) {
     for (const id of STAFF_IDS) {
-      const p = new Person('meeting', heroById(id).name, '#7CFC9A', staffLook(id));
+      const p = new Person('meeting', heroById(id).name, '#7CFC9A', staffLook(heroById(id).look));
       this.staff.set(id, p);
       this.nameOf.set(p, heroById(id).name);
     }
     for (const s of STUDENT_HEROES) {
-      const p = new Person('meeting', s.name, '#7CFC9A', studentLook(s));
+      const p = new Person('meeting', s.name, '#7CFC9A', studentLook(s.look));
       // 학생은 결재판을 들지 않는다
       p.clip.visible = false;
       this.students.set(s.id, p);
       this.nameOf.set(p, s.name);
+      this.helloOf.set(p, s.hello);
     }
     // 대사 그림 (교직원 주인공 여섯·학생 주인공 넷 이름마다)
     const lines: string[] = [];
     for (const id of STAFF_IDS) lines.push(...rescueLines(false, heroById(id).name));
-    for (const s of STUDENT_HEROES) lines.push(...rescueLines(true, s.name));
+    for (const s of STUDENT_HEROES) lines.push(...rescueLines(true, s.name), s.hello);
     prepareSpeech(lines);
   }
 
@@ -235,6 +197,9 @@ export class Rescue {
       obj.rotation.y = yaw;
       h.scene.add(obj);
       this.active.push({ person, obj, from, spot, state: 'in', t: 0, yaw });
+      // 학생 친구: 뛰어 들어오면서 나라말 인사 (자막은 첫 사람만 — 도착 대사가 곧 이어진다)
+      const hello = this.helloOf.get(person);
+      if (hello) person.say(hello, 1.0, i === 0);
     }
     // 2D처럼 띠 아래에 온 사람 이름
     h.banner(student ? '친구들이 도우러 왔다!' : '동료 직원들이 도우러 왔다!', names.join(' · '));

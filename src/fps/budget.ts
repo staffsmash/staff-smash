@@ -9,6 +9,7 @@ import { canvasTex, FONT } from './textures';
 
 // 1인칭 교직원 모드: 예산팀 직원 기절 이벤트 (2026-11-17).
 // - 이름 없는 가상 인물. 머리 위 이름표는 "예산팀 직원"만. 흰 셔츠·팔토시·안경, 왼손에 계산기.
+//   11차(2026-11-21): 여성 — 흰 블라우스·자주 리본·짙은 치마, 묶은 머리.
 // - 교직원 모드에서만, 구역마다 민원 차례(웨이브) 중 한 번: 본관 앞은 2차 민원, 인문과학관 앞·국제학사 앞은 1차 민원이
 //   시작되고 몇 초 뒤. 사회과학관 앞·대운동장·해 질 녘 본관 앞은 민원 차례 없이 중간보스·보스부터라 나오지 않는다.
 //   학생 모드에는 없다.
@@ -30,7 +31,7 @@ export interface BudgetGame {
   readonly runDiff: DiffKey;
   readonly diff: { readonly speed: number };
   readonly world: { readonly obstacles: Rect[] };
-  /** 경비원·상자 (props.ts), 자판기 (vending.ts): 그 위에 서지 않는다 */
+  /** 경비 선생님·상자 (props.ts), 자판기 (vending.ts): 그 위에 서지 않는다 */
   readonly props: { readonly solids: Rect[] };
   readonly vend: { readonly solids: Rect[] };
   /** 잠깐 멈춤. exact: 난이도로 줄이지 않고 그 초 그대로 */
@@ -67,8 +68,11 @@ const LOOK: Look = {
   skin: 0xf1c7a0,
   hair: 0x221c17,
   brow: 0x221c17,
-  hairStyle: 'full',
+  hairStyle: 'ponytail',
   jacket: false,
+  female: true,
+  blouse: true,
+  skirt: true,
   glasses: true,
   left: 'none',
   scale: SCALE,

@@ -68,6 +68,8 @@ export class Rig {
   private cur: Pose = neutralPose();
   private flashT = 0;
   private tint: number | null = null;
+  /** 몸이 좌우로 뒤집혀도(root.scaleX < 0) 바로 읽히게 되돌리는 글자 (머리띠 글씨) */
+  private upright: { t: Phaser.GameObjects.Text; s: number }[] = [];
 
   constructor(scene: Phaser.Scene, spec: RigSpec) {
     this.scene = scene;
@@ -122,6 +124,23 @@ export class Rig {
     if (stroke && this.spec.outline >= 0) r.setStrokeStyle(2, this.spec.outline);
     this.shapes.push({ s: r, color });
     return r;
+  }
+
+  /**
+   * 작은 글자 조각 (가운데 = x, y). 크게 그려 줄여서 또렷하게 하고, 너비가 maxW를 넘지 않게 맞춘다.
+   * 몸이 왼쪽을 볼 때(root.scaleX < 0)도 글자가 거꾸로 보이지 않게 update에서 되돌린다.
+   */
+  text(x: number, y: number, str: string, color: string, size: number, maxW: number, font: string): Phaser.GameObjects.Text {
+    const t = new Phaser.GameObjects.Text(this.scene, x, y, str, {
+      fontFamily: font,
+      fontSize: `${size * 4}px`,
+      fontStyle: 'bold',
+      color,
+    }).setOrigin(0.5);
+    const s = Math.min(0.25, maxW / Math.max(1, t.width));
+    t.setScale(s);
+    this.upright.push({ t, s });
+    return t;
   }
 
   private leg(x: number, y: number, color: number): Container {
@@ -185,6 +204,10 @@ export class Rig {
     this.armB.rotation = c.armB;
     this.body.rotation = c.body;
     this.body.y = c.bob;
+    if (this.upright.length) {
+      const f = this.root.scaleX < 0 ? -1 : 1;
+      for (const u of this.upright) u.t.scaleX = f * u.s;
+    }
     this.tickFlash(dt);
   }
 
