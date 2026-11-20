@@ -1,6 +1,9 @@
 // 1인칭 시험판 설정(난이도·감도·소리·조준 보조·화면 효과)과 난이도별 최고 기록.
 // 모두 이 브라우저의 localStorage에만 둔다 (온라인 기록판으로는 보내지 않는다).
+// 배경음악 크기만은 2D 본편과 같이 쓰므로 src/sound.ts(music)가 따로 저장한다.
 // 저장소를 못 쓰는 환경(사생활 보호 창, 막힌 저장소)에서도 기본값과 메모리 값으로 그대로 돈다.
+
+import { music } from '../sound';
 
 export type DiffKey = 'easy' | 'normal' | 'hard';
 
@@ -153,8 +156,10 @@ export function settingsHtml(s: Settings, opts: { touch: boolean; inRun: boolean
       <p class="snote">${opts.inRun ? '난이도는 다음 판부터 적용됩니다' : '초보는 민원이 적고 느리며, 안 맞고 있으면 체력이 차오르고 조준을 도와줍니다'}</p>
       <div class="srow"><label class="slabel" for="setSens">${opts.touch ? '터치 감도' : '마우스 감도'}</label>
         <input type="range" id="setSens" min="0.4" max="2.5" step="0.1" value="${s.sens}"><output id="setSensOut">${s.sens.toFixed(1)}배</output></div>
-      <div class="srow"><label class="slabel" for="setVol">소리 크기</label>
+      <div class="srow"><label class="slabel" for="setVol">효과음 크기</label>
         <input type="range" id="setVol" min="0" max="100" step="5" value="${Math.round(s.volume * 100)}"><output id="setVolOut">${Math.round(s.volume * 100)}%</output></div>
+      <div class="srow"><label class="slabel" for="setMusic">배경음악</label>
+        <input type="range" id="setMusic" min="0" max="100" step="5" value="${Math.round(music.volume * 100)}"><output id="setMusicOut">${Math.round(music.volume * 100)}%</output></div>
       ${
         opts.touch
           ? `<div class="srow"><label class="slabel" for="setAssist">조준 보조</label><input type="checkbox" id="setAssist" ${s.assist ? 'checked' : ''}><span class="shint">조준점 가까운 민원 쪽으로 도장이 살짝 휩니다</span></div>`
@@ -194,6 +199,12 @@ export function bindSettings(root: HTMLElement, s: Settings, onChange: (key: key
     if (out) out.textContent = `${Math.round(s.volume * 100)}%`;
     saveSettings(s);
     onChange('volume');
+  });
+  const mus = root.querySelector<HTMLInputElement>('#setMusic');
+  mus?.addEventListener('input', () => {
+    music.setVolume((Number(mus.value) || 0) / 100);
+    const out = root.querySelector('#setMusicOut');
+    if (out) out.textContent = `${Math.round(music.volume * 100)}%`;
   });
   for (const [id, key] of [
     ['#setAssist', 'assist'],

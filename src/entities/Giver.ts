@@ -7,6 +7,7 @@ import { createGuardRig } from './rigs';
 import { createKiosk } from './studentRigs';
 import { isWeaponId, type WeaponId } from './weapons';
 import * as fx from '../fx';
+import { play } from '../sound';
 
 // 무기를 건네주는 것 (맞지 않고 넘어지지 않으며, 적은 상관하지 않는다).
 // - 교직원 모드 "경비원"(이름 없는 가상 인물): 앞에서 L(줍기 버튼)로 인사하면 무기를 준다.
@@ -166,6 +167,8 @@ export class Giver {
 
   /** 맞받아 인사 */
   bow(): void {
+    // 경비원이 무기를 건넨다 (인사를 받아 준 때만 부른다)
+    play('open', 0.8);
     this.setPose('bow');
   }
 
@@ -177,6 +180,8 @@ export class Giver {
 
   /** 대출기 화면이 깜빡인다 */
   blink(): void {
+    // 대출기에서 무기가 나온다
+    play('open', 0.8);
     this.blinkT = 0.7;
   }
 

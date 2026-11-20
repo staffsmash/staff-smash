@@ -65,6 +65,7 @@ import { gradeStage, type StageStats } from '../grade';
 import { newRun, runClock, type RunState } from '../run';
 import { drawBackground } from './background';
 import * as fx from '../fx';
+import * as sound from '../sound';
 
 // 스테이지. 구역을 차례로 잠그고 웨이브(교직원 src/data/stageN.json, 학생 studentN.json)를 정리한다.
 // run.mode가 모든 것을 정한다: 교직원 모드는 민원 처리(방해 상사, 결재 대기), 학생 모드는 행정 돌파(창구 직원, 처장·부총장·총장).
@@ -372,6 +373,7 @@ export class StageScene extends Phaser.Scene {
 
     this.updateCamera(dt);
     const b = this.boss && !this.boss.bossGone ? this.boss : null;
+    sound.stageMusic(this.run.mode, !!b && !this.bossDefeated, this.paused);
     this.hud.update(this.player, {
       stageTitle: this.stage.title,
       zoneLabel: this.zoneLabel,
@@ -1203,6 +1205,7 @@ export class StageScene extends Phaser.Scene {
           fx.floatText(this, p.x, p.y - 128, '단체 서명지 접수 완료!', '#7CFC9A', 18);
           break;
       }
+      sound.play('pickup');
       it.destroy();
     }
     this.pickups = this.pickups.filter((i) => !i.removed);
@@ -1526,6 +1529,7 @@ export class StageScene extends Phaser.Scene {
     const ring = this.add.ellipse(x, y - 20, r * 2, r * 1.2, 0xff9f43, 0.7).setDepth(y + 2);
     this.tweens.add({ targets: ring, scaleX: 1.4, scaleY: 1.4, alpha: 0, duration: 300, onComplete: () => ring.destroy() });
     fx.floatText(this, x, y - 80, text, '#ffb86b', 22);
+    sound.play('boom', 0.8);
     this.cameras.main.shake(140, 0.008);
     const p = this.player;
     if (dmg.player > 0 && Math.abs(p.x - x) < r && Math.abs(p.y - y) < r * 0.45 && p.z < 40) {
@@ -1929,6 +1933,7 @@ export class StageScene extends Phaser.Scene {
   private onBossDefeated(title: string, sub: string): void {
     if (this.bossDefeated) return;
     this.bossDefeated = true;
+    sound.play('clear');
     fx.banner(this, title, sub, 2400);
     for (const o of this.enemies) {
       if (o.dead || o.kind === 'chonghak' || o.kind === 'noticeBoss' || o.kind === 'deadlineBoss') continue;

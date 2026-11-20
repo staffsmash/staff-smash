@@ -7,6 +7,7 @@ import { createPresidentPortrait, createPresidentRig, createStaffRig } from '../
 import { runClock, type RunState, lateMin } from '../run';
 import { fadeTo } from '../ui/button';
 import * as fx from '../fx';
+import { play } from '../sound';
 import { drawEndingBackdrop } from './background';
 
 // 교직원 모드 엔딩 (PRD 5절): 총학 집행부의 면담 요청에 프레지던트 캉이 내려와
@@ -89,6 +90,7 @@ export class EndingScene extends Phaser.Scene {
     this.time.delayedCall(8000, () => {
       this.heroPose = 'phone';
       fx.ringWave(this, 330, 440);
+      play('ring');
     });
     line(8000, '따르릉!', '#ffe066', 30);
     line(9800, '…네? 내일 아침 9시 회의요?', '#ffffff', 22);
@@ -97,6 +99,8 @@ export class EndingScene extends Phaser.Scene {
 
   /** 큰 도장. x: 화면 가로 위치 (두 도장을 나란히 찍는다) */
   private stamp(text: string, color: number, rot: number, x: number): void {
+    // 퇴근 승인은 "딩동댕동", 월급 인상은 짧은 팡파르
+    play(text === '퇴근 승인' ? 'offwork' : 'clear');
     this.presArm = 1;
     this.time.delayedCall(250, () => (this.presArm = 0));
     const c = this.add.container(x, 215).setDepth(1100);

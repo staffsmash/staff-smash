@@ -28,6 +28,7 @@ import {
 } from './studentRigs';
 import { WEAPONS, weaponName, type WeaponDef, type WeaponId } from './weapons';
 import * as fx from '../fx';
+import { play } from '../sound';
 
 /** 주인공 외형: 교직원(가상 행정직원) 또는 학생 */
 export type PlayerLook = { student: false; look: StaffLook } | { student: true; look: StudentHeroLook };
@@ -377,6 +378,7 @@ export class Player extends Fighter {
     }
     if (c.consume('jump') && !this.clingBy) {
       this.set('jump');
+      play('jump', 0.7);
       this.jumpAttacking = false;
       this.vz = JUMP_V;
       this.vx = mx * (c.running ? RUN : WALK) * mul;
@@ -431,6 +433,7 @@ export class Player extends Fighter {
   }
 
   private startAttack(i: number): void {
+    play('swing', 0.8 + i * 0.15);
     this.state = 'attack';
     this.stateT = 0;
     this.combo = i;
@@ -464,10 +467,12 @@ export class Player extends Fighter {
   equip(id: WeaponId, fuse = 0): void {
     const def = WEAPONS[id];
     this.weapon = { id, def, dur: def.durability, inFlight: false, fuse };
+    play('pickup');
   }
 
   private startWeaponAttack(): void {
     if (!this.weapon) return;
+    play('swing');
     this.state = 'wattack';
     this.stateT = 0;
     this.buffered = false;
@@ -508,6 +513,7 @@ export class Player extends Fighter {
   }
 
   private startThrow(): void {
+    play('throw');
     this.set('throw');
     this.stateT = 0;
     this.threw = false;
@@ -588,6 +594,7 @@ export class Player extends Fighter {
     const front = this.facing === -Math.sign(h.dir);
     if (w?.def.guard && front && !h.force && ['idle', 'walk', 'wattack'].includes(this.state)) {
       w.dur--;
+      play('pop');
       fx.floatText(this.scene, this.x + this.facing * 20, this.y - 110, `${this.wname(w.def)}으로 막음!`, '#9fd3ff', 16);
       this.vx = h.dir * 60;
       if (w.dur <= 0) {
@@ -602,11 +609,13 @@ export class Player extends Fighter {
       this.shieldPopT = SHIELD_GRACE;
       this.invuln = Math.max(this.invuln, SHIELD_GRACE);
       fx.ringWave(this.scene, this.x, this.y, 0x9fd3ff);
+      play('pop');
       const text = this.student ? '공결 확인서로 막음!' : '연차 쿠폰으로 막음!';
       fx.floatText(this.scene, this.x, this.y - 128, text, '#9fd3ff', 18);
       return false;
     }
     this.hp = Math.max(0, this.hp - h.dmg);
+    play('hurt');
     this.rig.flash();
     this.jumpAttacking = false;
     this.facing = h.dir > 0 ? -1 : 1;
@@ -633,6 +642,7 @@ export class Player extends Fighter {
   }
 
   enterSpecial(): void {
+    play('special');
     this.releaseCling();
     this.set('special');
     this.vx = 0;

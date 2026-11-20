@@ -1,10 +1,13 @@
 import Phaser from 'phaser';
 import { FONT, GAME_W } from './config';
+import { play } from './sound';
 
 // 짧은 연출 모음. 모두 스스로 사라진다.
 
 /** 맞은 자리에 찍히는 빨간 도장 */
 export function stampMark(scene: Phaser.Scene, x: number, y: number, label = '처리'): void {
+  // 도장이 찍힐 때마다 "탁" (공격이 맞은 자리에는 늘 이 도장이 찍힌다)
+  play('hit');
   const c = scene.add.container(x, y).setDepth(1500);
   const g = scene.add.graphics();
   g.lineStyle(3, 0xd0202f, 1);

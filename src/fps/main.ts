@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { appHomeLink, titleLeft, titleShown } from '../pwa';
 import { armName, Arms, ARMS, BOOMERANG_TURN, type ArmDef, type ArmId } from './arms';
-import { Sfx, type SfxName } from './audio';
+import type { SfxName } from './audio';
+import { followFps, sfx as sharedSfx } from '../sound';
 import type { Rect } from './blocks';
 import { addBoardButton, attachRecordForm } from './board';
 import { BODY_DMG, BOSS_HINTS, BOSS_NAMES, Bogo, Chonggwal, Meeting, PersonBoss, President, PRESIDENT_LINES, SERVER_SPOT, WEAK_DMG } from './bosses';
@@ -361,7 +362,8 @@ class Game implements Ctx {
   readonly camera = new THREE.PerspectiveCamera(70, 1, 0.05, 900);
   readonly models = new Models();
   readonly fx: Fx;
-  readonly sfx = new Sfx();
+  /** 효과음 (2D와 같이 쓰는 것, src/sound.ts) */
+  readonly sfx = sharedSfx;
   readonly settings: Settings = loadSettings();
   world!: World;
   phase: Phase = 'title';
@@ -532,6 +534,8 @@ class Game implements Ctx {
     if (TOUCH) document.body.classList.add('touch');
     document.querySelectorAll<HTMLElement>('.dmg').forEach((el) => this.dirs.push({ el, from: new THREE.Vector3(), t: 0 }));
     this.sfx.setVolume(this.settings.volume);
+    // 배경음악: 보스·중간보스가 나와 있으면 보스 곡 (src/sound.ts)
+    followFps(this);
   }
 
   /** 예전 시험 스크립트용 (모든 적) */

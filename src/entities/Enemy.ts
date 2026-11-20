@@ -5,6 +5,7 @@ import { Fighter, type HitInfo } from './Fighter';
 import type { Player } from './Player';
 import type { Rig } from './Rig';
 import * as fx from '../fx';
+import { play } from '../sound';
 
 // 모든 적의 공통 부분: 등장·피격·다운·기상·퇴장 상태와 판정, 이름표·말풍선.
 // 사물(메일·전화기 등)은 넘어지고, 학생은 넘어지지 않고 비틀거리다가 인사하고 돌아간다 (PRD 4절).
@@ -274,6 +275,7 @@ export abstract class Enemy extends Fighter {
     this.vx = 0;
     this.vy = 0;
     this.scene.releaseToken(this);
+    play('process');
     fx.floatText(this.scene, this.x, this.y - this.z - this.height - 12, this.defeatText, '#7CFC9A', 18);
     this.scene.onEnemyDefeated(this);
   }
@@ -285,6 +287,7 @@ export abstract class Enemy extends Fighter {
     this.set('bow');
     this.vx = 0;
     this.say(this.thanksText, 1.6);
+    play('process');
     fx.floatText(this.scene, this.x, this.y - this.height - 30, this.scene.studentMode ? '설득 완료!' : '처리 완료', '#7CFC9A', 18);
     this.scene.onEnemyDefeated(this);
   }

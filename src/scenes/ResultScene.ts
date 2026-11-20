@@ -6,6 +6,7 @@ import { gradeStage, type StageStats } from '../grade';
 import { lateMin, onTime, runGpa, type RunState } from '../run';
 import { fadeTo, makeButton } from '../ui/button';
 import { HUFS_KEYS, HUFS_NAVY, hufsImage } from '../hufs';
+import { play } from '../sound';
 
 // 스테이지 결과와 현재 시각. 다음 스테이지로 이어진다.
 // - 교직원 모드: 근무평정표 (S~D)
@@ -123,7 +124,10 @@ export class ResultScene extends Phaser.Scene {
       delay: 500,
       duration: 180,
       ease: 'Quad.In',
-      onComplete: () => this.cameras.main.shake(120, 0.008),
+      onComplete: () => {
+        play('process');
+        this.cameras.main.shake(120, 0.008);
+      },
     });
 
     if (student) {

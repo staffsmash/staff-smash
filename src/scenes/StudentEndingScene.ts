@@ -9,6 +9,7 @@ import { HUFS_KEYS, HUFS_NAVY, hufsImage } from '../hufs';
 import { lateMin, onTime, runClock, type RunState } from '../run';
 import { fadeTo } from '../ui/button';
 import { drawPresidentOfficeBackdrop } from './background';
+import { play } from '../sound';
 
 // 학생 모드 엔딩 (PRD 2절): 본관 앞에서 프레지던트 캉이 졸업장에 "승인" 도장을 쾅 찍어 준다.
 // 주인공이 환호하는 순간 알람이 울리고 화면이 흔들린다 — 꿈이었다. 오늘은 수강신청 날이다.
@@ -142,6 +143,7 @@ export class StudentEndingScene extends Phaser.Scene {
 
   /** 졸업장 위에 큰 빨간 "승인" 도장 */
   private stamp(): void {
+    play('clear');
     this.presArm = 1;
     this.time.delayedCall(250, () => (this.presArm = 0));
     const color = 0xd0202f;
@@ -189,6 +191,7 @@ export class StudentEndingScene extends Phaser.Scene {
   }
 
   private ringWaves(x: number, y: number, depth: number): void {
+    play('ring', 0.7);
     for (let i = 0; i < 2; i++) {
       const e = this.add.ellipse(x, y, 60, 26).setStrokeStyle(3, 0xffd34d, 1).setDepth(depth);
       this.tweens.add({
