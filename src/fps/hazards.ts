@@ -1,12 +1,16 @@
 import * as THREE from 'three';
+import { FONT } from '../config';
+import { BossSkills } from './bossskills';
 import type { Ctx } from './enemies';
-import { bigStampMarkTex, errorWinTex, keyTagTex, meetingRingTex, reportBubbleTex } from './textures';
+import { bigStampMarkTex, canvasTex, errorWinTex, keyTagTex, meetingRingTex, reportBubbleTex } from './textures';
 
 // 사람 보스들이 바닥에 깔거나 떨어뜨리는 것 (모두 미리 만든 것을 돌려 쓴다).
 // - 강의실 열쇠 (김총괄): 바닥에서 반짝이며 도는 미끼. 밟으면 "대관 불가입니다… (잠깐 멈춤)". 잠시 뒤 김총괄이 회수한다.
 // - "보고해!" 말풍선 (김보고 처장): 빨간 그림자 자리에 떨어져 6초 남는다. 밟으면 보고서를 쓰느라 잠깐 멈춘다.
-// - 회의 소집 고리 (회의소집 부총장): 바닥을 따라 퍼진다. 점프로 넘는다.
+// - 회의 소집 고리 (회의회의부총장): 바닥을 따라 퍼진다. 점프로 넘는다.
+// - 출석 고리 (학생 모드 주출석 학장, 11차): 회의 소집 고리와 같이 퍼진다. 걸리면 "결석 1회" — 잠깐 멈춘다 (피해 없음).
 // - 거대 도장·오류 창 (프레지던트 캉): 빨간 그림자 → 떨어진다. 피한다.
+// - 11차 새 기술 (거미줄·MOU 서명선·기념 촬영·학위/표창장 수여)은 bossskills.ts (skills)
 
 /** 고리 높이: 발이 이보다 높이 떠 있으면 넘는다 */
 export const RING_H = 0.55;
@@ -57,6 +61,8 @@ interface Ring {
   mesh: THREE.Mesh;
   mat: THREE.MeshBasicMaterial;
   tex: THREE.Texture;
+  /** 출석 고리 (걸리면 잠깐 멈춤) */
+  roll: boolean;
   x: number;
   z: number;
   r: number;
@@ -72,6 +78,26 @@ interface Decal {
 
 const _a = new THREE.Vector3();
 
+/** 주출석 학장의 출석 고리 그림 (회의 소집 고리와 같은 모양, 청록색) */
+function rollRingTex(): THREE.CanvasTexture {
+  const t = canvasTex(256, 64, (g) => {
+    const gr = g.createLinearGradient(0, 64, 0, 0);
+    gr.addColorStop(0, 'rgba(15,118,110,0.92)');
+    gr.addColorStop(0.8, 'rgba(15,118,110,0.5)');
+    gr.addColorStop(0.84, 'rgba(214,250,244,1)');
+    gr.addColorStop(1, 'rgba(214,250,244,1)');
+    g.fillStyle = gr;
+    g.fillRect(0, 0, 256, 64);
+    g.fillStyle = '#ffffff';
+    g.font = `bold 28px ${FONT}`;
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText('출석 부릅니다', 128, 36);
+  });
+  t.wrapS = THREE.RepeatWrapping;
+  return t;
+}
+
 export class Hazards {
   private keys: Key[] = [];
   private reports: Report[] = [];
@@ -84,8 +110,12 @@ export class Hazards {
   /** 지금 떨어질 자리들 (앞에서 warnN개, 시험 봇이 피할 때 쓴다) */
   readonly warns: THREE.Vector3[] = Array.from({ length: 16 }, () => new THREE.Vector3());
   warnN = 0;
+  /** 11차 보스 새 기술 (bossskills.ts) */
+  readonly skills: BossSkills;
 
   constructor(scene: THREE.Scene, warnGeo: THREE.BufferGeometry, warnMat: THREE.Material) {
+    this.skills = new BossSkills(scene, warnGeo, warnMat);
+    this.textures.push(...this.skills.textures);
     // 강의실 열쇠: 놋쇠 열쇠(고리·몸통·톱니) + 파란 "강의실" 번호표. 세로로 서서 돈다
     const brass = new THREE.MeshLambertMaterial({ color: 0xf2c230, emissive: 0x6b4a00 });
     const tagTex = keyTagTex();
@@ -160,19 +190,21 @@ export class Hazards {
     // 회의 소집 고리 (반지름 1, 높이 1인 열린 원통을 키운다). 글씨가 늘어나지 않게 고리마다 반복 수를 바꾼다
     const ringGeo = new THREE.CylinderGeometry(1, 1, 1, 96, 1, true).translate(0, 0.5, 0);
     const ringTex = meetingRingTex();
-    this.textures.push(ringTex);
-    for (let i = 0; i < 6; i++) {
-      const tex = ringTex.clone();
+    const rollTex = rollRingTex();
+    this.textures.push(ringTex, rollTex);
+    for (let i = 0; i < 10; i++) {
+      const roll = i >= 6;
+      const tex = (roll ? rollTex : ringTex).clone();
       const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, side: THREE.DoubleSide });
       const mesh = new THREE.Mesh(ringGeo, mat);
       mesh.frustumCulled = false;
       mesh.visible = false;
       scene.add(mesh);
-      this.rings.push({ mesh, mat, tex, x: 0, z: 0, r: 0, on: false, hit: false, dodged: false });
+      this.rings.push({ mesh, mat, tex, roll, x: 0, z: 0, r: 0, on: false, hit: false, dodged: false });
     }
-    // 바닥 도장 자국 ("보류" / "재검토", 학생 모드 박반려 처장의 "반려")
+    // 바닥 도장 자국 ("보류" / "재검토", 학생 모드 전필수 학과장의 "재수강")
     const decalGeo = new THREE.PlaneGeometry(3.2, 3.2).rotateX(-Math.PI / 2);
-    for (const text of ['보류', '재검토', '반려']) {
+    for (const text of ['보류', '재검토', '재수강']) {
       const t = bigStampMarkTex(text);
       this.textures.push(t);
       this.decalMats.set(
@@ -282,8 +314,9 @@ export class Hazards {
 
   // ---------- 회의 소집 고리 ----------
 
-  ring(x: number, z: number): void {
-    const w = this.rings.find((q) => !q.on) ?? this.rings[0];
+  /** roll = 주출석 학장의 출석 고리 (걸리면 "결석 1회", 잠깐 멈춤) */
+  ring(x: number, z: number, roll = false): void {
+    const w = this.rings.find((q) => !q.on && q.roll === roll) ?? this.rings.find((q) => q.roll === roll) ?? this.rings[0];
     w.x = x;
     w.z = z;
     w.r = 0.6;
@@ -406,18 +439,21 @@ export class Hazards {
       const r0 = w.r;
       w.r += RING_SPEED * dt;
       w.mesh.scale.set(w.r, RING_H, w.r);
-      // 글씨가 늘어나지 않게 둘레 2.6m마다 "회의 소집" 한 번
-      w.tex.repeat.x = Math.max(3, Math.round((w.r * Math.PI * 2) / 2.6));
+      // 글씨가 늘어나지 않게 둘레 2.6m마다 "회의 소집" 한 번 (출석 고리는 3.4m)
+      w.tex.repeat.x = Math.max(3, Math.round((w.r * Math.PI * 2) / (w.roll ? 3.4 : 2.6)));
       w.mat.opacity = Math.min(1, (RING_MAX - w.r) / 8);
       if (!w.hit && !w.dodged) {
         const d = Math.hypot(eye.x - w.x, eye.z - w.z);
         if (d >= r0 - RING_BAND && d <= w.r + RING_BAND) {
           if (feet < RING_H) {
             w.hit = true;
-            c.hurt(1.5, _a.set(w.x, 1, w.z), 'wave');
+            if (w.roll) {
+              c.freeze(1.2, '결석 1회… (잠깐 멈춤)');
+              c.fx.text(_a.set(eye.x, eye.y + 0.6, eye.z), '결석 1회', '#ff6b6b', 0.55);
+            } else c.hurt(1.5, _a.set(w.x, 1, w.z), 'wave');
           } else if (d <= w.r - RING_BAND * 0.5) {
             w.dodged = true;
-            c.fx.text(_a.set(eye.x, eye.y + 0.6, eye.z), '회의 불참 성공!', '#7CFC9A', 0.5);
+            c.fx.text(_a.set(eye.x, eye.y + 0.6, eye.z), w.roll ? '출석 인정!' : '회의 불참 성공!', '#7CFC9A', 0.5);
           }
         }
       }
@@ -432,6 +468,7 @@ export class Hazards {
       (d.mesh.material as THREE.MeshBasicMaterial).opacity = Math.max(0, 1 - d.t / 1.6);
       if (d.t > 1.6) d.mesh.visible = false;
     }
+    this.skills.update(dt, c);
   }
 
   private pushWarn(x: number, z: number): void {
@@ -475,5 +512,6 @@ export class Hazards {
     }
     for (const d of this.decals) d.mesh.visible = false;
     this.warnN = 0;
+    this.skills.clear();
   }
 }

@@ -13,17 +13,27 @@ import * as fx from '../fx';
 // - 1페이즈: 거대 도장. 플레이어를 따라 도장 세 개가 차례로 떨어지고, 가까우면 도장으로 내려친다.
 // - 2페이즈(체력 절반 이하): "수강신청 서버 폭주" — 오류 창과 패킷이 쏟아지는 탄막. 그동안 캉은 뒤에서 서버를 살핀다.
 // - 체력이 다해도 쓰러지지 않는다: "좋아요, 검토 끝났습니다." 하고 선 채로 승인(엔딩)으로 넘어간다.
+// - 11차 새 기술 셋 (2026-11-21, 대사는 비서실 확인 예정):
+//   ① MOU 서명 "서명하겠습니다." — 바닥에 긴 서명선 (1초 예고 뒤 금빛으로 빛나며 아프다). 2페이즈는 두 줄이 엇갈린다. 1페이즈부터.
+//   ② 기념 촬영 "자, 여기 보세요." — 카메라 플래시. 캉 쪽을 보고 있으면 2초 동안 화면이 하얘진다 (피해 없음). 2페이즈.
+//   ③ 학위 수여 "학위를 수여합니다." — 학사모가 부메랑처럼 날아갔다 돌아온다 (가고 올 때 모두 맞는다). 2페이즈.
 
 const S = stats.presidentBoss;
 /** ★ 싸우는 중 추가 대사 (문구 검토 11-2절 추가안, 2026-11-15 사용자 "비서실 확인받음").
  *  거대 도장 내려치기·도장 떨어뜨리기 때 기존 대사와 섞인다 (두 페이즈 모두) */
 const MORE_LINES = ['서류가 꼼꼼하네요.', '학생 의견, 잘 듣고 있습니다.', '이 부분은 근거를 더 봅시다.', '졸업 축하는… 아직 이르죠?'];
+/** ★ 11차 새 기술 대사 (비서실 확인 예정) */
+export const PRES_SIGN_LINE = '서명하겠습니다.';
+export const PRES_PHOTO_LINE = '자, 여기 보세요.';
+export const PRES_CAP_LINE = '학위를 수여합니다.';
+/** 원거리 기술 차례: 1페이즈는 거대 도장·MOU 서명, 2페이즈는 넷을 돌아가며 */
+const RANGED_1 = ['stamps', 'sign'] as const;
+const RANGED_2 = ['stamps', 'sign', 'photo', 'cap'] as const;
 
 export class PresidentBoss extends Enemy implements BossLike {
   readonly kind = 'presidentBoss' as const;
   readonly student = true;
   readonly persuadable = true;
-  readonly canRecheck = false;
   readonly usesToken = false;
   readonly staysAfter = true;
   readonly halfW = 28;
@@ -35,6 +45,8 @@ export class PresidentBoss extends Enemy implements BossLike {
   private hitDone = false;
   private drops = 0;
   private cycle = 0;
+  private ranged = 0;
+  private acted = false;
   private stormT = 0;
   private walkPhase = 0;
   private greeted = false;
@@ -99,9 +111,23 @@ export class PresidentBoss extends Enemy implements BossLike {
           this.set('windup');
           this.sayMix(this.phase === 1 ? '보류!' : '재검토!', MORE_LINES, 0.8);
         } else {
-          this.set('stamps');
-          this.drops = 0;
-          this.sayMix(this.phase === 1 ? '검토하겠습니다.' : '꼼꼼히 다시 봅시다.', MORE_LINES, 1.2);
+          const list = this.phase === 1 ? RANGED_1 : RANGED_2;
+          const next = list[this.ranged++ % list.length];
+          this.acted = false;
+          if (next === 'sign') {
+            this.set('sign');
+            this.say(PRES_SIGN_LINE, 1.2);
+          } else if (next === 'photo') {
+            this.set('photo');
+            this.say(PRES_PHOTO_LINE, 1.2);
+          } else if (next === 'cap') {
+            this.set('cap');
+            this.say(PRES_CAP_LINE, 1.2);
+          } else {
+            this.set('stamps');
+            this.drops = 0;
+            this.sayMix(this.phase === 1 ? '검토하겠습니다.' : '꼼꼼히 다시 봅시다.', MORE_LINES, 1.2);
+          }
         }
         this.vx = 0;
         this.vy = 0;
@@ -144,6 +170,39 @@ export class PresidentBoss extends Enemy implements BossLike {
         if (this.stateT >= 0.4 + gap * n + 0.3) this.recover();
         break;
       }
+      case 'sign':
+        // MOU 서명: 플레이어 발밑을 지나는 긴 서명선 (2페이즈는 두 줄이 엇갈린다)
+        this.vx = 0;
+        this.vy = 0;
+        this.facing = player.x >= this.x ? 1 : -1;
+        if (!this.acted && this.stateT >= 0.4) {
+          this.acted = true;
+          this.scene.signLines(player.x, player.y, this.phase === 2);
+        }
+        if (this.stateT >= 1.1) this.recover();
+        break;
+      case 'photo':
+        // 기념 촬영: 0.9초 뒤 플래시 (캉 쪽을 보고 있으면 화면이 하얘진다)
+        this.vx = 0;
+        this.vy = 0;
+        this.facing = player.x >= this.x ? 1 : -1;
+        if (!this.acted && this.stateT >= 0.9) {
+          this.acted = true;
+          this.scene.cameraFlash(this);
+        }
+        if (this.stateT >= 1.4) this.recover();
+        break;
+      case 'cap':
+        // 학위 수여: 학사모가 부메랑처럼 날아갔다 돌아온다
+        this.vx = 0;
+        this.vy = 0;
+        this.facing = player.x >= this.x ? 1 : -1;
+        if (!this.acted && this.stateT >= 0.45) {
+          this.acted = true;
+          this.scene.throwCap(this, player.y);
+        }
+        if (this.stateT >= 0.9) this.recover();
+        break;
       case 'serverMove': {
         // 뒤쪽(책상 앞)으로 물러나 서버를 살핀다
         const tx = this.scene.cameras.main.scrollX + 480;
@@ -251,6 +310,23 @@ export class PresidentBoss extends Enemy implements BossLike {
         p.legF = -0.4;
         p.legB = 0.35;
         sharp = 40;
+        break;
+      case 'sign':
+        // 큰 펜으로 서명하는 손짓
+        p.armF = -1.1 + Math.sin(t * 18) * 0.35;
+        p.body = 0.12;
+        sharp = 24;
+        break;
+      case 'photo':
+        // 카메라를 눈앞에 든다
+        p.armF = -1.9;
+        p.armB = -1.8;
+        sharp = 22;
+        break;
+      case 'cap':
+        p.armF = this.stateT < 0.45 ? -2.8 : -1.0;
+        p.body = this.stateT < 0.45 ? -0.12 : 0.2;
+        sharp = 30;
         break;
       case 'stamps':
         p.armF = -2.6 + Math.sin(t * 14) * 0.3;

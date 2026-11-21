@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import stats from '../data/enemies.json';
 import { HEROES, type DeskLines, type HeroId } from '../data/heroes';
 import type { StageScene } from '../scenes/StageScene';
-import { Enemy, pickLine } from './Enemy';
+import { Enemy } from './Enemy';
 import type { HitInfo } from './Fighter';
 import type { Player } from './Player';
 import { neutralPose, type Pose, type Rig } from './Rig';
@@ -13,16 +13,16 @@ import * as fx from '../fx';
 
 // 학생 모드 창구 중간보스: 가상 행정직원 6명 (외형은 교직원 모드 주인공과 같다, PRD 11절).
 // 들어오면 자기 대사를 하고, 설득되면 "퇴근합니다…" 하며 걸어 나간다 (넘어지거나 다치지 않는다).
-// - 박국제학사 "점호 시간입니다": 불을 끈다 → 화면이 어두워지고 플레이어 주변만 보인다
-// - 김학생식당 "배식 마감입니다": 국자를 휘두르며 국물을 쏟는다 → 밟으면 미끄러진다
-// - 이진취 "자소서 다시 써 오세요": 빨간 첨삭 선을 바닥에 그어 길을 막는다 (점프로 넘는다)
-// - 김국제 "노미네이션 마감 지났어요": 여권·서류를 부채꼴로 던진다
-// - 오학종지 "번호표 뽑고 기다리세요": 대기번호표 줄을 계속 부른다. 뽑는 동안 본체를 치면 멈춘다
-// - 최장학 "신청 기간이 아닙니다": 동전을 뿌려 유인했다가 회수한다. 밟으면 잠깐 멈춘다
-// 대사(2026-11-15 ★ 추가, 문구 검토 11-1절 — data/heroes.ts의 desk):
-// - 싸우는 중: 다가가는 동안 가끔 혼잣말 (말한 지 3.5초 지나면 초당 30% 확률, Enemy.chatter)
-// - 기믹 때: 기존 대사(line)와 기믹 대사(소등·국물·첨삭 선·여권·서류·동전)가 반반으로 섞인다
-// - 박국제학사: 소등이 끝나 불이 켜지면 한마디
+// 2026-11-21 (11차) 사용자가 여섯 명을 다시 정했다. kind 값은 스테이지 자료와 맞추려고 예전 것을 그대로 쓴다.
+// - 김전략 (haksa) "대학평가 순위가 떨어졌어요": 빨간 순위 하락 화살표가 그림자 예고 뒤 위에서 떨어진다
+// - 최도서관 (sikdang) "반납기한 초과, 연체료 내세요": 책수레를 밀어 보낸다 (점프하거나 위아래로 비킨다)
+// - 나진취 (jinchwi) "자소서 다시 써 오세요": 빨간 첨삭 선을 바닥에 그어 길을 막는다 (점프로 넘는다)
+// - 김국제 (gukje) "Your passport please": 여권·서류를 부채꼴로 던진다
+// - 김학종지 (hakjong) "졸업 요건 못갖췄습니다": 대기번호표 줄을 계속 부른다. 뽑는 동안 본체를 치면 멈춘다.
+//   가까이 붙으면 규정집으로 내려친다
+// - 권학생 (janghak) "총학들 일로와봐": 총학 집행부 둘이 달려와 앞을 막고 면담 받는다 (5초, 닿으면 밀려날 뿐 아프지 않다)
+// 예전 기믹(소등·국물 쏟기·동전 뿌리기)은 11차에 없앴다.
+// 대사(data/heroes.ts의 desk): 싸우는 중 혼잣말(Enemy.chatter), 기믹 때 기존 대사(line)와 기믹 대사가 반반
 
 export type WindowStaffKind = 'haksa' | 'sikdang' | 'jinchwi' | 'gukje' | 'hakjong' | 'janghak';
 export const WINDOW_STAFF_KINDS: WindowStaffKind[] = ['haksa', 'sikdang', 'jinchwi', 'gukje', 'hakjong', 'janghak'];
@@ -37,12 +37,13 @@ interface StaffInfo {
 }
 
 export const WINDOW_STAFF: Record<WindowStaffKind, StaffInfo> = {
-  haksa: { hero: 'parkhaksa', prop: 'flashlight', hint: '불이 꺼지면 내 주변만 보여요', keep: 80 },
-  sikdang: { hero: 'kimsikdang', prop: 'ladle', hint: '쏟아진 국물을 밟으면 미끄러져요', keep: 95 },
+  // ★ 공략 문구 (11차 새 기믹)
+  haksa: { hero: 'parkhaksa', prop: 'chart', hint: '빨간 그림자에 떨어지는 순위 하락 화살표를 피하세요', keep: 150 },
+  sikdang: { hero: 'kimsikdang', prop: 'books', hint: '책수레는 점프(K)하거나 위아래로 비켜서 피하세요', keep: 170 },
   jinchwi: { hero: 'leejinchwi', prop: 'redpen', hint: '빨간 첨삭 선은 점프(K)로 넘을 수 있어요', keep: 90 },
   gukje: { hero: 'kimgukje', prop: 'passports', hint: '부채꼴로 날아오는 여권·서류를 피하세요', keep: 210 },
   hakjong: { hero: 'ohakjongji', prop: 'tickets', hint: '번호표를 뽑는 동안 본체를 치면 멈춰요', keep: 170 },
-  janghak: { hero: 'choijanghak', prop: 'coins', hint: '동전은 미끼! 밟으면 잠깐 멈춰요', keep: 110 },
+  janghak: { hero: 'choijanghak', prop: 'whistle', hint: '총학 집행부가 막아서면 비켜 돌아가거나 잠깐 기다리세요', keep: 130 },
 };
 
 type Stats = { hp: number; speedX: number; speedY: number; gimmickEvery: number } & Record<string, number>;
@@ -63,7 +64,6 @@ export class WindowStaff extends Enemy {
   /** 넘어지지 않고 비틀거린다 (학생과 같은 방식) */
   readonly student = true;
   readonly persuadable = true;
-  readonly canRecheck = false;
   readonly halfW = 22;
   readonly height = 118;
   readonly name: string;
@@ -121,11 +121,11 @@ export class WindowStaff extends Enemy {
           this.acted = false;
           this.facing = dx >= 0 ? 1 : -1;
           this.set('gimmick');
-          // 기존 대사와 기믹 대사(소등·국물·첨삭 선·여권·서류·동전)를 반반으로 섞는다
+          // 기존 대사와 기믹 대사(순위·책수레·첨삭 선·여권·서류·면담)를 반반으로 섞는다
           this.sayMix(this.line, this.desk.gimmick ?? [], 1.6, 0.5);
           return;
         }
-        if (this.canStartAttack(player, dx, dy, this.kind === 'sikdang' ? 120 : 100)) {
+        if (this.canStartAttack(player, dx, dy, this.kind === 'hakjong' ? 120 : 100)) {
           this.set('windup');
           this.vx = 0;
           this.vy = 0;
@@ -145,7 +145,11 @@ export class WindowStaff extends Enemy {
         }
         break;
       case 'swing':
-        if (!this.hitDone && this.meleeHit(player, this.kind === 'sikdang' ? 30 : 12, 2, 200)) this.hitDone = true;
+        // 김학종지: 가까이 붙으면 규정집으로 내려친다 (손이 더 멀리 닿는다)
+        if (!this.hitDone && this.meleeHit(player, this.kind === 'hakjong' ? 30 : 12, 2, 200)) {
+          this.hitDone = true;
+          if (this.kind === 'hakjong') fx.stampMark(this.scene, this.x + this.facing * 60, this.y - 40, '규정');
+        }
         if (this.stateT >= 0.22) this.set('recover');
         break;
       case 'recover':
@@ -162,34 +166,16 @@ export class WindowStaff extends Enemy {
         this.vy = 0;
         this.gimmick(player);
         break;
-      case 'lure':
-        // 최장학: 동전을 뿌려 놓고 기다린다 (이때가 빈틈)
-        this.vx = 0;
-        this.vy = 0;
-        this.facing = player.x >= this.x ? 1 : -1;
-        if (this.stateT >= 3.4 || !this.scene.hasCoins()) {
-          this.set('collect');
-          this.say('회수합니다~', 1.2);
-          this.scene.collectCoins(this.x, this.y - 60);
-        }
-        break;
-      case 'collect':
-        this.vx = 0;
-        this.vy = 0;
-        if (this.stateT >= 0.9) this.endGimmick();
-        break;
     }
   }
 
   /** 지금 기믹을 쓸 수 있는지 (같은 효과가 겹치지 않게) */
   private gimmickReady(): boolean {
     switch (this.kind) {
-      case 'haksa':
-        return !this.scene.isDark;
       case 'hakjong':
         return this.scene.countSlips() < this.st.maxSlips;
       case 'janghak':
-        return !this.scene.hasCoins();
+        return !this.scene.hasAides();
       default:
         return true;
     }
@@ -199,20 +185,21 @@ export class WindowStaff extends Enemy {
     const t = this.stateT;
     switch (this.kind) {
       case 'haksa':
-        if (!this.acted && t >= 0.6) {
+        // 김전략: 플레이어 주위에 순위 하락 화살표
+        this.facing = player.x >= this.x ? 1 : -1;
+        if (!this.acted && t >= 0.55) {
           this.acted = true;
-          this.scene.lightsOut(this.st.darkSec);
+          this.scene.dropRankArrows(player.x, player.y, this.st.arrows);
         }
-        if (t >= 1.0) this.endGimmick(this.st.darkSec);
+        if (t >= 1.0) this.endGimmick();
         break;
       case 'sikdang':
+        // 최도서관: 플레이어 쪽으로 책수레를 민다
+        this.facing = player.x >= this.x ? 1 : -1;
         if (!this.acted && t >= 0.5) {
           this.acted = true;
-          this.vx = this.facing * 200;
-          this.meleeHit(player, 34, 2, 220);
-          // 플레이어 쪽으로 국물을 쏟는다
-          const reach = Phaser.Math.Clamp(player.x - this.x, -170, 170);
-          this.scene.spillSoup(this.x + reach, player.y + Phaser.Math.Between(-10, 10), this.st.puddleSec);
+          this.vx = this.facing * 120;
+          this.scene.pushBookCart(this, player.y);
         }
         if (t >= 0.5) this.vx *= 0.85;
         if (t >= 1.0) this.endGimmick();
@@ -240,11 +227,13 @@ export class WindowStaff extends Enemy {
         if (t >= 1.5) this.endGimmick();
         break;
       case 'janghak':
+        // 권학생: 총학 집행부 둘을 불러 앞에 세운다
+        this.facing = player.x >= this.x ? 1 : -1;
         if (!this.acted && t >= 0.5) {
           this.acted = true;
-          this.scene.scatterCoins(this.x, this.y, this.st.coins, this.st.freezeSec);
+          this.scene.callAides(this, player.x);
         }
-        if (t >= 0.9) this.set('lure');
+        if (t >= 0.9) this.endGimmick(4);
         break;
     }
   }
@@ -255,17 +244,10 @@ export class WindowStaff extends Enemy {
     this.set('recover');
   }
 
-  /** 박국제학사: 소등이 끝나 불이 켜졌을 때 (스테이지가 부른다) */
-  onLightsOn(): void {
-    const lines = this.desk.lightsOn ?? [];
-    if (this.dead || this.removed || lines.length === 0) return;
-    this.say(pickLine(lines), 1.6);
-  }
-
   takeHit(h: HitInfo): boolean {
     if (this.dead) return false;
     if (!h.force && !this.hittable) return false;
-    const busy = this.state === 'gimmick' || this.state === 'lure' || this.state === 'collect';
+    const busy = this.state === 'gimmick';
     if (busy && this.kind === 'hakjong' && this.state === 'gimmick' && !this.acted) {
       // 번호표 뽑는 중에 맞으면 멈춘다
       this.say('앗, 번호표 발행 중단…', 1.2);
@@ -283,7 +265,7 @@ export class WindowStaff extends Enemy {
       }
       return true;
     }
-    // 오학종지: 맞고 있는 동안은 번호표를 뽑지 못한다
+    // 김학종지: 맞고 있는 동안은 번호표를 뽑지 못한다
     if (this.kind === 'hakjong') this.gimmickT = Math.max(this.gimmickT, 1.4);
     return super.takeHit(h);
   }
@@ -318,8 +300,6 @@ export class WindowStaff extends Enemy {
     let state = moving || this.state !== 'approach' ? this.state : 'idle';
     if (state === 'swing') state = 'shove';
     else if (state === 'intro') state = 'idle';
-    else if (state === 'lure') state = 'recover';
-    else if (state === 'collect') state = 'wave';
     else if (state === 'gimmick') {
       const early = this.stateT < 0.45;
       state = {

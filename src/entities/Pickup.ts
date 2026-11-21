@@ -1,15 +1,16 @@
 import Phaser from 'phaser';
 import { FONT } from '../config';
 import { createFoodIcon, createPetitionIcon, type FoodKind } from './rigs';
-import { weaponIcon } from './studentRigs';
+import { createGradeSheet, weaponIcon } from './studentRigs';
 import { WEAPONS, isWeaponId, weaponName, type WeaponId } from './weapons';
 
 // 바닥에 놓인 물건.
 // - 무기: 위에 서서 L(또는 맨손 공격)로 줍는다.
 // - 음식·식권·보조배터리·연차 쿠폰(공결 확인서)·셔틀버스 시간표·단톡방 공지 캡처·인감 도장(출석 스티커)·일거리·서명지: 밟으면 바로 줍는다. 일거리는 김밥처럼 생겼지만 서류 귀퉁이가 보인다.
 // - 경비원이 던져 주거나 상자에서 튀어나온 물건은 날아가는 동안(toss) 줍지 못한다.
+// - 성적표 (학생 모드 한학고 학장, 11차): A+는 회복, F는 잠깐 멈춤. 밟으면 바로 줍는다.
 
-export type PickupKind = WeaponId | FoodKind | 'petition';
+export type PickupKind = WeaponId | FoodKind | 'petition' | 'gradeA' | 'gradeF';
 
 const LABELS: Record<string, string> = {
   donkatsu: '학식 돈가스',
@@ -23,6 +24,8 @@ const LABELS: Record<string, string> = {
   capture: '단톡방 공지 캡처',
   seal: '인감 도장',
   petition: '단체 서명지',
+  gradeA: '성적표',
+  gradeF: '성적표',
 };
 
 /** 학생 모드에서 이름이 바뀌는 것 */
@@ -63,6 +66,7 @@ export class Pickup {
     this.ttl = ttl;
     if (isWeaponId(kind)) this.obj = weaponIcon(scene, kind, student);
     else if (kind === 'petition') this.obj = createPetitionIcon(scene);
+    else if (kind === 'gradeA' || kind === 'gradeF') this.obj = createGradeSheet(scene, kind === 'gradeA' ? 'A+' : 'F');
     else this.obj = createFoodIcon(scene, kind, student);
     this.shadow = scene.add.ellipse(x, y, 46, 10, 0x000000, 0.25).setDepth(-5);
     const name = isWeaponId(kind) ? weaponName(WEAPONS[kind], student) : ((student && STUDENT_LABELS[kind]) || LABELS[kind]);

@@ -32,7 +32,6 @@ const MORE_QUESTIONS = ['에브리타임엔 다르게 써 있던데요?', '메�
 export class NoticeBoss extends Enemy implements BossLike {
   readonly kind = 'noticeBoss' as const;
   readonly student = true;
-  readonly canRecheck = false;
   readonly usesToken = false;
   readonly halfW = 28;
   readonly height = 136;

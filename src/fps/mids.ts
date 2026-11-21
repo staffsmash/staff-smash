@@ -5,7 +5,7 @@ import { lambert, type Rect } from './blocks';
 import type { Roam } from './bossmove';
 import { PersonBoss } from './bosses';
 import { DORM_DOOR, HUM_DOOR } from './campus';
-import type { Ctx, Enemy } from './enemies';
+import type { Ctx } from './enemies';
 import { studentLook } from './looks';
 import { Person, peopleKit, type Look } from './people';
 import { docTex } from './textures';
@@ -20,9 +20,11 @@ import { docTex } from './textures';
 // - 국제학사 앞 — 단대학생회 간부 최민원 (2D MinwonLeader): 서명지를 흔들면 민원이 몰려온다. 들어 올린 서류를 맞히면
 //   서명지를 떨어뜨리고, 먼저 주우면 더 부르지 못한다
 // - 대운동장 — 총장실로 메일 쓰는 학생 (2D StudentEnemy presidentMail): 메일을 다 쓰면 "지시" 서류 셋이 떨어진다. 쓰는 중에 맞히면 멈춘다
-// - 인문과학관 앞 보스 — 오검토 처장 (2D Supervisor gumto): 처리된 민원을 "재검토!"로 되살린다
-// - 국제학사 앞 보스 — 최몰라 처장 (2D Supervisor molla): "몰라~" 하며 메일·전화를 떠넘긴다
-// 학생 이름은 2D처럼 판마다 students.ts 일곱 명 가운데 무작위로 붙는다 (최민원은 고정).
+// - 인문과학관 앞 보스 — 박학과장 (여, 2D Supervisor gumto): "그건 선생님이 알아서 하세요" 하며 메일·전화를 떠넘긴다.
+//   막대는 "협조 서명" (2026-11-21 11차, 예전 최몰라 처장의 메일 떠넘기기. 오검토 처장의 "재검토"는 없앴다)
+// - 국제학사 앞 보스 — 최내놔 처장 (2D Supervisor molla): "손님이 오는데 기념품 없나요?" 하며 거미줄을 던진다.
+//   밟으면 처장 곁으로 끌려간다 (bossskills.ts)
+// 학생 이름은 2D처럼 판마다 학생 일곱 명(data/students.ts) 가운데 무작위로 붙는다 (최민원은 고정).
 // 11차(2026-11-21): 몸·머리·성별은 이름을 따른다 (looks.ts studentLook — 2D createNamedStudentRig와 같다).
 // 유형마다 다른 것은 손에 든 물건뿐. 처음 나타날 때 나라말로 인사한다 (hello).
 
@@ -219,13 +221,12 @@ const L_M_FOUND = '서명지 찾았다!';
 const L_P_TYPING = '총장님께 메일 쓰는 중…';
 const L_P_REPLY = '총장실 답장 왔어요! 지시 사항이요!';
 const L_P_STOP = '앗, 메일 날아갔다…';
-const L_GUMTO_IN = '어디 한번 볼까…';
-const L_GUMTO_HM = '흠…';
-const L_GUMTO_RE = '재검토!';
-const L_MOLLA = '몰라~ 그건 주무관이 처리해.';
-/** ★ 새로 지은 결재 대사 (다른 처장의 "보고 잘 받았어." 자리) */
-const L_GUMTO_OK = '흠… 이번엔 통과.';
-const L_MOLLA_OK = '몰라~ 결재해 줄게.';
+/** 박학과장·최내놔 처장 대사 (11차 사용자 확정) */
+const L_HAKGWA = '그건 선생님이 알아서 하세요';
+const L_NAENWA = '손님이 오는데 기념품 없나요?';
+/** ★ 새로 지은 서명·결재 대사 (다른 처장의 "보고 잘 받았어." 자리) */
+const L_HAKGWA_OK = '협조 서명, 해 드릴게요.';
+const L_NAENWA_OK = '기념품은 제가 알아보죠. 결재합니다.';
 
 /** 미리 그려 둘 대사 */
 export const MID_LINES: string[] = [
@@ -246,12 +247,10 @@ export const MID_LINES: string[] = [
   L_P_TYPING,
   L_P_REPLY,
   L_P_STOP,
-  L_GUMTO_IN,
-  L_GUMTO_HM,
-  L_GUMTO_RE,
-  L_MOLLA,
-  L_GUMTO_OK,
-  L_MOLLA_OK,
+  L_HAKGWA,
+  L_NAENWA,
+  L_HAKGWA_OK,
+  L_NAENWA_OK,
 ];
 
 /** 떠오르는 글자 (글자+색마다 그림이 하나씩이라 Game.warmup이 미리 만든다) */
@@ -262,7 +261,7 @@ export const MID_TEXTS: [string, string][] = [
   ['서명지를 먼저 주우세요!', '#ffe066'],
   ['단체 서명지 접수 완료!', '#7CFC9A'],
   ['넘겨받은 민원', '#ffd27f'],
-  ['재검토', '#ff6b6b'],
+  ['서명 완료!', '#7CFC9A'],
 ];
 
 /** 2D 2스테이지·3스테이지 보스 등장 띠 ("보스 · " 앞머리만 뺐다) */
@@ -860,59 +859,27 @@ export class StaffMid extends PersonBoss {
   }
 }
 
-// ---------- 오검토 처장 · 최몰라 처장 (새 구역 보스) ----------
+// ---------- 박학과장 · 최내놔 처장 (새 구역 보스) ----------
 
-/** 2D createSupervisorRig 색: 오검토 = 갈색 정장·초록 넥타이·회색 머리·안경·도장, 최몰라 = 밤색 정장·회색 넥타이·회색 머리·찡그린 눈썹 */
-export const GUMTO_LOOK: Look = { top: 0x6a5038, pants: 0x6a5038, tie: 0x2f6b3a, skin: SKIN, hair: 0xa8a8a8, brow: 0x6b6b6b, hairStyle: 'full', jacket: true, glasses: true, left: 'stamp', scale: 1.62 };
-export const MOLLA_LOOK: Look = { top: 0x5c4a3a, pants: 0x5c4a3a, tie: 0x6b7280, skin: SKIN, hair: 0xb0b0b0, brow: 0x161616, hairStyle: 'full', jacket: true, left: 'none', scale: 1.62 };
+/**
+ * 박학과장 (여): 2D 예전 오검토 처장 색(갈색 정장·안경·도장) + 긴 머리, 넥타이 없음 (블라우스·단발 외형이 생기면 바꾼다).
+ * 최내놔 처장 (남): 2D 예전 최몰라 처장 색 (밤색 정장·회색 넥타이·회색 머리·찡그린 눈썹), 왼손에 거미줄 뭉치
+ */
+export const HAKGWA_LOOK: Look = { top: 0x6a5038, pants: 0x6a5038, tie: 0x2f6b3a, skin: SKIN, hair: 0x3b2a20, brow: 0x3b2a20, hairStyle: 'long', jacket: true, noTie: true, glasses: true, female: true, blouse: true, neck: 'scarf', left: 'stamp', scale: 1.58 };
+export const NAENWA_LOOK: Look = { top: 0x5c4a3a, pants: 0x5c4a3a, tie: 0x6b7280, skin: SKIN, hair: 0xb0b0b0, brow: 0x161616, hairStyle: 'full', jacket: true, left: 'none', scale: 1.62 };
 
 /** 새 구역 보스 둘의 모형 (처음에 한 번 만들고 판마다 다시 쓴다) */
-export function buildNewBossPeople(): { gumto: Person; molla: Person } {
-  const molla = new Person('meeting', '최몰라 처장', '#c9d3e6', MOLLA_LOOK);
+export function buildNewBossPeople(): { hakgwa: Person; naenwa: Person } {
+  const hakgwa = new Person('meeting', '박학과장', '#c9d3e6', HAKGWA_LOOK);
   // 왼손에 넘길 메일 봉투
-  part(molla.armL, 0.34, 0.24, 0.04, 0, -0.86, 0.13, 0xf2ead8);
-  part(molla.armL, 0.08, 0.08, 0.045, 0.1, -0.8, 0.13, 0xd0202f);
-  return { gumto: new Person('meeting', '오검토 처장', '#c9d3e6', GUMTO_LOOK), molla };
-}
-
-type ReviveKind = 'mail' | 'bubble' | 'bomb';
-
-/** 인문과학관 앞에서 처리된 민원 더미 (오검토 처장이 "재검토"로 되살린다. 되살린 것은 다시 쌓이지 않는다) */
-export class ReviewPile {
-  private items: { kind: ReviveKind; at: THREE.Vector3 }[] = [];
-  private revived = new WeakSet<Enemy>();
-
-  add(e: Enemy): void {
-    if (this.revived.has(e)) return;
-    const kind: ReviveKind | null = e.kind === 'mail' || e.kind === 'bulk' ? 'mail' : e.kind === 'bubble' ? 'bubble' : e.kind === 'bomb' ? 'bomb' : null;
-    if (!kind) return;
-    this.items.push({ kind, at: e.center.clone() });
-    if (this.items.length > 14) this.items.shift();
-  }
-
-  get size(): number {
-    return this.items.length;
-  }
-
-  clear(): void {
-    this.items = [];
-  }
-
-  /** 가장 최근에 처리된 것부터 n개를 되살린다. 되살린 자리들을 돌려준다 */
-  revive(c: Ctx, n: number): THREE.Vector3[] {
-    const out: THREE.Vector3[] = [];
-    const a = c.area;
-    for (let i = 0; i < n && this.items.length; i++) {
-      const it = this.items.pop() as { kind: ReviveKind; at: THREE.Vector3 };
-      const p = it.at;
-      p.x = Math.max(a.minX + 1, Math.min(a.maxX - 1, p.x));
-      p.z = Math.max(a.minZ + 1, Math.min(a.maxZ - 1, p.z));
-      p.y = it.kind === 'bomb' ? 1.4 : Math.max(1.8, p.y);
-      this.revived.add(c.spawnAt(it.kind, p));
-      out.push(p);
-    }
-    return out;
-  }
+  part(hakgwa.armL, 0.34, 0.24, 0.04, 0, -0.86, 0.13, 0xf2ead8);
+  part(hakgwa.armL, 0.08, 0.08, 0.045, 0.1, -0.8, 0.13, 0xd0202f);
+  const naenwa = new Person('meeting', '최내놔 처장', '#c9d3e6', NAENWA_LOOK);
+  // 왼손에 거미줄 뭉치 (흰 실 덩어리)
+  part(naenwa.armL, 0.26, 0.26, 0.26, 0, -0.9, 0.08, 0xeeeef4);
+  part(naenwa.armL, 0.3, 0.04, 0.04, 0, -0.9, 0.08, 0xc9c9d4);
+  part(naenwa.armL, 0.04, 0.3, 0.04, 0, -0.9, 0.08, 0xc9c9d4);
+  return { hakgwa, naenwa };
 }
 
 abstract class NewBoss extends PersonBoss {
@@ -940,104 +907,29 @@ abstract class NewBoss extends PersonBoss {
   }
 }
 
-/** 인문과학관 앞 보스 — 오검토 처장: 처리된 민원을 "재검토!"로 되살린다 (2D Supervisor gumto) */
-export class Gumto extends NewBoss {
-  readonly hintText = '처리한 민원을 재검토로 되살려요! 결재판을 들 때 노리세요';
-  private readonly pile: ReviewPile;
-  private volleyT = 3.5;
-  private reviewT = 5;
-  private lineT = 9;
-  private revived = false;
-
-  constructor(c: Ctx, person: Person, pile: ReviewPile, solids: readonly Rect[], easy: boolean) {
-    // 인문과학관 현관에서 나온다
-    super(c, person, HUM_DOOR, HUM_DOOR, L_GUMTO_OK, '오검토 처장', 72, solids, easy);
-    this.pile = pile;
-  }
-
-  protected think(dt: number, c: Ctx): void {
-    switch (this.state) {
-      case 'enter':
-        if (this.stateT < dt * 1.5) this.say(L_GUMTO_IN, 2.4);
-        this.walkTo(170, HUM_DOOR.z, 2.4, dt, null, 0.3);
-        this.faceTo(c.eye.x, c.eye.z, dt);
-        if (this.stateT > 3.2) this.setState('idle');
-        break;
-      case 'idle':
-        this.stroll(c, dt, 10);
-        this.lineT -= dt;
-        if (this.lineT <= 0) {
-          this.lineT = 9 + Math.random() * 4;
-          this.say(L_GUMTO_HM, 1.4);
-        }
-        this.volleyT -= dt;
-        if (this.volleyT <= 0) {
-          this.volleyT = this.phase2 ? 3.3 : 4.3;
-          this.fan(c, 'paper', this.phase2 ? 6 : 4, 10, 0.14);
-        }
-        if (!this.phase2 && this.hp <= this.maxHp / 2) this.phase2 = true;
-        this.reviewT -= dt;
-        if (this.reviewT <= 0) {
-          // 재검토: 도장 든 손을 들고 "재검토!" → 처리된 민원이 되살아난다
-          this.setState('act');
-          this.reachTo = 1;
-          this.revived = false;
-          this.say(this.pile.size ? L_GUMTO_RE : L_GUMTO_HM, 1.2);
-        }
-        break;
-      case 'act':
-        this.faceTo(c.eye.x, c.eye.z, dt, 8);
-        if (!this.revived && this.stateT >= 0.5) {
-          this.revived = true;
-          const n = c.minions() >= 6 ? 0 : this.phase2 ? 3 : 2;
-          for (const p of this.pile.revive(c, n)) {
-            c.fx.text(_a.copy(p).setY(p.y + 0.9), '재검토', '#ff6b6b', 0.7);
-            c.fx.ring(p.x, 0.07, p.z, 0.3, 1.8, 0.4, 0xd0202f);
-          }
-          c.sound('process', this.person.chest, 0.8);
-        }
-        if (this.stateT >= 0.9) {
-          this.reachTo = 0;
-          this.openWindow();
-          this.setState('lure');
-        }
-        break;
-      case 'lure':
-        this.faceTo(c.eye.x, c.eye.z, dt);
-        if (this.stateT >= this.lureT) {
-          this.raiseTo = 0;
-          this.reviewT = this.phase2 ? 5.5 : 7;
-          this.setState('idle');
-        }
-        break;
-      default:
-        break;
-    }
-  }
-}
-
-/** 국제학사 앞 보스 — 최몰라 처장: "몰라~" 하며 메일·전화를 떠넘긴다 (2D Supervisor molla) */
-export class Molla extends NewBoss {
+/** 인문과학관 앞 보스 — 박학과장: "그건 선생님이 알아서 하세요" 하며 메일·전화를 떠넘긴다 (2D Supervisor gumto). 막대는 "협조 서명" */
+export class Hakgwa extends NewBoss {
   readonly hintText = '메일과 전화를 떠넘겨요! 결재판을 들 때 노리세요';
   private passT = 3.5;
   private passes = 0;
   private passed = false;
 
   constructor(c: Ctx, person: Person, solids: readonly Rect[], easy: boolean) {
-    // 국제학사(학생회관) 현관에서 나온다
-    super(c, person, DORM_DOOR, DORM_DOOR, L_MOLLA_OK, '최몰라 처장', 78, solids, easy);
+    // 인문과학관 현관에서 나온다
+    super(c, person, HUM_DOOR, HUM_DOOR, L_HAKGWA_OK, '박학과장', 72, solids, easy);
+    this.doneText = '서명 완료!';
   }
 
   protected think(dt: number, c: Ctx): void {
     switch (this.state) {
       case 'enter':
-        if (this.stateT < dt * 1.5) this.say(L_MOLLA, 2.6);
-        this.walkTo(186, DORM_DOOR.z, 2.4, dt, null, 0.3);
+        if (this.stateT < dt * 1.5) this.say(L_HAKGWA, 2.6);
+        this.walkTo(170, HUM_DOOR.z, 2.4, dt, null, 0.3);
         this.faceTo(c.eye.x, c.eye.z, dt);
         if (this.stateT > 3.2) this.setState('idle');
         break;
       case 'idle':
-        this.stroll(c, dt, 11);
+        this.stroll(c, dt, 10);
         if (!this.phase2 && this.hp <= this.maxHp / 2) this.phase2 = true;
         this.passT -= dt;
         if (this.passT <= 0) {
@@ -1045,7 +937,7 @@ export class Molla extends NewBoss {
           this.reachTo = 1;
           this.passed = false;
           this.passes++;
-          if (this.passes % 2 === 1) this.say(L_MOLLA, 1.6);
+          if (this.passes % 2 === 1) this.say(L_HAKGWA, 1.8);
         }
         break;
       case 'act':
@@ -1065,7 +957,7 @@ export class Molla extends NewBoss {
           c.sound('volley', this.person.chest, 0.7);
         }
         if (this.stateT >= 0.9) {
-          // 떠넘기고 결재판을 든 채 어깨를 으쓱 (빈틈)
+          // 떠넘기고 결재판을 든 채 기다린다 (빈틈)
           this.reachTo = 0;
           this.openWindow();
           this.setState('lure');
@@ -1076,6 +968,78 @@ export class Molla extends NewBoss {
         if (this.stateT >= this.lureT) {
           this.raiseTo = 0;
           this.passT = this.phase2 ? 3.6 : 4.8;
+          this.setState('idle');
+        }
+        break;
+      default:
+        break;
+    }
+  }
+}
+
+/** 국제학사 앞 보스 — 최내놔 처장: "손님이 오는데 기념품 없나요?" 하며 거미줄을 던진다. 밟으면 처장 곁으로 끌려간다 */
+export class Naenwa extends NewBoss {
+  readonly hintText = '거미줄을 밟으면 처장 곁으로 끌려가요! 그림자를 피하세요';
+  private webT = 3.2;
+  private webs = 0;
+  private thrown = false;
+  private volleyT = 4.5;
+
+  constructor(c: Ctx, person: Person, solids: readonly Rect[], easy: boolean) {
+    // 국제학사(학생회관) 현관에서 나온다
+    super(c, person, DORM_DOOR, DORM_DOOR, L_NAENWA_OK, '최내놔 처장', 78, solids, easy);
+  }
+
+  protected think(dt: number, c: Ctx): void {
+    switch (this.state) {
+      case 'enter':
+        if (this.stateT < dt * 1.5) this.say(L_NAENWA, 2.6);
+        this.walkTo(186, DORM_DOOR.z, 2.4, dt, null, 0.3);
+        this.faceTo(c.eye.x, c.eye.z, dt);
+        if (this.stateT > 3.2) this.setState('idle');
+        break;
+      case 'idle':
+        this.stroll(c, dt, 11);
+        if (!this.phase2 && this.hp <= this.maxHp / 2) this.phase2 = true;
+        this.volleyT -= dt;
+        if (this.volleyT <= 0) {
+          this.volleyT = this.phase2 ? 3.6 : 4.6;
+          this.fan(c, 'paper', this.phase2 ? 5 : 3, 9.5, 0.16);
+        }
+        this.webT -= dt;
+        if (this.webT <= 0 && c.hz.skills.websOut < (this.phase2 ? 2 : 1)) {
+          this.setState('act');
+          this.reachTo = 1;
+          this.thrown = false;
+          this.webs++;
+          if (this.webs % 2 === 1) this.say(L_NAENWA, 2.0);
+        }
+        break;
+      case 'act':
+        this.faceTo(c.eye.x, c.eye.z, dt, 8);
+        if (!this.thrown && this.stateT >= 0.5) {
+          this.thrown = true;
+          // 플레이어 발밑 근처 (2단계는 가는 쪽을 조금 앞질러)
+          const ar = c.area;
+          const a = Math.random() * Math.PI * 2;
+          const r = Math.random() * (this.phase2 ? 1.6 : 1.0);
+          const x = Math.max(ar.minX + 1.5, Math.min(ar.maxX - 1.5, c.eye.x + Math.cos(a) * r));
+          const z = Math.max(ar.minZ + 1.5, Math.min(ar.maxZ - 1.5, c.eye.z + Math.sin(a) * r));
+          c.hz.skills.throwWeb(_a.copy(this.person.chest).setY(this.person.chest.y + 0.6), x, z, this.obj);
+          c.sound('throw', this.person.chest, 0.8);
+        }
+        if (this.stateT >= 0.9) {
+          // 던지고 결재판을 든 채 지켜본다 (빈틈)
+          this.reachTo = 0;
+          this.openWindow();
+          this.setState('lure');
+        }
+        break;
+      case 'lure':
+        this.faceTo(c.eye.x, c.eye.z, dt);
+        if (this.stateT >= this.lureT) {
+          this.raiseTo = 0;
+          this.webT = this.phase2 ? 3.4 : 4.6;
           this.setState('idle');
         }
         break;

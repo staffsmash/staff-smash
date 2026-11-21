@@ -10,31 +10,33 @@ import { createDeanRig, createDizzyStars, spinStars } from './studentRigs';
 import { studentPose } from './StudentEnemy';
 import * as fx from '../fx';
 
-// 학생 모드 2스테이지 보스 "반사반사 결재부총장" (가상 인물, 가상 직함).
+// 학생 모드 2스테이지 보스 "김부재중 교수" (가상 인물, 2026-11-21 11차 — 예전 반사반사 부총장의 반사 기술을 옮겼다).
 // - 큰 결재판으로 정면을 막고, 던진 무기는 되받아친다(반사).
 // - 반사 직후 잠깐 결재판이 들려 정면이 빈다. 등 뒤도 빈틈이다 — 몸을 돌리는 데 시간이 걸린다.
-// - 결재판 내려치기, 결재 서류 세 장 날리기, "전결 돌진"(지나간 뒤 등이 보인다).
+// - 결재판 내려치기, 서류 세 장 날리기, 수업에 늦어 달려가기(지나간 뒤 등이 보인다).
+// - 설득되면 "…서명했습니다. 연구실로 갑니다." 하고 걸어 나간다 (퇴근하지 않는다).
 
-const S = stats.bansaBoss;
-// ★ 추가 대사 (문구 검토 11-2절, 2026-11-15 사용자 "추가"). 모두 기존 대사 자리에서 섞여 나온다
-/** 싸우는 중: 전결 돌진·결재 서류 날리기 때 */
-const MORE_FIGHT = ['결재 라인 다시 확인하세요.', '그건 처장 전결 사항입니다.', '협조 부서 서명부터 받아 오세요.'];
-/** 정면에서 막았을 때: 결재판으로 막기·던진 무기 되받아치기 때 */
+const S = stats.bujaeBoss;
+/** 등장 대사 (사용자 확정) */
+export const BUJAE_PROF_LINE = '면담은 메일로 예약하세요.';
+// 추가 대사. 모두 기존 대사 자리에서 섞여 나온다
+/** 싸우는 중: 달려가기·서류 날리기 때 */
+const MORE_FIGHT = [BUJAE_PROF_LINE];
+/** 정면에서 막았을 때 (문구 검토 11-2절, 2026-11-15 사용자 "추가" — 예전 반사반사 부총장 대사) */
 const MORE_BLOCK = ['반려가 아니라 반사입니다~'];
-/** 빈틈이 생길 때: 전결 돌진 뒤 등이 플레이어 쪽으로 보일 때 */
+/** 빈틈이 생길 때: 달려간 뒤 등이 플레이어 쪽으로 보일 때 (예전 반사반사 부총장 대사) */
 const MORE_OPEN = ['앗, 뒤는 못 봤는데…'];
 
-export class BansaBoss extends Enemy implements BossLike {
-  readonly kind = 'bansaBoss' as const;
+export class BujaeBoss extends Enemy implements BossLike {
+  readonly kind = 'bujaeBoss' as const;
   readonly student = true;
   readonly persuadable = true;
-  readonly canRecheck = false;
   readonly usesToken = false;
   readonly halfW = 28;
   readonly height = 132;
-  readonly bossName = '반사반사';
-  readonly bossType = '결재부총장';
-  thanksText = '결재… 올려 드리죠. 퇴근합니다…';
+  readonly bossName = '김부재중';
+  readonly bossType = '교수';
+  thanksText = '…서명했습니다. 연구실로 갑니다.';
   private turnT = 0;
   private hitDone = false;
   private shots = 0;
@@ -42,13 +44,14 @@ export class BansaBoss extends Enemy implements BossLike {
   private walkPhase = 0;
   private blockSaid = 0;
   private blocks = 0;
+  private greeted = false;
   private stars: Phaser.GameObjects.Container | null = null;
 
   constructor(scene: StageScene, x: number, y: number, enterTargetX: number) {
-    super(scene, x, y, createDeanRig(scene, 'bansa'), S.hp, 64, enterTargetX);
+    super(scene, x, y, createDeanRig(scene, 'bujae'), S.hp, 64, enterTargetX);
     this.baseScale = 1.22;
     this.cooldown = 1.4;
-    this.setLabel('반사반사 · 결재부총장', '#ff9f9f');
+    this.setLabel('김부재중 교수', '#ff9f9f');
     this.sync();
   }
 
@@ -105,6 +108,10 @@ export class BansaBoss extends Enemy implements BossLike {
   protected think(dt: number, player: Player): void {
     switch (this.state) {
       case 'approach': {
+        if (!this.greeted) {
+          this.greeted = true;
+          this.say(BUJAE_PROF_LINE, 2.2);
+        }
         // approach()는 매 프레임 플레이어 쪽을 보게 하므로, 얼굴 방향은 따로 천천히 돌린다
         const facing = this.facing;
         const { dx, dy } = this.approach(player, 96, S.speedX, S.speedY);
@@ -114,13 +121,13 @@ export class BansaBoss extends Enemy implements BossLike {
         this.cycle++;
         if (this.cycle % 3 === 0) {
           this.set('dashWind');
-          this.sayMix('전결 처리합니다!', MORE_FIGHT, 1.0);
+          this.sayMix('수업 늦었다!', MORE_FIGHT, 1.0);
         } else if (Math.abs(dy) < 16 && Math.abs(dx) < 130) {
           this.set('windup');
         } else {
           this.set('throw');
           this.shots = 0;
-          this.sayMix('결재 서류 받으세요', MORE_FIGHT, 1.2);
+          this.sayMix('레포트 돌려드릴게요', MORE_FIGHT, 1.2);
         }
         this.vx = 0;
         this.vy = 0;
@@ -173,7 +180,7 @@ export class BansaBoss extends Enemy implements BossLike {
           this.vx = 0;
           // 지나간 쪽을 본 채로 멈춘다: 등이 플레이어 쪽으로 보인다
           this.set('winded');
-          this.sayMix('후… 전결 끝.', MORE_OPEN, 1.0, 0.5);
+          this.sayMix('후… 어디까지 했죠?', MORE_OPEN, 1.0, 0.5);
         }
         break;
       }
@@ -245,7 +252,7 @@ export class BansaBoss extends Enemy implements BossLike {
     this.vx = 0;
     this.vy = 0;
     this.say(this.thanksText, 2.4);
-    fx.floatText(this.scene, this.x, this.y - this.height - 40, '결재 완료!', '#7CFC9A', 24);
+    fx.floatText(this.scene, this.x, this.y - this.height - 40, '서명 완료!', '#7CFC9A', 24);
     this.stars = createDizzyStars(this.scene);
     this.scene.onEnemyDefeated(this);
   }

@@ -403,7 +403,7 @@ export class Models {
 
   /**
    * 보스 서류 그림을 바꾼다. 학생 모드에는 교직원 모드 보스가 없으므로 같은 모양을
-   * 'rental' = 반려 서류(박반려 처장), 'meeting' = 결재 서류(반사반사 부총장)로 쓴다. 비우면 원래대로.
+   * 'rental' = 반려 서류(전필수 학과장), 'meeting' = 결재 서류로 쓴다. 비우면 원래대로.
    */
   setDocSkin(rental?: THREE.Texture, meeting?: THREE.Texture): void {
     this.rentalMat.map = rental ?? this.staffDocs[0];

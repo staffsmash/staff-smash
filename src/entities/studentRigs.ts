@@ -6,7 +6,7 @@ import { INK, box, createWeaponIcon, tone } from './rigs';
 import type { WeaponId } from './weapons';
 
 // 학생 모드 외형 모음: 무기(텀블러·장우산·전공책·학생증·마감 시계), 잡몹(행정 그 자체),
-// 가상 처장·부총장, 서류 탑, 보스 탄막 소품. 모두 코드로 그린 블록형 도형이다.
+// 가상 학과장·교수·학장, 수강편람 탑, 보스 탄막 소품. 모두 코드로 그린 블록형 도형이다.
 
 const PAPER = 0xf6f1e1;
 const RED = 0xc8202f;
@@ -258,20 +258,27 @@ export function createTicketRig(scene: Phaser.Scene): Rig {
   return rig;
 }
 
-// ---------- 가상 처장·부총장 (학생 모드 보스) ----------
+// ---------- 학생 모드 보스: 학과장·교수·학장 (가상 인물) ----------
 
-export type DeanKind = 'banryeo' | 'bansa';
+/** jeonpil = 전필수 스페인어과 학과장, bujae = 김부재중 교수, hanhakgo = 한학고 영어대학 학장 */
+export type DeanKind = 'jeonpil' | 'bujae' | 'hanhakgo';
 
-/** 박반려 서류반려처장(큰 반려 도장), 반사반사 결재부총장(큰 결재판). 가상 인물이다. */
+const DEAN_SUIT: Record<DeanKind, number> = { jeonpil: 0x3b3550, bujae: 0x4a4f5c, hanhakgo: 0x22304f };
+
+/**
+ * 전필수 학과장(여 · 단발 · 정장, 큰 "재수강" 도장), 김부재중 교수(회색 정장 · 금색 넥타이 · 큰 결재판 — 반사),
+ * 한학고 학장(남 · 나비넥타이 · 성적표 묶음). 가상 인물이다.
+ * 전필수 학과장은 지금 있는 외형(넥타이 대신 흰 블라우스 깃 + 단발)으로 그렸다. 블라우스·단발 공통 외형이 생기면 그쪽으로 바꾼다.
+ */
 export function createDeanRig(scene: Phaser.Scene, kind: DeanKind): Rig {
-  const suit = kind === 'banryeo' ? 0x4a4440 : 0x22304f;
+  const suit = DEAN_SUIT[kind];
   const rig = new Rig(scene, {
     legW: 15,
     legH: 37,
     legGap: 15,
     legColor: suit,
     shoeColor: 0x141414,
-    torsoW: kind === 'bansa' ? 44 : 42,
+    torsoW: kind === 'jeonpil' ? 40 : 44,
     torsoH: 41,
     torsoColor: suit,
     armW: 13,
@@ -283,38 +290,52 @@ export function createDeanRig(scene: Phaser.Scene, kind: DeanKind): Rig {
     headColor: 0xf1c7a0,
     outline: INK,
   });
-  rig.torso.add(rig.part(0, -40, 14, 22, 0xf4f4f4, 0.5, 0, false));
-  rig.torso.add(rig.part(0, -38, 6, 25, kind === 'banryeo' ? 0xb3262d : 0x5b2a86, 0.5, 0, false));
-  const gray = 0xb3b3b3;
-  if (kind === 'banryeo') {
-    // 벗어진 이마, 옆머리, 돋보기 안경, 굳게 다문 입
-    rig.head.add(rig.part(-14, -28, 7, 16, gray, 0.5, 0, false));
-    rig.head.add(rig.part(0, -35, 18, 4, gray, 0.5, 0, false));
-    rig.head.add(rig.part(5, -21, 10, 8, 0xcfe8f5, 0.5, 0));
-    rig.head.add(rig.part(15, -21, 8, 8, 0xcfe8f5, 0.5, 0));
-    rig.head.add(rig.part(10, -9, 12, 2, 0x5a2a20, 0.5, 0, false));
-    // 큰 반려 도장
+  if (kind === 'jeonpil') {
+    // 블라우스 깃 (넥타이 없음), 단발 (턱 높이에서 끊긴 짙은 머리), 금 브로치
+    rig.torso.add(rig.part(0, -40, 16, 18, 0xf8f4ec, 0.5, 0, false));
+    rig.torso.add(rig.part(-5, -40, 6, 8, 0xffffff, 0.5, 0, false));
+    rig.torso.add(rig.part(5, -40, 6, 8, 0xffffff, 0.5, 0, false));
+    rig.torso.add(rig.part(-12, -30, 5, 5, GOLD, 0.5, 0, false));
+    const hair = 0x2a2420;
+    rig.head.add(rig.part(0, -36, 37, 11, hair, 0.5, 0));
+    rig.head.add(rig.part(-14, -28, 10, 24, hair, 0.5, 0));
+    rig.head.add(rig.part(12, -29, 16, 5, hair, 0.5, 0, false));
+    rig.head.add(rig.part(9, -8, 8, 2, 0xb3262d, 0.5, 0, false));
+    // 큰 "재수강" 도장
     rig.itemF.add(rig.part(0, -2, 12, 16, 0x8b5a2b, 0.5, 0));
     rig.itemF.add(rig.part(0, 12, 34, 14, RED, 0.5, 0));
-  } else {
-    // 넘긴 짙은 회색 머리, 금배지, 큰 결재판
-    rig.head.add(rig.part(0, -36, 36, 10, 0x4b4b52, 0.5, 0));
-    rig.head.add(rig.part(-14, -28, 7, 13, 0x4b4b52, 0.5, 0, false));
-    rig.head.add(rig.part(9, -8, 10, 2, 0x8a3b2b, 0.5, 0, false));
-    rig.torso.add(rig.part(-13, -32, 6, 6, GOLD, 0.5, 0, false));
+  } else if (kind === 'bujae') {
+    // 셔츠·금색 넥타이, 짙은 머리, 큰 결재판 (정면으로 날아온 것을 되받아친다)
+    rig.torso.add(rig.part(0, -40, 14, 22, 0xf4f4f4, 0.5, 0, false));
+    rig.torso.add(rig.part(0, -38, 6, 25, 0xd9b44a, 0.5, 0, false));
+    rig.head.add(rig.part(0, -36, 36, 10, 0x2a2420, 0.5, 0));
+    rig.head.add(rig.part(-14, -28, 7, 12, 0x2a2420, 0.5, 0, false));
+    rig.head.add(rig.part(9, -8, 8, 2, 0x8a3b2b, 0.5, 0, false));
     rig.itemF.add(rig.part(0, -8, 38, 50, 0x9a6a3a, 0.5, 0));
     rig.itemF.add(rig.part(0, -2, 28, 36, 0xffffff, 0.5, 0, false));
     rig.itemF.add(rig.part(0, 6, 20, 2, 0x9aa3ad, 0.5, 0, false));
     rig.itemF.add(rig.part(0, 14, 20, 2, 0x9aa3ad, 0.5, 0, false));
-    rig.itemF.add(rig.part(0, 24, 14, 6, RED, 0.5, 0, false));
     rig.itemF.add(rig.part(0, -12, 14, 7, 0x8a8f96, 0.5, 0));
+  } else {
+    // 셔츠·빨간 나비넥타이, 넘긴 회색 머리, 금 배지, 성적표 묶음
+    rig.torso.add(rig.part(0, -40, 14, 22, 0xf4f4f4, 0.5, 0, false));
+    rig.torso.add(rig.part(-5, -38, 9, 7, 0xb3262d, 0.5, 0, false));
+    rig.torso.add(rig.part(5, -38, 9, 7, 0xb3262d, 0.5, 0, false));
+    rig.torso.add(rig.part(0, -38, 4, 5, 0x7a1820, 0.5, 0, false));
+    rig.torso.add(rig.part(-13, -32, 6, 6, GOLD, 0.5, 0, false));
+    rig.head.add(rig.part(0, -36, 36, 10, 0x8f8f96, 0.5, 0));
+    rig.head.add(rig.part(-14, -28, 7, 13, 0x8f8f96, 0.5, 0, false));
+    rig.head.add(rig.part(9, -8, 10, 2, 0x8a3b2b, 0.5, 0, false));
+    rig.itemF.add(rig.part(0, -4, 26, 34, 0xffffff, 0.5, 0));
+    rig.itemF.add(rig.part(2, -1, 26, 34, PAPER, 0.5, 0));
+    rig.itemF.add(rig.part(2, -10, 18, 4, HUFS_NAVY, 0.5, 0, false));
   }
   rig.head.add(rig.part(4, -19, 3, 4, INK, 0.5, 0, false));
   rig.head.add(rig.part(13, -19, 3, 4, INK, 0.5, 0, false));
   return rig;
 }
 
-/** 박반려 처장이 쌓는 서류 탑 */
+/** 전필수 학과장이 쌓는 수강편람 탑 (두꺼운 책자를 조금씩 어긋나게 쌓았다) */
 export function createDocTowerRig(scene: Phaser.Scene): Rig {
   const rig = new Rig(scene, {
     ...NO_LIMBS,
@@ -327,31 +348,48 @@ export function createDocTowerRig(scene: Phaser.Scene): Rig {
     torsoH: 6,
     torsoColor: 0x8a8f96,
   });
-  const rnd = new Phaser.Math.RandomDataGenerator(['doc-tower']);
-  for (let i = 0; i < 15; i++) {
-    const y = -6 - (i + 1) * 8;
-    const w = rnd.between(48, 60);
-    rig.torso.add(rig.part(rnd.between(-5, 5), y, w, 8, i % 2 ? PAPER : 0xffffff, 0.5, 0));
-    if (i % 4 === 1) rig.torso.add(rig.part(rnd.between(-14, 14), y + 1, 12, 6, RED, 0.5, 0, false));
+  const rnd = new Phaser.Math.RandomDataGenerator(['catalog-tower']);
+  const covers = [0x13707a, 0x1f3a6b, 0x7a1f2b];
+  for (let i = 0; i < 7; i++) {
+    const y = -6 - (i + 1) * 17;
+    const w = rnd.between(50, 60);
+    const x = rnd.between(-5, 5);
+    rig.torso.add(rig.part(x, y, w, 17, covers[i % 3], 0.5, 0));
+    rig.torso.add(rig.part(x + w / 2 - 5, y + 3, 6, 11, 0xf4f0e0, 0.5, 0, false));
   }
+  rig.torso.add(
+    new Phaser.GameObjects.Text(scene, 0, -70, '수강\n편람', {
+      fontFamily: FONT,
+      fontSize: '13px',
+      fontStyle: 'bold',
+      color: '#ffffff',
+      align: 'center',
+      stroke: '#111318',
+      strokeThickness: 3,
+    }).setOrigin(0.5),
+  );
   return rig;
 }
 
 // ---------- 창구 중간보스(가상 행정직원) 손에 든 물건 ----------
 
-export type WindowProp = 'flashlight' | 'ladle' | 'redpen' | 'passports' | 'tickets' | 'coins';
+export type WindowProp = 'chart' | 'books' | 'redpen' | 'passports' | 'tickets' | 'whistle';
 
 export function addWindowProp(rig: Rig, prop: WindowProp): void {
   const f = rig.itemF;
   switch (prop) {
-    case 'flashlight':
-      f.add(rig.part(0, -2, 10, 20, 0x2b2b30, 0.5, 0));
-      f.add(rig.part(0, 16, 14, 7, 0xffe066, 0.5, 0));
+    case 'chart':
+      // 김전략: 내려가는 막대그래프 판
+      f.add(rig.part(0, 0, 22, 26, 0xffffff, 0.5, 0));
+      f.add(rig.part(-6, 10, 4, 12, 0x2f6fd1, 0.5, 0, false));
+      f.add(rig.part(0, 14, 4, 8, 0xd97706, 0.5, 0, false));
+      f.add(rig.part(6, 17, 4, 5, RED, 0.5, 0, false));
       break;
-    case 'ladle':
-      f.add(rig.part(0, -6, 4, 40, 0xc9ced4, 0.5, 0));
-      f.add(rig.part(0, 32, 20, 10, 0xc9ced4, 0.5, 0));
-      f.add(rig.part(0, 34, 14, 4, 0xd08a3a, 0.5, 0, false));
+    case 'books':
+      // 최도서관: 책 두 권
+      f.add(rig.part(0, 0, 20, 26, 0x13707a, 0.5, 0));
+      f.add(rig.part(3, 4, 20, 26, 0x7a1f2b, 0.5, 0));
+      f.add(rig.part(12, 6, 3, 22, 0xf4f0e0, 0.5, 0, false));
       break;
     case 'redpen':
       f.add(rig.part(0, -4, 7, 28, 0xd0202f, 0.5, 0));
@@ -367,9 +405,11 @@ export function addWindowProp(rig: Rig, prop: WindowProp): void {
       f.add(rig.part(0, 18, 12, 12, 0xffffff, 0.5, 0));
       f.add(rig.part(0, 4, 12, 4, HUFS_NAVY, 0.5, 0, false));
       break;
-    case 'coins':
-      f.add(rig.part(0, 0, 22, 22, GOLD, 0.5, 0));
-      f.add(rig.part(0, -2, 12, 5, 0x8a5a1c, 0.5, 0, false));
+    case 'whistle':
+      // 권학생: 총학을 부르는 호루라기
+      f.add(rig.part(0, -4, 3, 18, 0x2f6fd1, 0.5, 0, false));
+      f.add(rig.part(0, 12, 14, 9, 0xc9ced4, 0.5, 0));
+      f.add(rig.part(5, 14, 5, 4, 0x8a8f96, 0.5, 0, false));
       break;
   }
 }
@@ -424,7 +464,7 @@ export function createCatalogStack(scene: Phaser.Scene): Phaser.GameObjects.Cont
 
 // ---------- 투사체·낙하물 ----------
 
-/** 박반려·프레지던트 캉이 내리찍는 거대 도장 (Hazard 낙하물) */
+/** 전필수 학과장("재수강")·프레지던트 캉이 내리찍는 거대 도장 (Hazard 낙하물) */
 export function createBigStamp(scene: Phaser.Scene, label: string, w = 96): Phaser.GameObjects.Container {
   const c = scene.add.container(0, 0);
   const h = Math.round(w * 0.3);
@@ -492,17 +532,6 @@ export function createPacket(scene: Phaser.Scene): Phaser.GameObjects.Container 
   return c;
 }
 
-/** 최장학이 뿌리는 동전 (미끼) */
-export function createCoin(scene: Phaser.Scene): Phaser.GameObjects.Container {
-  const c = scene.add.container(0, 0);
-  const g = new Phaser.GameObjects.Graphics(scene);
-  g.fillStyle(0xf5c542).fillCircle(0, 0, 10);
-  g.lineStyle(2, 0x8a5a1c, 1).strokeCircle(0, 0, 10);
-  g.lineStyle(1, 0xb7862b, 1).strokeCircle(0, 0, 6);
-  c.add(g);
-  return c;
-}
-
 /** 러시아어 주문 "ЗАЧЁТ!": 위에서 떨어지는 글자 */
 export function createZachetDrop(scene: Phaser.Scene): Phaser.GameObjects.Container {
   const c = scene.add.container(0, 0);
@@ -518,6 +547,69 @@ export function createZachetDrop(scene: Phaser.Scene): Phaser.GameObjects.Contai
     t.rotation = (i - 2) * 0.06;
     c.add(t);
   });
+  return c;
+}
+
+/** 김전략이 떨어뜨리는 빨간 순위 하락 화살표 (Hazard 낙하물) */
+export function createRankArrow(scene: Phaser.Scene): Phaser.GameObjects.Container {
+  const c = scene.add.container(0, 0);
+  const g = new Phaser.GameObjects.Graphics(scene);
+  g.fillStyle(RED).fillRect(-9, -46, 18, 26);
+  g.fillTriangle(-22, -22, 22, -22, 0, 4);
+  g.lineStyle(2, INK, 1).strokeRect(-9, -46, 18, 26);
+  g.strokeTriangle(-22, -22, 22, -22, 0, 4);
+  c.add(g);
+  c.add(new Phaser.GameObjects.Text(scene, 0, -34, '순위', { fontFamily: FONT, fontSize: '9px', fontStyle: 'bold', color: '#ffffff' }).setOrigin(0.5));
+  return c;
+}
+
+/** 최도서관이 밀어 보내는 책수레 (원점 = 바닥 가운데) */
+export function createBookCart(scene: Phaser.Scene): Phaser.GameObjects.Container {
+  const c = scene.add.container(0, 0);
+  c.add(box(scene, 0, -18, 64, 8, 0x6b7280));
+  c.add(box(scene, 0, -38, 64, 6, 0x6b7280));
+  c.add(box(scene, -30, -28, 4, 26, 0x4b5563));
+  c.add(box(scene, 30, -28, 4, 26, 0x4b5563));
+  const spines = [0x7a1f2b, 0x13707a, GOLD, 0x1f3a6b, RED, 0x2f6b5a, 0x7a1f2b];
+  spines.forEach((col, i) => c.add(box(scene, -24 + i * 8, -30, 7, 16, col, 0.5, 0.5, false)));
+  spines.slice(0, 5).forEach((col, i) => c.add(box(scene, -18 + i * 9, -48, 8, 14, col, 0.5, 0.5, false)));
+  for (const x of [-24, 24]) {
+    const w = new Phaser.GameObjects.Arc(scene, x, -6, 6, 0, 360, false, 0x1d1d22);
+    w.setStrokeStyle(2, 0x9aa3ad);
+    c.add(w);
+  }
+  return c;
+}
+
+/** 한학고 학장이 떨어뜨리는 성적표 (A+ = 회복, F = 잠깐 멈춤) */
+export function createGradeSheet(scene: Phaser.Scene, grade: 'A+' | 'F'): Phaser.GameObjects.Container {
+  const c = scene.add.container(0, 0);
+  c.add(box(scene, 0, 0, 30, 38, 0xffffff));
+  c.add(box(scene, 0, -14, 30, 7, HUFS_NAVY, 0.5, 0.5, false));
+  for (const y of [-4, 1, 6]) c.add(box(scene, -6, y, 12, 2, 0x9aa3ad, 0.5, 0.5, false));
+  c.add(
+    new Phaser.GameObjects.Text(scene, 7, 6, grade, {
+      fontFamily: FONT,
+      fontSize: grade === 'F' ? '18px' : '14px',
+      fontStyle: 'bold',
+      color: grade === 'F' ? '#d0202f' : '#1d7a3a',
+    }).setOrigin(0.5),
+  );
+  return c;
+}
+
+/** 프레지던트 캉의 학위 수여: 부메랑처럼 날아갔다 돌아오는 학사모 */
+export function createCapIcon(scene: Phaser.Scene): Phaser.GameObjects.Container {
+  const c = scene.add.container(0, 0);
+  const g = new Phaser.GameObjects.Graphics(scene);
+  g.fillStyle(0x1d1d22).fillPoints(
+    [new Phaser.Math.Vector2(-26, -4), new Phaser.Math.Vector2(0, -14), new Phaser.Math.Vector2(26, -4), new Phaser.Math.Vector2(0, 6)],
+    true,
+  );
+  g.fillStyle(0x2b2b30).fillRect(-12, 0, 24, 10);
+  g.lineStyle(2, GOLD, 1).lineBetween(0, -4, 18, 4);
+  g.fillStyle(GOLD).fillRect(16, 4, 4, 10);
+  c.add(g);
   return c;
 }
 

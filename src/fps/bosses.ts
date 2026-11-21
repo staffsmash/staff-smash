@@ -1,9 +1,9 @@
 import * as THREE from 'three';
-import type { Rect } from './blocks';
+import { lambert, type Rect } from './blocks';
 import { BossMove, diffOf, randRange, solidsOf, Wander, type Mover, type Roam } from './bossmove';
 import { Enemy, type Ctx, type SheetKind } from './enemies';
 import { FC, PODIUM } from './field';
-import { Person, type PoseIn, type Who } from './people';
+import { LOOKS, Person, peopleKit, type Look, type PoseIn, type Who } from './people';
 import type { DiffKey } from './settings';
 import { FRONT_X } from './social';
 
@@ -11,10 +11,12 @@ import { FRONT_X } from './social';
 // 사람 보스는 다치지 않는다. 막대는 체력이 아니라 "결재 진행"이고, 도장은 들고 있는 결재판에 찍힌다.
 // 결재판을 머리 위로 들어 올린 동안만 약점(크게 진행). 다 차면 승인 도장을 찍고 한마디 하고 퇴근한다
 // (총장은 선 채로 승인한다).
-// 1. 김총괄 (교직원)  — 본관 앞: 바닥의 강의실 열쇠 미끼, 대관 신청서 부채꼴 (대관 총괄, 가상 인물)
+// 1. 김총괄 (교직원)  — 본관 앞: 바닥의 강의실 열쇠 미끼, 대관 신청서 부채꼴 (대관 총괄, 가상 인물).
+//    11차: 뿔테안경, 쿵쿵 발 구르기(1초 예고) 뒤 빠르게 달려오기 (bossmove.ts stomp)
 // 2. 김보고 처장       — 사회과학관 앞: 몸 둘레 메일 폭풍, "보고해!" 말풍선
-// 3. 회의소집 부총장   — 대운동장: 단상에서 회의 소집 고리(점프), 회의 자료, 말풍선 → 2단계는 운동장을 걸어서 돈다
-// 4. 총장 프레지던트 캉 — 해 질 녘 본관 앞: 거대 도장 → 2단계 수강신청 서버 폭주
+// 3. 회의회의부총장 (여) — 대운동장: 단상에서 회의 소집 고리(점프), 회의 자료, 말풍선 → 2단계는 운동장을 걸어서 돈다
+// 4. 총장 프레지던트 캉 — 해 질 녘 본관 앞: 거대 도장 → 2단계 수강신청 서버 폭주.
+//    11차 새 기술: ① MOU 서명선(1단계부터) ② 기념 촬영 플래시 ③ 표창장(학생: 학위) 수여 부메랑 (2단계) — bossskills.ts
 
 /** 약점(들어 올린 결재판)에 맞힌 도장 한 개의 진행 */
 export const WEAK_DMG = 4;
@@ -26,7 +28,7 @@ const WINDOW_MAX = 3;
 export const BOSS_NAMES: Record<Who, string> = {
   chonggwal: '김총괄 (교직원)',
   bogo: '김보고 처장',
-  meeting: '회의소집 부총장',
+  meeting: '회의회의부총장',
   president: '총장 프레지던트 캉',
 };
 
@@ -35,11 +37,35 @@ export const BOSS_HP: Record<Who, number> = { chonggwal: 50, bogo: 70, meeting: 
 
 /** 처음 만났을 때 띠 아래 공략 한 줄 */
 export const BOSS_HINTS: Record<Who, string> = {
-  chonggwal: '바닥의 강의실 열쇠는 미끼! 밟으면 잠깐 멈춰요',
+  chonggwal: '쿵쿵 발을 구르면 곧 달려와요 — 옆으로 비키세요. 바닥의 열쇠는 미끼!',
   bogo: '빨간 그림자에 떨어지는 "보고해!"를 피하세요',
   meeting: '바닥으로 퍼지는 회의 소집 고리는 점프로 넘으세요',
   president: '빨간 그림자에 떨어지는 거대 도장을 피하며 결재받으세요',
 };
+
+/** 회의회의부총장 (여, 11차): 2D 회의소집 부총장 색 그대로 + 긴 머리, 넥타이 없음. 블라우스·단발 공통 외형이 생기면 바꾼다 */
+export const MEETING_LOOK: Look = { ...LOOKS.meeting, hair: 0x5a5450, brow: 0x3a3430, hairStyle: 'long', noTie: true, female: true, blouse: true, neck: 'ribbon' };
+
+/** 김총괄 뿔테안경 (굵은 검은 테). 모형은 판마다 다시 쓰므로 한 번만 붙인다 */
+export function addHornRims(p: Person): void {
+  if (p.head.userData.hornRims) return;
+  p.head.userData.hornRims = true;
+  const mat = lambert(0x141414);
+  const add = (w: number, h: number, d: number, x: number, y: number, z: number) => {
+    const m = new THREE.Mesh(peopleKit().unit, mat);
+    m.scale.set(w, h, d);
+    m.position.set(x, y, z);
+    p.head.add(m);
+  };
+  for (const x of [-0.106, 0.106]) {
+    add(0.17, 0.035, 0.03, x, 0.342, 0.25); // 위 굵은 테
+    add(0.17, 0.018, 0.02, x, 0.226, 0.25);
+    add(0.022, 0.12, 0.02, x - 0.077, 0.284, 0.25);
+    add(0.022, 0.12, 0.02, x + 0.077, 0.284, 0.25);
+  }
+  add(0.05, 0.02, 0.02, 0, 0.31, 0.25); // 코받침 다리
+  for (const x of [-0.265, 0.265]) add(0.02, 0.025, 0.26, x, 0.33, 0.12); // 안경다리
+}
 
 const _a = new THREE.Vector3();
 const _b = new THREE.Vector3();
@@ -50,7 +76,24 @@ function wrap(a: number): number {
   return a;
 }
 
-type St = 'sleep' | 'enter' | 'idle' | 'act' | 'lure' | 'charge' | 'stun' | 'descend' | 'server' | 'review' | 'approve' | 'leave' | 'stay';
+type St =
+  | 'sleep'
+  | 'enter'
+  | 'idle'
+  | 'act'
+  | 'lure'
+  | 'charge'
+  | 'stun'
+  | 'descend'
+  | 'server'
+  | 'review'
+  | 'approve'
+  | 'leave'
+  | 'stay'
+  // 총장 11차 새 기술: MOU 서명 · 기념 촬영 · 표창장(학위) 수여
+  | 'sign'
+  | 'photo'
+  | 'award';
 
 export abstract class PersonBoss extends Enemy implements Mover {
   readonly kind = 'boss' as const;
@@ -362,6 +405,9 @@ export class Chonggwal extends PersonBoss {
   constructor(c: Ctx, person: Person) {
     // 본관 문에서 걸어 나온다
     super(c, person, new THREE.Vector3(0, 0, -19.2), new THREE.Vector3(0, 0, -20), '이번만 대관 승인입니다.', '열쇠 반납하고 퇴근합니다…');
+    addHornRims(person);
+    // 쿵쿵 발을 구르며 예고하고 빠르게 달려온다 (더 자주)
+    if (this.mover) this.mover.stomp = true;
   }
 
   protected think(dt: number, c: Ctx): void {
@@ -560,7 +606,7 @@ export class Bogo extends PersonBoss {
   }
 }
 
-// ---------- 3. 회의소집 부총장 ----------
+// ---------- 3. 회의회의부총장 ----------
 
 /** 단상 위 서는 자리 */
 const STAND = new THREE.Vector3(PODIUM.x, 1.1, PODIUM.z + 0.4);
@@ -739,8 +785,16 @@ const PRES_BAND: Rect = { minX: -6.2, maxX: 6.2, minZ: -16.0, maxZ: -10.8 };
 const PRES_HOLD = '보류지만 더 보류입니다';
 const PRES_RE = '검토했지만 더 검토하세요';
 const PRES_FIGHT = ['학교를 위해 희생하세요', '그게 왜 안되죠? 되게 하세요'];
+/** ★ 11차 새 기술 대사 (2026-11-21, 비서실 확인 예정) */
+export const PRES_SIGN = '서명하겠습니다.';
+export const PRES_PHOTO = '자, 여기 보세요.';
+export const PRES_AWARD = '표창장을 수여합니다.';
+export const PRES_DEGREE = '학위를 수여합니다.';
 /** 미리 그려 둘 총장 새 대사 */
-export const PRESIDENT_LINES: string[] = [PRES_HOLD, PRES_RE, ...PRES_FIGHT];
+export const PRESIDENT_LINES: string[] = [PRES_HOLD, PRES_RE, ...PRES_FIGHT, PRES_SIGN, PRES_PHOTO, PRES_AWARD, PRES_DEGREE];
+/** 거대 도장 자리에 번갈아 쓰는 기술: 1단계는 도장·MOU 서명, 2단계는 넷을 돌아가며 */
+const PRES_SKILLS_1 = ['stamps', 'sign'] as const;
+const PRES_SKILLS_2 = ['stamps', 'sign', 'photo', 'award'] as const;
 
 /** 난이도별 총장 공격 박자 (적 시간 초). 초보는 예전과 비슷하게 */
 interface PresTune {
@@ -798,6 +852,11 @@ export class President extends PersonBoss {
   protected holdLine = PRES_HOLD;
   protected reLine = PRES_RE;
   protected fightLines: readonly string[] = PRES_FIGHT;
+  /** 수여 기술: 교직원 모드 = 표창장(상장), 학생 모드 = 학위(학사모) */
+  protected awardKind: 'cap' | 'award' = 'award';
+  protected awardLine = PRES_AWARD;
+  private skillIdx = 0;
+  private skillDone = false;
 
   constructor(c: Ctx, person: Person) {
     super(c, person, PRES_SPOT, PRES_SPOT, '오늘 민원 처리, 수고 많았어요.');
@@ -883,6 +942,38 @@ export class President extends PersonBoss {
     c.hz.drop('stamp', x, z, this.phase2 ? '재검토' : '보류');
   }
 
+  /**
+   * 11차 새 기술 한 프레임. 끝나면 결재판을 들고 살펴본다 (빈틈, review).
+   * - sign: 0.5초에 플레이어 발밑을 지나는 서명선 (2단계는 두 줄 엇갈림)
+   * - photo: 0.9초에 플래시 — 총장을 보고 있으면 2초 동안 화면이 하얘진다
+   * - award: 0.5초에 표창장(학생: 학사모)을 부메랑처럼
+   */
+  private skill(dt: number, c: Ctx, P: PresTune): void {
+    this.faceTo(c.eye.x, c.eye.z, dt, 6);
+    this.roamPres(dt, c, this.state === 'photo' ? 0 : P.actMove);
+    const at = this.state === 'photo' ? 0.9 : 0.5;
+    if (!this.skillDone && this.stateT >= at) {
+      this.skillDone = true;
+      if (this.state === 'sign') {
+        c.hz.skills.signLines(c.eye.x, c.eye.z, this.phase2);
+        c.sound('volley', this.person.chest, 0.6);
+      } else if (this.state === 'photo') {
+        const head = _a.copy(this.person.chest).setY(this.person.chest.y + 0.7 * this.person.look.scale);
+        c.fx.text(_b.copy(head).setY(head.y + 0.8), '찰칵!', '#ffffff', 0.7);
+        const white = c.hz.skills.flash(head, c);
+        c.fx.text(_b.set(c.eye.x, c.eye.y + 0.5, c.eye.z), white ? '눈부셔!' : '고개 돌리기 성공!', white ? '#ffe066' : '#7CFC9A', 0.5);
+      } else {
+        c.hz.skills.throwBoomerang(this.awardKind, this.person.chest, this.obj, c);
+      }
+    }
+    if (this.stateT >= at + 0.5) {
+      this.reachTo = 0;
+      this.openWindow();
+      this.planWindow(c);
+      this.setState('review');
+    }
+  }
+
   /** 화면이 밝아지면 시작 */
   wake(): void {
     if (this.state === 'sleep') this.setState('enter');
@@ -932,15 +1023,29 @@ export class President extends PersonBoss {
         }
         this.stampT -= dt;
         if (this.stampT <= 0) {
+          const list = this.phase2 ? PRES_SKILLS_2 : PRES_SKILLS_1;
+          const next = list[this.skillIdx++ % list.length];
+          this.reachTo = 1;
+          if (next !== 'stamps') {
+            this.skillDone = false;
+            this.setState(next);
+            const line = next === 'sign' ? PRES_SIGN : next === 'photo' ? PRES_PHOTO : this.awardLine;
+            this.say(line, 1.6);
+            break;
+          }
           this.setState('act');
           this.drops = 0;
-          this.reachTo = 1;
           this.planDrops(c);
           const line = this.phase2 ? this.reLine : this.holdLine;
           this.say(line, Math.max(1.0, line.length * 0.15));
         }
         break;
       }
+      case 'sign':
+      case 'photo':
+      case 'award':
+        this.skill(dt, c, P);
+        break;
       case 'act': {
         // 거대 도장: 플레이어를 따라 (수·간격은 무작위, 가끔은 가는 쪽을 앞질러)
         this.faceTo(c.eye.x, c.eye.z, dt, 6);

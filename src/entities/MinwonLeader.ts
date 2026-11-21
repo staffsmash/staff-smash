@@ -20,7 +20,6 @@ const MORE_LINES = ['서명 300명 받았습니다!', '학생 의견 수렴 결�
 export class MinwonLeader extends Enemy {
   readonly kind = 'minwon' as const;
   readonly student = true;
-  readonly canRecheck = false;
   readonly halfW = 22;
   readonly height = 118;
   thanksText = '서명지는 다음 학기에 다시 올게요. 감사합니다!';

@@ -33,7 +33,6 @@ const SITIN_LINES = ['면담해 주실 때까지 안 일어납니다!', ...MORE.
 export class ChonghakMember extends Enemy {
   readonly kind = 'chonghak' as const;
   readonly student = true;
-  readonly canRecheck = false;
   readonly usesToken = false;
   readonly halfW = 24;
   readonly height = 124;

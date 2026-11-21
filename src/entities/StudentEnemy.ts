@@ -137,7 +137,6 @@ export function studentPose(p: Pose, state: string, t: number, phase: number): n
 export class StudentEnemy extends Enemy implements Clinger {
   readonly kind: StudentKind;
   readonly student = true;
-  readonly canRecheck = false;
   readonly halfW = 22;
   readonly height = 118;
   private readonly st: StudentStats;

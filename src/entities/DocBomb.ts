@@ -20,7 +20,6 @@ export class DocBomb extends Enemy {
   readonly halfW = 24;
   readonly height = 46;
   readonly usesToken = false;
-  readonly canRecheck = false;
   fuse = S.fuse;
   private phase = Math.random() * 10;
   private readonly timer: Phaser.GameObjects.Text;

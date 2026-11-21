@@ -10,25 +10,26 @@ import { createDeanRig, createDizzyStars, createDocTowerRig, spinStars } from '.
 import { studentPose } from './StudentEnemy';
 import * as fx from '../fx';
 
-// 학생 모드 1스테이지 보스 "박반려 서류반려처장" (가상 인물, 가상 직함).
-// - 서류 탑을 쌓고 그 뒤에 숨는다. 숨어 있는 동안은 설득할 수 없고, 탑 뒤에서 거대 "반려" 도장을 내리찍는다.
+// 학생 모드 1스테이지 보스 "전필수 · 스페인어과 학과장" (가상 인물, 2026-11-21 11차 — 예전 박반려 처장 자리).
+// - 수강편람 탑을 쌓고 그 뒤에 숨는다. 숨어 있는 동안은 설득할 수 없고, 탑 뒤에서 거대 "재수강" 도장을 내리찍는다.
 // - 탑을 무너뜨리면 잠깐 당황한 뒤 나와서 도장으로 내려친다. 시간이 지나거나 체력이 1/3씩 줄면 다시 탑을 쌓는다.
-// - 설득되면 "반려 철회" — 넘어지지 않고 퇴근하며 물러난다.
+// - 설득되면 "…졸업 사정 통과시키겠습니다." — 넘어지지 않고 걸어 나간다 (퇴근하지 않는다: 창구 직원만 퇴근).
 
-const S = stats.banryeoBoss;
-/** ★ 싸우는 중 추가 대사 (문구 검토 11-2절, 2026-11-15 사용자 "추가"). 탑 뒤 도장·내려치기 때 기존 대사와 섞인다 */
+const S = stats.jeonpilBoss;
+/** 등장·탑 쌓기 대사 (사용자 확정) */
+export const JEONPIL_LINE = '전공필수 안 들었네요. 재수강!';
+/** ★ 싸우는 중 추가 대사 (문구 검토 11-2절, 2026-11-15 사용자 "추가" — 예전 박반려 처장 대사를 그대로 옮겼다) */
 const MORE_LINES = ['양식이 작년 거예요.', '도장 위치가 틀렸어요.', '원본 대조필 받아 오세요.', '첨부 서류 순서가 틀렸어요.'];
-/** 탑 앞뒤 간격: 처장은 탑보다 조금 뒤(깊이 y가 작은 쪽)에 선다 */
+/** 탑 앞뒤 간격: 학과장은 탑보다 조금 뒤(깊이 y가 작은 쪽)에 선다 */
 const BEHIND = 24;
 
-/** 박반려 처장의 서류 탑: 움직이지 않고 길을 막는다. 무너뜨려야 처장을 설득할 수 있다 */
+/** 전필수 학과장의 수강편람 탑: 움직이지 않고 길을 막는다. 무너뜨려야 학과장을 설득할 수 있다 */
 export class DocTower extends Enemy {
   readonly kind = 'docTower' as const;
   readonly halfW = 32;
   readonly height = 126;
   readonly usesToken = false;
-  readonly canRecheck = false;
-  defeatText = '서류 탑 붕괴!';
+  defeatText = '수강편람 탑 붕괴!';
   private shakeT = 0;
 
   constructor(scene: StageScene, x: number, y: number) {
@@ -88,17 +89,16 @@ export class DocTower extends Enemy {
   }
 }
 
-export class BanryeoBoss extends Enemy implements BossLike {
-  readonly kind = 'banryeoBoss' as const;
+export class JeonpilBoss extends Enemy implements BossLike {
+  readonly kind = 'jeonpilBoss' as const;
   readonly student = true;
   readonly persuadable = true;
-  readonly canRecheck = false;
   readonly usesToken = false;
   readonly halfW = 28;
   readonly height = 132;
-  readonly bossName = '박반려';
-  readonly bossType = '서류반려처장';
-  thanksText = '반려… 철회합니다. 퇴근합니다…';
+  readonly bossName = '전필수';
+  readonly bossType = '스페인어과 학과장';
+  thanksText = '…졸업 사정 통과시키겠습니다.';
   tower: DocTower | null = null;
   private slamT = 1.6;
   private exposedT = 0;
@@ -112,10 +112,10 @@ export class BanryeoBoss extends Enemy implements BossLike {
   private stars: Phaser.GameObjects.Container | null = null;
 
   constructor(scene: StageScene, x: number, y: number, enterTargetX: number) {
-    super(scene, x, y, createDeanRig(scene, 'banryeo'), S.hp, 64, enterTargetX);
+    super(scene, x, y, createDeanRig(scene, 'jeonpil'), S.hp, 64, enterTargetX);
     this.baseScale = 1.22;
     this.resumeState = 'build';
-    this.setLabel('박반려 · 서류반려처장', '#ff9f9f');
+    this.setLabel('전필수 · 스페인어과 학과장', '#ff9f9f');
     this.sync();
   }
 
@@ -138,7 +138,7 @@ export class BanryeoBoss extends Enemy implements BossLike {
   bossExtra(): string {
     if (this.towerUp && this.tower) {
       const t = this.tower;
-      return `서류 탑 ${'■'.repeat(Math.max(0, Math.ceil(t.hp / 2)))}${'□'.repeat(Math.max(0, Math.ceil((t.maxHp - t.hp) / 2)))}`;
+      return `수강편람 탑 ${'■'.repeat(Math.max(0, Math.ceil(t.hp / 2)))}${'□'.repeat(Math.max(0, Math.ceil((t.maxHp - t.hp) / 2)))}`;
     }
     return this.dead ? '' : '빈틈! 지금 설득하세요';
   }
@@ -156,7 +156,7 @@ export class BanryeoBoss extends Enemy implements BossLike {
         this.vy = 0;
         if (this.needTower && !this.towerUp) {
           this.needTower = false;
-          this.say('이 서류는 반려입니다!', 1.4);
+          this.say(JEONPIL_LINE, 1.8);
           const tx = Phaser.Math.Clamp(this.x, this.camLeft + 90, this.camLeft + GAME_W - 90);
           const ty = Phaser.Math.Clamp(this.y + BEHIND, FLOOR_TOP + BEHIND + 4, FLOOR_BOTTOM);
           this.x = tx;
@@ -176,7 +176,7 @@ export class BanryeoBoss extends Enemy implements BossLike {
         this.facing = player.x >= this.x ? 1 : -1;
         if (!this.towerUp) {
           this.set('flustered');
-          this.say('제 서류 탑이…!', 1.2);
+          this.say('제 수강편람이…!', 1.2);
           this.exposedT = S.exposedSec;
           break;
         }
@@ -189,8 +189,8 @@ export class BanryeoBoss extends Enemy implements BossLike {
         this.vy = 0;
         if (!this.slammed && this.stateT >= 0.35) {
           this.slammed = true;
-          this.scene.slamStamp(player.x + player.vx * 0.3, player.y, '반려', 1.0);
-          this.sayMix('반려!', MORE_LINES, 0.8);
+          this.scene.slamStamp(player.x + player.vx * 0.3, player.y, '재수강', 1.0);
+          this.sayMix('재수강!', MORE_LINES, 0.8);
         }
         if (this.stateT >= 0.8) {
           this.slamT = S.slamEvery + Math.random() * 0.8;
@@ -215,7 +215,7 @@ export class BanryeoBoss extends Enemy implements BossLike {
           this.set('windup');
           this.vx = 0;
           this.vy = 0;
-          this.sayMix('반려합니다!', MORE_LINES, 0.9);
+          this.sayMix('재수강!', MORE_LINES, 0.9);
         } else if (this.cooldown <= 0 && player.targetable && Math.abs(dx) > 260) {
           this.startPeek();
           this.vx = 0;
@@ -238,7 +238,7 @@ export class BanryeoBoss extends Enemy implements BossLike {
           if (ddx > -10 && ddx < 110 && Math.abs(player.y - this.y) <= DEPTH_RANGE && player.z < 34) {
             if (player.takeHit({ dmg: 2, dir: this.facing, kb: 220, knockdown: true })) fx.hitSpark(this.scene, player.x, player.y - 60);
           }
-          fx.stampMark(this.scene, this.x + this.facing * 70, this.y - 6, '반려');
+          fx.stampMark(this.scene, this.x + this.facing * 70, this.y - 6, '재수강');
           this.scene.cameras.main.shake(90, 0.005);
         }
         if (this.stateT >= 0.6) {
@@ -270,7 +270,7 @@ export class BanryeoBoss extends Enemy implements BossLike {
   private startRetreat(player: Player): void {
     const left = this.camLeft;
     this.spotX = player.x - left < GAME_W / 2 ? left + GAME_W - 150 : left + 150;
-    this.say('잠깐, 서류 다시 쌓겠습니다.', 1.4);
+    this.say('잠깐, 수강편람 다시 쌓겠습니다.', 1.4);
     this.needTower = true;
     this.set('retreat');
   }
@@ -300,7 +300,7 @@ export class BanryeoBoss extends Enemy implements BossLike {
     this.vx = 0;
     this.vy = 0;
     this.say(this.thanksText, 2.4);
-    fx.floatText(this.scene, this.x, this.y - this.height - 40, '반려 철회!', '#7CFC9A', 24);
+    fx.floatText(this.scene, this.x, this.y - this.height - 40, '승인 완료!', '#7CFC9A', 24);
     this.stars = createDizzyStars(this.scene);
     this.scene.onEnemyDefeated(this);
   }

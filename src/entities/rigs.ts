@@ -909,9 +909,10 @@ export function createSupervisorRig(scene: Phaser.Scene, look: SupervisorLook): 
     headColor: SKIN,
     outline: INK,
   });
-  // 셔츠와 넥타이 (몸통 위쪽 끝 = -40)
+  // 셔츠와 넥타이 (몸통 위쪽 끝 = -40). gumto = 박학과장(여): 블라우스 + 초록 스카프
   rig.torso.add(rig.part(0, -39, 14, 22, 0xf4f4f4, 0.5, 0, false));
-  rig.torso.add(rig.part(0, -37, 6, 24, kind === 'bogo' ? 0xb3262d : 0x2f6b3a, 0.5, 0, false));
+  if (kind === 'bogo') rig.torso.add(rig.part(0, -37, 6, 24, 0xb3262d, 0.5, 0, false));
+  else addNeckwear(rig, 'scarf', 0x2f6b3a, -40);
 
   const gray = 0xa8a8a8;
   if (kind === 'bogo') {
@@ -919,14 +920,12 @@ export function createSupervisorRig(scene: Phaser.Scene, look: SupervisorLook): 
     rig.head.add(rig.part(-15, -27, 6, 14, gray, 0.5, 0, false));
     rig.head.add(rig.part(15, -27, 4, 10, gray, 0.5, 0, false));
     rig.head.add(rig.part(8, -11, 14, 3, 0x555555, 0.5, 0, false));
+    rig.head.add(rig.part(4, -19, 3, 4, INK, 0.5, 0, false));
+    rig.head.add(rig.part(13, -19, 3, 4, INK, 0.5, 0, false));
   } else {
-    rig.head.add(rig.part(0, -35, 35, 10, gray, 0.5, 0));
-    rig.head.add(rig.part(4, -21, 9, 8, 0xcfe8f5, 0.5, 0));
-    rig.head.add(rig.part(14, -21, 7, 8, 0xcfe8f5, 0.5, 0));
-    rig.head.add(rig.part(9, -8, 8, 2, 0x8a3b2b, 0.5, 0, false));
+    // 박학과장(여): 긴 머리·안경 (눈·입은 dressHead가 그린다)
+    dressHead(rig, { hair: 0x3b2a20, style: 'long', female: true, glasses: 'plain' });
   }
-  rig.head.add(rig.part(4, -19, 3, 4, INK, 0.5, 0, false));
-  rig.head.add(rig.part(13, -19, 3, 4, INK, 0.5, 0, false));
 
   if (kind === 'bogo') {
     rig.itemF.add(rig.part(0, 0, 18, 22, 0xffffff, 0.5, 0));
@@ -962,7 +961,9 @@ function createOtherSupervisorRig(scene: Phaser.Scene, look: 'bujae' | 'molla' |
     outline: INK,
   });
   rig.torso.add(rig.part(0, -39, 14, 22, 0xf4f4f4, 0.5, 0, false));
-  rig.torso.add(rig.part(0, -37, 6, 24, TIES[look], 0.5, 0, false));
+  // meeting = 회의회의부총장(여): 넥타이 대신 블라우스 리본
+  if (look === 'meeting') addNeckwear(rig, 'ribbon', TIES[look], -40);
+  else rig.torso.add(rig.part(0, -37, 6, 24, TIES[look], 0.5, 0, false));
   if (vice) rig.torso.add(rig.part(-13, -32, 6, 6, 0xd9b44a, 0.5, 0, false));
   const gray = 0xb0b0b0;
   if (look === 'bujae') {
@@ -972,10 +973,10 @@ function createOtherSupervisorRig(scene: Phaser.Scene, look: 'bujae' | 'molla' |
     rig.head.add(rig.part(0, -35, 35, 8, gray, 0.5, 0));
     rig.head.add(rig.part(10, -31, 10, 3, INK, 0.5, 0, false)); // 찡그린 눈썹
   } else if (look === 'meeting') {
-    rig.head.add(rig.part(0, -35, 35, 10, gray, 0.5, 0));
-    rig.head.add(rig.part(4, -21, 9, 8, 0xcfe8f5, 0.5, 0));
-    rig.head.add(rig.part(14, -21, 7, 8, 0xcfe8f5, 0.5, 0));
+    // 단발·안경 (눈·입은 dressHead가 그린다)
+    dressHead(rig, { hair: 0x5a5450, style: 'bob', female: true, glasses: 'plain' });
     rig.itemF.add(rig.part(0, 0, 18, 24, 0xffffff, 0.5, 0)); // 회의 자료
+    return rig;
   } else {
     rig.head.add(rig.part(0, -34, 26, 5, gray, 0.5, 0, false));
     rig.head.add(rig.part(-15, -27, 6, 14, gray, 0.5, 0, false));

@@ -23,7 +23,7 @@ import {
 
 /** 운동장 한가운데 */
 export const FC = new THREE.Vector3(95, 0, 85);
-/** 회의소집 부총장이 서는 단상 (남쪽 현수막 앞) */
+/** 회의회의부총장이 서는 단상 (남쪽 현수막 앞) */
 export const PODIUM = new THREE.Vector3(95, 0, 101.5);
 /** 길이 운동장에 닿는 곳 (여기를 넘으면 대운동장 구역) */
 export const FIELD_ENTER_Z = 57;
@@ -323,7 +323,7 @@ export function buildField(root: THREE.Object3D, logos: Logos): FieldInfo {
   box(root, 0.16, 3.2, 0.16, 100.6, 1.6, 18.7, lambert(0x555a60));
   plane(root, 2.6, 0.82, 100.6, 3.0, 18.6, fieldSignTex(), { rotY: Math.PI });
 
-  // ---------- 단상 (회의소집 부총장) ----------
+  // ---------- 단상 (회의회의부총장) ----------
   const P = PODIUM;
   box(root, 6.2, 1.1, 3.6, P.x, 0.55, P.z + 0.4, lambert(0xb7b3ab));
   box(root, 6.3, 0.08, 3.7, P.x, 1.12, P.z + 0.4, lambert(0x7a1f2c), false);
