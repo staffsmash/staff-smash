@@ -4,14 +4,16 @@ import type { SfxName } from './audio';
 import type { Rect } from './blocks';
 import type { Fx } from './fx';
 import type { FoodKind, Models } from './models';
+import { guardLook } from './looks';
 import { Person } from './people';
 import { prepareSpeech, showSubtitle } from './speech';
 import { canvasTex, FONT, NAVY } from './textures';
 
 // 1인칭 시험판: 무기를 주는 사람·기계와 부수는 상자 (2026-11-14).
-// - 교직원 모드: 구역마다 경비원(이름 없음, 남색 제복·근무모)이 서 있다. 가까이(3.5m)에서 바라보고 E(터치: 인사 버튼)
-//   → "안녕하세요!" → 경비원 "네, 수고 많으십니다! 이거 쓰세요." → 무기 하나. 10초 안에 또 인사하면 "방금 드렸잖아요~".
-//   도장으로 경비원을 맞히면 "어허, 인사부터 하셔야죠." 하고 6초 동안 등을 돌린다. 경비원은 다치지 않고 민원도 그를 노리지 않는다.
+// - 교직원 모드: 구역마다 경비 선생님(이름 없음, 남색 제복·근무모)이 서 있다. 가까이(3.5m)에서 바라보고 E(터치: 인사 버튼)
+//   → "안녕하세요!" → 경비 선생님 "네, 수고 많으십니다! 이거 쓰세요." → 무기 하나. 10초 안에 또 인사하면 "방금 드렸잖아요~".
+//   도장으로 경비 선생님을 맞히면 "어허, 인사부터 하셔야죠." 하고 6초 동안 등을 돌린다. 다치지 않고 민원도 노리지 않는다.
+//   11차(2026-11-21): 구역마다 남녀가 번갈아 선다 (본관 앞 남 · 사회과학관 앞 여 · 인문과학관 앞 남 · 국제학사 앞 여 · 대운동장 남 · 해 질 녘 본관 앞 여).
 // - 학생 모드: 같은 자리에 "도서 무인 대출기"(기계). E(대여 버튼) → "도서 대여 완료!" → 무기 (전공책이 가장 잦다). 10초 동안 "대출 처리 중…".
 // - 부수는 상자: 구역마다 2~3개. 교직원 "조기출근 박스"(종이 상자), 학생 "수강편람"(두꺼운 책자 더미).
 //   2~3번 맞히면 부서지고 식권(25%)이나 음식이 나온다 (2026-11-17: 교직원은 늘 식권 1장 → 자판기, vending.ts). 상자는 민원(잡몹)이 아니다: 차례 정리·조준 보조와 상관없다.
@@ -49,7 +51,7 @@ export interface PerkHost {
 }
 
 interface Spot {
-  /** 경비원·대출기 자리 */
+  /** 경비 선생님·대출기 자리 */
   npc: [number, number];
   /** 평소에 바라보는 곳 (플레이어가 들어오는 쪽) */
   look: [number, number];
@@ -110,6 +112,10 @@ export function placesOf(mode: 'staff' | 'student', stage: string): [Place, Plac
 }
 
 const GUARD_LINES = ['어허, 인사부터 하셔야죠.', '네, 수고 많으십니다! 이거 쓰세요.', '방금 드렸잖아요~', '…'];
+/** 경비 선생님 이름표 (11차: "경비원" → "경비 선생님", 미화·조리사 선생님처럼 띄어 쓴다) */
+const GUARD_NAME = '경비 선생님';
+/** 경비 선생님이 남(짝수)·여(홀수)로 번갈아 서는 구역 순서 (교직원 모드 진행 순서) */
+const PLACE_ORDER: Place[] = ['yard', 'plaza', 'hum', 'dorm', 'field', 'final'];
 const RUDE_SEC = 6;
 const GIVE_CD = 10;
 const NEAR = 3.5;
@@ -136,9 +142,12 @@ function wrap(a: number): number {
 }
 
 export class Props {
-  /** 걸어서 지나갈 수 없는 것 (경비원·대출기·남은 상자) */
+  /** 걸어서 지나갈 수 없는 것 (경비 선생님·대출기·남은 상자) */
   readonly solids: Rect[] = [];
-  private readonly guard: Person;
+  /** 경비 선생님 남·여 (구역마다 번갈아 guardObj에 넣는다) */
+  private readonly guards: [Person, Person];
+  /** 지금 서 있는 경비 선생님 */
+  private guard: Person;
   private readonly guardObj = new THREE.Group();
   private readonly kiosk: THREE.Group;
   private readonly screenMat: THREE.MeshBasicMaterial;
@@ -154,7 +163,7 @@ export class Props {
   private t = 0;
   /** 다시 줄 수 있을 때까지 */
   private cd = 0;
-  /** 경비원이 토라진 시간 */
+  /** 경비 선생님이 토라진 시간 */
   private rudeT = 0;
   private rudeSaid = -9;
   /** "안녕하세요!" 뒤 대답까지 */
@@ -174,22 +183,10 @@ export class Props {
 
   constructor(private readonly h: PerkHost) {
     ensureDom();
-    // 경비원: 남색 제복·근무모·금색 배지 (이름 없는 일반 경비원)
-    this.guard = new Person('meeting', '경비원', '#c9d3e6', {
-      top: 0x1d2b4a,
-      pants: 0x1d2b4a,
-      tie: 0x0f1626,
-      skin: 0xf1c7a0,
-      hair: 0x1b1712,
-      brow: 0x1b1712,
-      hairStyle: 'full',
-      jacket: true,
-      badge: true,
-      cap: 0x1d2b4a,
-      left: 'none',
-      scale: 1.45,
-    });
-    this.guard.clip.visible = false;
+    // 경비 선생님: 남색 제복·근무모·금색 배지 (이름 없는 가상 인물, 남·여 둘)
+    this.guards = [new Person('meeting', GUARD_NAME, '#c9d3e6', guardLook(false)), new Person('meeting', GUARD_NAME, '#c9d3e6', guardLook(true))];
+    for (const g of this.guards) g.clip.visible = false;
+    this.guard = this.guards[0];
     this.guardObj.add(this.guard.root);
     this.guardObj.visible = false;
     h.scene.add(this.guardObj);
@@ -231,7 +228,7 @@ export class Props {
       this.crates = this.crates.filter((c) => c.place === cur || c.place === next);
       this.rebuildSolids();
     }
-    // 경비원·대출기는 다음 구역으로 먼저 옮겨 간다 (길이 열리면)
+    // 경비 선생님·대출기는 다음 구역으로 먼저 옮겨 간다 (길이 열리면)
     if (this.npcPlace !== next || this.npcStudent !== student) this.placeNpc(next, student);
 
     if (this.cd > 0) this.cd -= dt;
@@ -243,7 +240,7 @@ export class Props {
         const t = h.touch;
         h.hint(
           'perk-npc',
-          student ? `도서 무인 대출기에서 대여하면${t ? '(대여 버튼)' : '(E)'} 무기가 나옵니다` : `경비원에게 인사하면${t ? '(인사 버튼)' : '(E)'} 무기를 줍니다`,
+          student ? `도서 무인 대출기에서 대여하면${t ? '(대여 버튼)' : '(E)'} 무기가 나옵니다` : `경비 선생님께 인사하면${t ? '(인사 버튼)' : '(E)'} 무기를 줍니다`,
           4.2,
         );
       }
@@ -270,7 +267,7 @@ export class Props {
       if (this.flashT > 0) this.flashT -= dt;
       this.screenMat.color.setHex(this.flashT > 0 ? (Math.floor(this.flashT * 10) % 2 === 0 ? 0x9dffb0 : 0xffffff) : this.cd > 0 ? 0xffd27a : 0xffffff);
     } else {
-      // 경비원: 가까이 오면 플레이어를 본다. 토라지면 등을 돌린다
+      // 경비 선생님: 가까이 오면 플레이어를 본다. 토라지면 등을 돌린다
       let want = this.restYaw;
       if (this.rudeT > 0) want = Math.atan2(dx, dz);
       else if (d < 12) want = Math.atan2(-dx, -dz);
@@ -331,13 +328,13 @@ export class Props {
       this.pendingT = 0.9;
       return;
     }
-    // 교직원: 먼저 인사, 잠시 뒤 경비원 대답
+    // 교직원: 먼저 인사, 잠시 뒤 경비 선생님 대답
     if (this.replyT > 0) return;
     showSubtitle(h.playerName(), '안녕하세요!', 0.9, '#9fd3ff');
     this.replyT = 0.75;
   }
 
-  /** 경비원 대답 */
+  /** 경비 선생님 대답 */
   private reply(): void {
     const h = this.h;
     if (h.mode !== 'staff' || !this.guardObj.visible) return;
@@ -355,7 +352,7 @@ export class Props {
     h.equip(ARM_IDS[Math.floor(Math.random() * ARM_IDS.length)]);
   }
 
-  /** 도장이 경비원을 맞혔다 */
+  /** 도장이 경비 선생님을 맞혔다 */
   private rude(): void {
     const h = this.h;
     if (this.t - this.rudeSaid > 1.2) {
@@ -438,7 +435,17 @@ export class Props {
     const o = student ? this.kiosk : this.guardObj;
     o.position.set(s.npc[0], 0, s.npc[1]);
     o.rotation.y = this.restYaw;
-    if (!student) this.guard.reset();
+    if (!student) {
+      // 구역 순서대로 남·여가 번갈아 선다
+      const g = this.guards[PLACE_ORDER.indexOf(place) % 2];
+      if (g !== this.guard) {
+        this.guard.tag.hide();
+        this.guardObj.remove(this.guard.root);
+        this.guard = g;
+        this.guardObj.add(g.root);
+      }
+      this.guard.reset();
+    }
     this.rebuildSolids();
   }
 
@@ -506,8 +513,14 @@ export class Props {
     this.guardObj.visible = true;
     this.guardObj.position.set(-3, -1.6, -3);
     group.add(this.guardObj);
-    this.guard.say('…', 1, false);
-    this.guard.update(0.016, { walking: false, raise: 0, reach: 0.5, wave: false });
+    // 지금 안 서 있는 쪽도 같이 미리 그린다
+    const other = this.guards[0] === this.guard ? this.guards[1] : this.guards[0];
+    other.root.position.set(-1.5, 0, 0);
+    this.guardObj.add(other.root);
+    for (const g of this.guards) {
+      g.say('…', 1, false);
+      g.update(0.016, { walking: false, raise: 0, reach: 0.5, wave: false });
+    }
     this.h.fx.text(_c.set(0, 1.6, 6), '도서 대여 완료!', '#7CFC9A');
     return () => {
       for (const o of items) group.remove(o);
@@ -515,7 +528,9 @@ export class Props {
       this.h.scene.add(this.guardObj);
       this.kiosk.visible = false;
       this.guardObj.visible = false;
-      this.guard.reset();
+      this.guardObj.remove(other.root);
+      other.root.position.set(0, 0, 0);
+      for (const g of this.guards) g.reset();
     };
   }
 }

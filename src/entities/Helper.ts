@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { FLOOR_BOTTOM, FLOOR_TOP, FONT, GAME_W } from '../config';
 import type { StaffLook } from '../data/heroes';
-import type { StudentHeroLook } from '../data/students';
+import { studentByName, type StudentHeroLook } from '../data/students';
 import { neutralPose, type Pose, type Rig } from './Rig';
 import { createStaffRig, createStamp, createStudentHeroRig } from './rigs';
 import * as fx from '../fx';
@@ -9,6 +9,7 @@ import * as fx from '../fx';
 // 조력자 (체력이 바닥일 때 달려오는 동료 직원·친구). 다른 주인공 외형을 그대로 쓴다.
 // 화면 끝에서 뛰어 들어와 한마디 하고, 도장을 찍거나(교직원) 서류를 흔들다가(학생) 걸어 나간다.
 // 맞지 않고 넘어지지 않는다 (적의 공격 대상이 아니다). 실제 효과(민원 처리·회복)는 StageScene이 맡는다.
+// 11차: 학생 친구는 뛰어 들어오면서 나라말로 인사한다 (students.ts hello), 도착하면 원래 대사.
 
 export type HelperLook = { student: false; look: StaffLook } | { student: true; look: StudentHeroLook };
 
@@ -80,6 +81,8 @@ export class Helper {
         strokeThickness: 4,
       })
       .setOrigin(0.5, 1);
+    const hello = o.look.student ? studentByName(o.name)?.hello : undefined;
+    if (hello) this.say(hello, 1.2);
     this.sync();
   }
 

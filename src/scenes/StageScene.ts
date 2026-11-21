@@ -292,7 +292,8 @@ export class StageScene extends Phaser.Scene {
     if (FORCE_TOUCH || this.sys.game.device.input.touch) this.pad = new TouchPad(this, this.controls);
 
     // 바닥에 미리 깔린 무기·음식은 없다: 무기는 경비원(대출기)에게서, 먹을 것은 상자를 부숴서 얻는다
-    for (const g of this.stage.givers) this.givers.push(new Giver(this, st ? 'kiosk' : 'guard', g.x, g.y, g.items));
+    // 경비 선생님은 자리 순서대로 남·여가 번갈아 선다 (11차)
+    this.stage.givers.forEach((g, i) => this.givers.push(new Giver(this, st ? 'kiosk' : 'guard', g.x, g.y, g.items, false, i % 2 === 1)));
     for (const b of this.stage.boxes) this.crates.push(new Crate(this, b.x, b.y, st));
 
     const hero = st ? studentHeroById(this.run.hero) : heroById(this.run.hero);
@@ -678,7 +679,7 @@ export class StageScene extends Phaser.Scene {
         mk('protest', left + GAME_W + 120, left + 680, FLOOR_BOTTOM - 40);
         mk('sitin', left + 520, left + 520, 430);
         this.boss = g;
-        fx.banner(this, '최종 보스 · 총학 집행부', '김데시벨 · 오시위 · 박드러누움 — 누운 사람은 마지막에 일어납니다', 3000);
+        fx.banner(this, '최종 보스 · 총학 집행부', '김데시벨 · 오시위 · 박장수생 — 누운 사람은 마지막에 일어납니다', 3000);
         break;
       }
       case 'banryeoBoss': {
@@ -1372,7 +1373,7 @@ export class StageScene extends Phaser.Scene {
         const key = this.pad ? '(줍기 버튼)' : '(L)';
         const sub = this.studentMode
           ? `도서 무인 대출기에서 대여하면${key} 무기가 나옵니다`
-          : `경비원에게 인사하면${key} 무기를 줍니다`;
+          : `경비 선생님께 인사하면${key} 무기를 줍니다`;
         fx.banner(this, g.name, sub, 2800);
       }
     }

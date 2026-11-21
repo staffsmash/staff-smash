@@ -1,12 +1,13 @@
 import stats from '../data/enemies.json';
 import { DEPTH_RANGE } from '../config';
 import { TYPE_LABEL } from '../data/names';
+import { studentByName } from '../data/students';
 import type { StageScene } from '../scenes/StageScene';
 import { Enemy, type BossLike } from './Enemy';
 import type { HitInfo } from './Fighter';
 import type { Player } from './Player';
 import { neutralPose, type Pose } from './Rig';
-import { createStudentRig } from './rigs';
+import { createNamedStudentRig } from './rigs';
 import { studentPose } from './StudentEnemy';
 import * as fx from '../fx';
 
@@ -14,6 +15,7 @@ import * as fx from '../fx';
 // - 화면 아래 마감 시계가 60초에서 줄어든다. 0이 되면 "연장해 주세요!" — 체력이 회복되고
 //   게임 속 시계가 2분 흘러간다(초과근무). 시간 안에 처리해야 한다.
 // - 급하게 돌진, 서류 세 장 흩뿌리기, 마감 서류 뭉치 떨어뜨리기.
+// - 11차: 외형은 이름을 따르고(createNamedStudentRig), 나타날 때 나라말로 인사한다.
 
 const S = stats.deadlineBoss;
 const EXTEND_SEC = 30;
@@ -38,7 +40,7 @@ export class DeadlineBoss extends Enemy implements BossLike {
   private cycle = 0;
 
   constructor(scene: StageScene, x: number, y: number, enterTargetX: number, name: string) {
-    super(scene, x, y, createStudentRig(scene, { jacket: 0xb45309, hair: 0x3b2a20, longHair: true }), S.hp, 64, enterTargetX);
+    super(scene, x, y, createNamedStudentRig(scene, name, { jacket: 0xb45309, hair: 0x3b2a20, longHair: true }), S.hp, 64, enterTargetX);
     this.bossName = name;
     this.baseScale = 1.25;
     this.cooldown = 1.2;
@@ -46,6 +48,8 @@ export class DeadlineBoss extends Enemy implements BossLike {
     rig.itemF.add(rig.part(0, 0, 26, 32, 0xffffff, 0.5, 0)); // 과제 뭉치
     rig.itemF.add(rig.part(2, 6, 18, 3, 0xd0202f, 0.5, 0, false));
     this.setLabel(name, '#ffb86b');
+    const hello = studentByName(name)?.hello;
+    if (hello) this.say(hello, 2.6);
     this.sync();
   }
 

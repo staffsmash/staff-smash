@@ -8,25 +8,26 @@ import { createChonghakRig, type ChonghakRole } from './rigs';
 import { studentPose } from './StudentEnemy';
 
 // 3스테이지 최종 보스 "총학 집행부" 3명 (가상 인물). 한 사람이 특정되지 않게 팀으로 나온다 (PRD 4절).
-// - 김데시벨: 거리를 두고 확성기 음파를 쏜다.
-// - 오시위: 대자보로 정면(던진 것 포함)을 막는다. 요구안을 던질 때와 뒤쪽이 빈틈이다.
-// - 박드러누움: 연좌 농성으로 누워 길을 막는다. 다른 둘을 처리해야 일어나서 맞선다.
+// - 김데시벨 (여, 흰 머리띠): 거리를 두고 확성기 음파를 쏜다.
+// - 오시위 (남, 양복): 대자보로 정면(던진 것 포함)을 막는다. 요구안을 던질 때와 뒤쪽이 빈틈이다.
+// - 박장수생 (여, 뿔테안경 — 11차에 박드러누움 자리, 하는 일은 그대로): 연좌 농성으로 누워 길을 막는다.
+//   다른 둘을 처리해야 일어나서 맞선다.
 // 셋 다 처리하면 "총장 면담"을 요청하고 프레지던트 캉이 내려온다(엔딩).
 
-const NAMES: Record<ChonghakRole, string> = { decibel: '김데시벨', protest: '오시위', sitin: '박드러누움' };
+const NAMES: Record<ChonghakRole, string> = { decibel: '김데시벨', protest: '오시위', sitin: '박장수생' };
 const THANKS: Record<ChonghakRole, string> = {
   decibel: '목이 다 쉬었네요… 감사합니다!',
   protest: '요구안 접수 확인했습니다. 감사합니다!',
   sitin: '농성 해제합니다. 감사합니다!',
 };
 /** ★ 추가 대사 (문구 검토 11-4절, 2026-11-15 사용자 "추가"). 마무리 인사는 그대로.
- *  김데시벨은 음파 때, 오시위는 요구안 던질 때 기존 대사와 섞이고, 박드러누움은 누워 있는 동안의 혼잣말에 섞인다 */
+ *  김데시벨은 음파 때, 오시위는 요구안 던질 때 기존 대사와 섞이고, 박장수생은 누워 있는 동안의 혼잣말에 섞인다 */
 const MORE: Record<ChonghakRole, string[]> = {
   decibel: ['학우 여러분!', '들리십니까!', '마이크 테스트, 하나 둘!'],
   protest: ['요구안 2번 항목 보셨어요?', '답변서 기다리겠습니다!'],
   sitin: ['바닥이 생각보다 따뜻하네요.', '여기 와이파이 되나요?'],
 };
-/** 박드러누움이 누워서 하는 말 (기존 대사 + 추가 대사, 고르게 섞는다) */
+/** 박장수생이 누워서 하는 말 (기존 대사 + 추가 대사, 고르게 섞는다) */
 const SITIN_LINES = ['면담해 주실 때까지 안 일어납니다!', ...MORE.sitin];
 
 export class ChonghakMember extends Enemy {
@@ -59,7 +60,7 @@ export class ChonghakMember extends Enemy {
     this.sync();
   }
 
-  /** 박드러누움: 나머지 둘이 처리되면 일어난다 */
+  /** 박장수생: 나머지 둘이 처리되면 일어난다 */
   wake(): void {
     if (this.state !== 'sitin') return;
     this.set('standup');
@@ -206,7 +207,7 @@ export class ChonghakMember extends Enemy {
 /** 세 명을 한 보스로 묶어 체력바에 보여 준다 */
 export class ChonghakGroup implements BossLike {
   readonly bossName = '총학 집행부';
-  readonly bossType = '김데시벨 · 오시위 · 박드러누움';
+  readonly bossType = '김데시벨 · 오시위 · 박장수생';
   members: ChonghakMember[] = [];
   private readonly scene: StageScene;
 

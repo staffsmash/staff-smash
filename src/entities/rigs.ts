@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { FONT } from '../config';
 import { HEROES, type StaffLook } from '../data/heroes';
-import type { StudentHeroLook } from '../data/students';
+import { studentByName, type StudentHeroLook } from '../data/students';
 import { Rig } from './Rig';
 import type { WeaponId } from './weapons';
 
@@ -27,9 +27,156 @@ export function box(
   return r;
 }
 
+// ---------- 머리·목 (2026-11-21 11차: 남녀 외형 공통 부품) ----------
+// 다른 리그(상사·보스 등)도 그대로 쓸 수 있게 내보낸다. 머리 컨테이너 원점 = 목, 머리 위쪽 끝 = -31, 얼굴은 +x 쪽.
+
+/** 머리 모양: short = 짧은 머리(옆머리 조금), long = 긴 머리, bob = 단발, ponytail = 묶은 머리, crew = 짧은 스포츠머리, none = 머리를 그리지 않음(모자 등) */
+export type HairStyle2D = 'short' | 'long' | 'bob' | 'ponytail' | 'crew' | 'none';
+/** 안경: plain = 평범한 안경, horn = 뿔테(굵은 검은 테), silver = 은테(가는 밝은 테), sun = 선글라스 */
+export type Glasses2D = 'plain' | 'horn' | 'silver' | 'sun';
+
+export interface HeadLook2D {
+  hair: number;
+  style: HairStyle2D;
+  /** 여성 얼굴: 속눈썹·붉은 입술·볼터치, 앞머리 */
+  female?: boolean;
+  /** 앞머리 (학생 주인공은 늘) */
+  bangs?: boolean;
+  glasses?: Glasses2D;
+  /** 머리띠 색 (글자가 있으면 기본 흰색) */
+  headbandColor?: number;
+  /** 머리띠 글자 (나진취 "취업률 100%") */
+  headband?: string;
+  earphones?: boolean;
+}
+
+/** 리본·스카프 등 목에 두르는 것: tie = 넥타이, ribbon = 리본(블라우스), scarf = 스카프, none = 없음 */
+export type Neck2D = 'tie' | 'ribbon' | 'scarf' | 'none';
+
+const LIP = 0xc0485a;
+const BLUSH = 0xf3a7a0;
+
+/** 머리카락·얼굴·안경·머리띠를 그린다 (머리 상자는 Rig가 이미 그렸다) */
+export function dressHead(rig: Rig, o: HeadLook2D): void {
+  const H = rig.head;
+  const hair = o.hair;
+  // 뒷머리 (머리 상자 위에 겹쳐 뒤쪽 절반을 덮는다)
+  if (o.style === 'long') H.add(rig.part(-12, -27, 11, 31, hair, 0.5, 0));
+  else if (o.style === 'bob') H.add(rig.part(-10, -28, 15, 23, hair, 0.5, 0));
+  else if (o.style === 'ponytail') {
+    // 뒤통수에서 아래로 늘어진 꼬리 + 머리끈
+    H.add(rig.part(-20, -27, 8, 20, hair, 0.5, 0));
+    H.add(rig.part(-17, -28, 5, 5, 0x2f6fd1, 0.5, 0, false));
+  }
+  // 윗머리
+  if (o.style === 'crew') {
+    H.add(rig.part(0, -33, 33, 6, hair, 0.5, 0));
+    H.add(rig.part(-14, -28, 5, 7, hair, 0.5, 0, false));
+  } else if (o.style !== 'none') {
+    H.add(rig.part(0, -33, 34, 10, hair, 0.5, 0));
+    if (o.style === 'short') H.add(rig.part(-14, -25, 6, 12, hair, 0.5, 0, false));
+    if (o.style === 'ponytail') H.add(rig.part(-13, -26, 6, 8, hair, 0.5, 0, false));
+  }
+  if (o.style !== 'none' && o.style !== 'crew' && (o.bangs || o.female)) H.add(rig.part(10, -26, 14, 4, hair, 0.5, 0, false));
+  // 머리띠 (앞머리 위, 이마)
+  if (o.headband) {
+    // 글자 띠: 작은 화면(960×540)에서도 읽히게 머리보다 넓은 띠에 큰 글씨 (매듭 끝이 뒤로 삐친다)
+    H.add(rig.part(-24, -26, 6, 9, o.headbandColor ?? 0xffffff, 0.5, 0));
+    H.add(rig.part(3, -31, 50, 11, o.headbandColor ?? 0xffffff, 0.5, 0));
+    H.add(rig.text(3, -25.5, o.headband, '#d0202f', 9, 47, FONT));
+  } else if (o.headbandColor !== undefined) {
+    H.add(rig.part(0, -28, 35, 6, o.headbandColor, 0.5, 0));
+  }
+  const g = o.glasses;
+  // 안경테 (선글라스가 아니면 눈보다 먼저: 눈이 렌즈 너머로 보인다)
+  if (g === 'plain') {
+    H.add(rig.part(4, -21, 9, 8, 0xcfe8f5, 0.5, 0));
+    H.add(rig.part(13, -21, 8, 8, 0xcfe8f5, 0.5, 0));
+  } else if (g === 'horn') {
+    H.add(rig.part(4, -22, 10, 10, INK, 0.5, 0, false));
+    H.add(rig.part(13, -22, 9, 10, INK, 0.5, 0, false));
+    H.add(rig.part(4, -20, 6, 6, 0xcfe8f5, 0.5, 0, false));
+    H.add(rig.part(13, -20, 5, 6, 0xcfe8f5, 0.5, 0, false));
+    H.add(rig.part(-4, -20, 8, 2, INK, 0.5, 0, false));
+  } else if (g === 'silver') {
+    for (const [x, w] of [
+      [4, 9],
+      [13, 8],
+    ]) {
+      H.add(rig.part(x, -21, w, 8, 0xe8f3f8, 0.5, 0, false).setStrokeStyle(1.5, 0x8d97a3));
+    }
+    H.add(rig.part(-4, -19, 8, 1.5, 0x8d97a3, 0.5, 0, false));
+  }
+  // 눈·입
+  H.add(rig.part(4, -19, 4, 6, INK, 0.5, 0, false));
+  H.add(rig.part(12, -19, 4, 6, INK, 0.5, 0, false));
+  if (o.female) {
+    // 속눈썹(눈 위 바깥쪽으로 삐친 선), 붉은 입술, 볼터치
+    H.add(rig.part(5, -21, 6, 2, INK, 0.5, 0, false));
+    H.add(rig.part(13, -21, 6, 2, INK, 0.5, 0, false));
+    H.add(rig.part(10, -11, 5, 3, BLUSH, 0.5, 0, false));
+    H.add(rig.part(8, -8, 8, 3, LIP, 0.5, 0, false));
+  } else {
+    H.add(rig.part(8, -8, 8, 2, 0x8a3b2b, 0.5, 0, false));
+  }
+  if (g === 'sun') {
+    // 선글라스: 눈을 가리는 검은 렌즈 + 다리 + 반짝임
+    H.add(rig.part(4, -22, 10, 8, 0x15171c, 0.5, 0, false));
+    H.add(rig.part(13, -22, 9, 8, 0x15171c, 0.5, 0, false));
+    H.add(rig.part(-4, -20, 8, 2, 0x15171c, 0.5, 0, false));
+    H.add(rig.part(2, -21, 2, 2, 0x8d97a3, 0.5, 0, false));
+    H.add(rig.part(11, -21, 2, 2, 0x8d97a3, 0.5, 0, false));
+  }
+  if (o.earphones) {
+    H.add(rig.part(-16, -17, 6, 8, 0xffffff, 0.5, 0));
+    H.add(rig.part(-16, -9, 2, 14, 0xffffff, 0.5, 0, false));
+  }
+}
+
+/** 목에 두르는 것 (몸통 컨테이너 원점 = 허리, top = 몸통 위쪽 끝, 예: -38). 셔츠·블라우스 차림의 앞가슴 쪽 x = -2 */
+export function addNeckwear(rig: Rig, kind: Neck2D, color: number, top: number): void {
+  const T = rig.torso;
+  if (kind === 'tie') {
+    T.add(rig.part(-2, top + 1, 6, 24, color, 0.5, 0, false));
+  } else if (kind === 'ribbon') {
+    // 블라우스 깃 + 리본(양쪽 고리·매듭·늘어진 끈)
+    T.add(rig.part(-8, top, 8, 4, 0xffffff, 0.5, 0, false));
+    T.add(rig.part(4, top, 8, 4, 0xffffff, 0.5, 0, false));
+    T.add(rig.part(-6, top + 2, 7, 6, color, 0.5, 0));
+    T.add(rig.part(3, top + 2, 7, 6, color, 0.5, 0));
+    T.add(rig.part(-3, top + 6, 2, 8, color, 0.5, 0, false));
+    T.add(rig.part(0, top + 6, 2, 8, color, 0.5, 0, false));
+    T.add(rig.part(-1.5, top + 2, 4, 6, tone(color, 0.75), 0.5, 0));
+  } else if (kind === 'scarf') {
+    // 목에 감은 스카프 + 앞으로 늘어진 끝
+    T.add(rig.part(0, top - 1, 24, 6, color, 0.5, 0));
+    T.add(rig.part(5, top + 4, 6, 12, color, 0.5, 0));
+    T.add(rig.part(5, top + 15, 6, 2, tone(color, 0.75), 0.5, 0, false));
+  }
+}
+
+/** 여성 치마 (몸통 아래로 넓게 퍼진다. 다리는 치마 밑에서 움직인다) */
+export function addSkirt(rig: Rig, color: number): void {
+  rig.torso.add(rig.part(0, -4, 42, 17, color, 0.5, 0));
+  rig.torso.add(rig.part(0, 11, 42, 2, tone(color, 0.75), 0.5, 0, false));
+}
+
+/** 교직원 외형의 머리 모양 */
+function staffHairStyle(look: StaffLook): HairStyle2D {
+  if (look.crew) return 'crew';
+  if (look.bob) return 'bob';
+  if (look.ponytail) return 'ponytail';
+  return look.longHair ? 'long' : 'short';
+}
+
+/** 안경 (예전 값 glasses: true = 평범한 안경) */
+function glassesOf(look: { glasses?: boolean; glassesStyle?: 'horn' | 'silver' | 'sun' }): Glasses2D | undefined {
+  return look.glassesStyle ?? (look.glasses ? 'plain' : undefined);
+}
+
 // ---------- 주인공 ----------
 
-/** 교직원 주인공 (가상 행정직원 6명은 look만 다르다) */
+/** 교직원 주인공 (가상 행정직원 6명은 look만 다르다). 여성은 블라우스·리본·치마, 남성은 셔츠·넥타이 */
 export function createStaffRig(scene: Phaser.Scene, look: StaffLook = HEROES[0].look): Rig {
   const rig = new Rig(scene, {
     legW: 14,
@@ -50,28 +197,32 @@ export function createStaffRig(scene: Phaser.Scene, look: StaffLook = HEROES[0].
     outline: INK,
   });
 
-  // 넥타이·앞치마와 사원증 (torso 컨테이너 원점 = 허리, 몸통 위쪽 끝 = -38)
+  // 치마 (여성: 허리에서 무릎 위까지. 다리는 치마 밑에서 움직인다)
+  if (look.female && look.skirt !== false) addSkirt(rig, look.pants ?? 0x2d3b63);
+  // 넥타이(리본)·앞치마와 사원증 (torso 컨테이너 원점 = 허리, 몸통 위쪽 끝 = -38)
   if (look.apron) {
     rig.torso.add(rig.part(0, -28, 30, 27, 0xfff3d6, 0.5, 0));
     rig.torso.add(rig.part(0, -37, 16, 3, look.tie, 0.5, 0, false));
   } else {
-    rig.torso.add(rig.part(-2, -37, 6, 24, look.tie, 0.5, 0, false));
+    addNeckwear(rig, look.female ? 'ribbon' : 'tie', look.tie, -38);
   }
   rig.torso.add(rig.part(9, -37, 2, 18, 0x2f6fd1, 0.5, 0, false));
   rig.torso.add(rig.part(9, -20, 11, 14, 0xffffff, 0.5, 0));
   rig.torso.add(rig.part(9, -20, 11, 4, 0x2f6fd1, 0.5, 0, false));
 
-  // 머리 (head 컨테이너 원점 = 목, 머리 위쪽 끝 = -31)
-  if (look.longHair) rig.head.add(rig.part(-12, -27, 11, 30, look.hair, 0.5, 0));
-  rig.head.add(rig.part(0, -33, 34, 10, look.hair, 0.5, 0));
-  if (!look.longHair) rig.head.add(rig.part(-14, -25, 6, 12, look.hair, 0.5, 0, false));
-  if (look.glasses) {
-    rig.head.add(rig.part(4, -21, 9, 8, 0xcfe8f5, 0.5, 0));
-    rig.head.add(rig.part(13, -21, 8, 8, 0xcfe8f5, 0.5, 0));
+  // 규정집 (뒷손에 늘 들고 있다 — 앞손은 도장·무기 자리)
+  if (look.prop === 'rulebook') {
+    rig.armB.add(rig.part(1, 22, 17, 22, 0x1f5e45, 0.5, 0));
+    rig.armB.add(rig.part(1, 28, 17, 3, 0xd9b44a, 0.5, 0, false));
   }
-  rig.head.add(rig.part(4, -19, 4, 6, INK, 0.5, 0, false));
-  rig.head.add(rig.part(12, -19, 4, 6, INK, 0.5, 0, false));
-  rig.head.add(rig.part(8, -8, 8, 2, 0x8a3b2b, 0.5, 0, false));
+
+  dressHead(rig, {
+    hair: look.hair,
+    style: staffHairStyle(look),
+    female: look.female,
+    glasses: glassesOf(look),
+    headband: look.headband,
+  });
   return rig;
 }
 
@@ -390,6 +541,22 @@ export interface StudentLook {
   hair: number;
   longHair?: boolean;
   earphones?: boolean;
+  /** 여성 얼굴 (속눈썹·입술, 앞머리) */
+  female?: boolean;
+  /** 단발 */
+  bob?: boolean;
+  /** 묶은 머리 */
+  ponytail?: boolean;
+  glassesStyle?: Glasses2D;
+  /** 머리띠 색 (총학 집행부) */
+  headband?: number;
+}
+
+/** 이름이 있는 학생(students.ts 7명)이면 그 사람 외형(createStudentHeroRig), 아니면 과잠 차림(fallback).
+ *  교직원 모드 민원 학생·학생 보스는 11차부터 유형이 아니라 이름을 따른다 */
+export function createNamedStudentRig(scene: Phaser.Scene, name: string, fallback: StudentLook): Rig {
+  const s = studentByName(name);
+  return s ? createStudentHeroRig(scene, s.look) : createStudentRig(scene, fallback);
 }
 
 export function createStudentRig(scene: Phaser.Scene, look: StudentLook): Rig {
@@ -418,26 +585,54 @@ export function createStudentRig(scene: Phaser.Scene, look: StudentLook): Rig {
   rig.torso.add(rig.part(-8, -30, 9, 10, sleeve, 0.5, 0, false));
   rig.torso.add(rig.part(12, -37, 4, 31, 0x2b2b2b, 0.5, 0, false));
 
-  rig.head.add(rig.part(0, -33, 34, 11, look.hair, 0.5, 0));
-  if (look.longHair) rig.head.add(rig.part(-12, -26, 10, 28, look.hair, 0.5, 0));
-  else rig.head.add(rig.part(-14, -25, 6, 12, look.hair, 0.5, 0, false));
-  rig.head.add(rig.part(3, -18, 4, 6, INK, 0.5, 0, false));
-  rig.head.add(rig.part(11, -18, 4, 6, INK, 0.5, 0, false));
-  rig.head.add(rig.part(8, -8, 7, 2, 0x8a3b2b, 0.5, 0, false));
-  if (look.earphones) {
-    rig.head.add(rig.part(-16, -17, 6, 8, 0xffffff, 0.5, 0));
-    rig.head.add(rig.part(-16, -9, 2, 14, 0xffffff, 0.5, 0, false));
-  }
+  dressHead(rig, {
+    hair: look.hair,
+    style: look.bob ? 'bob' : look.ponytail ? 'ponytail' : look.longHair ? 'long' : 'short',
+    female: look.female,
+    glasses: look.glassesStyle,
+    headbandColor: look.headband,
+    earphones: look.earphones,
+  });
   return rig;
 }
 
 export type ChonghakRole = 'decibel' | 'protest' | 'sitin';
 
-/** 총학 집행부 3명: 같은 빨간 머리띠, 역할별 소품 */
+/** 오시위: 양복 차림 (짙은 회색 정장, 흰 셔츠, 넥타이) + 빨간 머리띠 */
+function createSuitStudentRig(scene: Phaser.Scene): Rig {
+  const suit = 0x2e3440;
+  const rig = new Rig(scene, {
+    legW: 14,
+    legH: 36,
+    legGap: 14,
+    legColor: suit,
+    shoeColor: 0x141414,
+    torsoW: 38,
+    torsoH: 38,
+    torsoColor: suit,
+    armW: 12,
+    armH: 30,
+    armColor: suit,
+    handColor: SKIN,
+    headW: 32,
+    headH: 31,
+    headColor: SKIN,
+    outline: INK,
+  });
+  rig.torso.add(rig.part(-2, -38, 14, 20, 0xf4f4f4, 0.5, 0, false));
+  rig.torso.add(rig.part(-2, -36, 5, 20, 0x8a1f2c, 0.5, 0, false));
+  dressHead(rig, { hair: 0x1f1a17, style: 'short', headbandColor: 0xd0202f });
+  return rig;
+}
+
+/** 총학 집행부 3명 (11차): 김데시벨 여·흰 머리띠·확성기 / 오시위 남·양복·대자보 / 박장수생 여·뿔테안경 (둘은 빨간 머리띠) */
 export function createChonghakRig(scene: Phaser.Scene, role: ChonghakRole): Rig {
-  const jacket = role === 'decibel' ? 0x1f4e79 : role === 'protest' ? 0x5b2a86 : 0x2f5d3a;
-  const rig = createStudentRig(scene, { jacket, hair: role === 'protest' ? 0x5b3a24 : 0x1f1a17, longHair: role === 'protest' });
-  rig.head.add(rig.part(0, -27, 35, 5, 0xd0202f, 0.5, 0));
+  const rig =
+    role === 'protest'
+      ? createSuitStudentRig(scene)
+      : role === 'decibel'
+        ? createStudentRig(scene, { jacket: 0x1f4e79, hair: 0x2a2420, female: true, ponytail: true, headband: 0xffffff })
+        : createStudentRig(scene, { jacket: 0x2f5d3a, hair: 0x3b2a20, female: true, bob: true, glassesStyle: 'horn', headband: 0xd0202f });
   if (role === 'decibel') {
     // 확성기: 손잡이 + 벌어진 나팔
     rig.itemF.add(rig.part(0, 0, 10, 12, 0x2b2b2b, 0.5, 0));
@@ -595,7 +790,11 @@ export function tone(c: number, f: number): number {
 /** 학생 주인공 등에 멘 가방의 이름 (3타 "가방 휘두르기" 때 등에서 내려 손에 든다) */
 export const BACKPACK_NAME = 'backpack';
 
-/** 학생 모드 주인공 (김러샤·이엘LT·박불어·최터키): 후드티 또는 열린 재킷, 청바지, 운동화, 백팩 */
+/** 외대 야구잠바의 흰 소매 */
+const VARSITY_SLEEVE = 0xf4f4f4;
+
+/** 학생 7명 (students.ts): 후드티·열린 재킷·외대 야구잠바·체크 셔츠, 청바지, 운동화, 백팩.
+ *  학생 모드 주인공(김러샤·이엘LT·박불어·정헝가리)과 교직원 모드 민원 학생이 같은 외형을 쓴다 */
 export function createStudentHeroRig(scene: Phaser.Scene, look: StudentHeroLook): Rig {
   const shoes = look.shoes ?? 0xf4f4f4;
   const rig = new Rig(scene, {
@@ -609,7 +808,7 @@ export function createStudentHeroRig(scene: Phaser.Scene, look: StudentHeroLook)
     torsoColor: look.jacket,
     armW: 12,
     armH: 30,
-    armColor: look.jacket,
+    armColor: look.varsity ? VARSITY_SLEEVE : look.jacket,
     handColor: SKIN,
     headW: 32,
     headH: 31,
@@ -617,6 +816,17 @@ export function createStudentHeroRig(scene: Phaser.Scene, look: StudentHeroLook)
     outline: INK,
   });
   const dark = tone(look.jacket, 0.78);
+  if (look.check) {
+    // 체크 셔츠: 몸통·소매에 진한 세로줄과 밝은 가로줄
+    const line = tone(look.jacket, 0.62);
+    const light = tone(look.jacket, 1.45);
+    for (let x = -14; x <= 14; x += 7) rig.torso.add(rig.part(x, -37, 2, 36, line, 0.5, 0, false));
+    for (let y = -33; y <= -6; y += 7) rig.torso.add(rig.part(0, y, 36, 1.5, light, 0.5, 0, false));
+    for (const arm of [rig.armF, rig.armB]) {
+      arm.add(rig.part(0, 1, 2, 24, line, 0.5, 0, false));
+      for (let y = 5; y <= 22; y += 7) arm.add(rig.part(0, y, 10, 1.5, light, 0.5, 0, false));
+    }
+  }
 
   // 운동화: 흰 밑창 + 옆줄 (다리 컨테이너 원점 = 엉덩이, 신발 = 30~36)
   for (const leg of [rig.legF, rig.legB]) {
@@ -633,7 +843,18 @@ export function createStudentHeroRig(scene: Phaser.Scene, look: StudentHeroLook)
   pack.add(rig.part(-22, -40, 10, 4, tone(look.bag, 0.75), 0.5, 0));
   rig.torso.addAt(pack, 0);
 
-  if (look.hoodie) {
+  if (look.varsity) {
+    // 외대 야구잠바: 남색 몸통, 흰 소매, 줄무늬 목깃·밑단, 똑딱단추, 가슴에 흰 "H"
+    rig.torso.add(rig.part(2, -40, 20, 5, dark, 0.5, 0));
+    rig.torso.add(rig.part(2, -38, 20, 1.5, VARSITY_SLEEVE, 0.5, 0, false));
+    rig.torso.add(rig.part(0, -6, 38, 5, dark, 0.5, 0, false));
+    rig.torso.add(rig.part(0, -4, 38, 1.5, VARSITY_SLEEVE, 0.5, 0, false));
+    for (let y = -33; y <= -12; y += 7) rig.torso.add(rig.part(14, y, 3, 3, 0xd9d9d9, 0.5, 0, false));
+    rig.torso.add(rig.part(1, -33, 3.5, 13, VARSITY_SLEEVE, 0.5, 0, false));
+    rig.torso.add(rig.part(10, -33, 3.5, 13, VARSITY_SLEEVE, 0.5, 0, false));
+    rig.torso.add(rig.part(5.5, -28, 9, 3, VARSITY_SLEEVE, 0.5, 0, false));
+    for (const arm of [rig.armF, rig.armB]) arm.add(rig.part(0, 0, 12, 4, dark, 0.5, 0, false));
+  } else if (look.hoodie) {
     // 후드티: 목 뒤 모자, 끈 두 줄, 앞주머니
     rig.torso.add(rig.part(-9, -43, 22, 9, dark, 0.5, 0));
     rig.torso.add(rig.part(6, -37, 2, 12, 0xf4f4f4, 0.5, 0, false));
@@ -651,21 +872,14 @@ export function createStudentHeroRig(scene: Phaser.Scene, look: StudentHeroLook)
   rig.torso.add(rig.part(-4, -38, 4, 26, tone(look.bag, 0.75), 0.5, 0, false));
 
   // 머리 (head 컨테이너 원점 = 목, 머리 위쪽 끝 = -31)
-  rig.head.add(rig.part(0, -33, 34, 11, look.hair, 0.5, 0));
-  if (look.longHair) rig.head.add(rig.part(-12, -26, 10, 30, look.hair, 0.5, 0));
-  else rig.head.add(rig.part(-14, -25, 6, 12, look.hair, 0.5, 0, false));
-  rig.head.add(rig.part(10, -26, 14, 4, look.hair, 0.5, 0, false)); // 앞머리
-  if (look.glasses) {
-    rig.head.add(rig.part(4, -21, 9, 8, 0xcfe8f5, 0.5, 0));
-    rig.head.add(rig.part(13, -21, 8, 8, 0xcfe8f5, 0.5, 0));
-  }
-  rig.head.add(rig.part(4, -19, 4, 6, INK, 0.5, 0, false));
-  rig.head.add(rig.part(12, -19, 4, 6, INK, 0.5, 0, false));
-  rig.head.add(rig.part(9, -8, 8, 2, 0x8a3b2b, 0.5, 0, false));
-  if (look.earphones) {
-    rig.head.add(rig.part(-16, -17, 6, 8, 0xffffff, 0.5, 0));
-    rig.head.add(rig.part(-16, -9, 2, 14, 0xffffff, 0.5, 0, false));
-  }
+  dressHead(rig, {
+    hair: look.hair,
+    style: look.bob ? 'bob' : look.ponytail ? 'ponytail' : look.longHair ? 'long' : 'short',
+    female: look.female,
+    bangs: true,
+    glasses: glassesOf(look),
+    earphones: look.earphones,
+  });
   return rig;
 }
 
@@ -773,12 +987,13 @@ function createOtherSupervisorRig(scene: Phaser.Scene, look: 'bujae' | 'molla' |
   return rig;
 }
 
-// ---------- 경비원 (교직원 모드: 인사하면 무기를 준다) ----------
+// ---------- 경비 선생님 (교직원 모드: 인사하면 무기를 준다) ----------
 
 const GUARD_NAVY = 0x1f2a44;
 
-/** 경비원 (이름 없는 가상 인물): 남색 제복과 모자, 금색 모표·가슴 배지 */
-export function createGuardRig(scene: Phaser.Scene): Rig {
+/** 경비 선생님 (이름 없는 가상 인물): 남색 제복과 모자, 금색 모표·가슴 배지.
+ *  11차: 구역마다 남녀가 번갈아 선다 (female = 단발·리본, StageScene이 정한다) */
+export function createGuardRig(scene: Phaser.Scene, female = false): Rig {
   const rig = new Rig(scene, {
     legW: 15,
     legH: 36,
@@ -799,21 +1014,22 @@ export function createGuardRig(scene: Phaser.Scene): Rig {
   });
   // 셔츠 깃·넥타이, 가슴 배지, 허리띠 (몸통 위쪽 끝 = -40)
   rig.torso.add(rig.part(0, -40, 14, 6, 0xdfe6f2, 0.5, 0, false));
-  rig.torso.add(rig.part(0, -36, 5, 18, 0x111827, 0.5, 0, false));
+  if (female) addNeckwear(rig, 'ribbon', 0x111827, -40);
+  else rig.torso.add(rig.part(0, -36, 5, 18, 0x111827, 0.5, 0, false));
   rig.torso.add(rig.part(11, -32, 7, 8, 0xd9b44a, 0.5, 0, false));
   rig.torso.add(rig.part(0, -9, 38, 5, 0x111111, 0.5, 0, false));
   rig.torso.add(rig.part(3, -9, 6, 5, 0xc9ced4, 0.5, 0, false));
   // 어깨 견장
   for (const arm of [rig.armF, rig.armB]) arm.add(rig.part(0, 0, 12, 4, 0xd9b44a, 0.5, 0, false));
+  // 머리카락: 남 = 모자 밑 짧은 옆머리, 여 = 모자 밑으로 내려온 단발
+  if (female) rig.head.add(rig.part(-10, -27, 15, 22, 0x2a2420, 0.5, 0));
+  else rig.head.add(rig.part(-14, -24, 6, 10, 0x2a2420, 0.5, 0, false));
+  dressHead(rig, { hair: 0x2a2420, style: 'none', female });
   // 모자: 몸통 + 검은 띠 + 앞(+x)으로 나온 챙 + 금색 모표 (머리 위쪽 끝 = -31)
-  rig.head.add(rig.part(-14, -24, 6, 10, 0x2a2420, 0.5, 0, false));
   rig.head.add(rig.part(-1, -41, 36, 14, GUARD_NAVY, 0.5, 0));
   rig.head.add(rig.part(-1, -31, 36, 4, 0x111827, 0.5, 0, false));
   rig.head.add(rig.part(16, -29, 16, 4, 0x111111, 0.5, 0));
   rig.head.add(rig.part(6, -39, 6, 6, 0xd9b44a, 0.5, 0, false));
-  rig.head.add(rig.part(4, -19, 4, 5, INK, 0.5, 0, false));
-  rig.head.add(rig.part(12, -19, 4, 5, INK, 0.5, 0, false));
-  rig.head.add(rig.part(8, -8, 8, 2, 0x8a3b2b, 0.5, 0, false));
   return rig;
 }
 

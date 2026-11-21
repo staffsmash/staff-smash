@@ -17,7 +17,11 @@ export interface StudentHeroLook {
   longHair?: boolean;
   /** 단발 */
   bob?: boolean;
+  /** 묶은 머리 (11차 그림 쪽 선택 항목 — 지금 일곱 명은 쓰지 않는다) */
+  ponytail?: boolean;
   glasses?: boolean;
+  /** 안경 모양 (heroes.ts StaffLook과 같다) */
+  glassesStyle?: 'horn' | 'silver' | 'sun';
   earphones?: boolean;
   /** true = 후드티(모자·끈·앞주머니), 아니면 앞이 열린 재킷 + 티셔츠 */
   hoodie?: boolean;

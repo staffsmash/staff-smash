@@ -1,10 +1,12 @@
 import * as THREE from 'three';
 import { assignStudentNames, TYPE_LABEL } from '../data/names';
+import { ALL_STUDENTS, studentByName } from '../data/students';
 import { lambert, type Rect } from './blocks';
 import type { Roam } from './bossmove';
 import { PersonBoss } from './bosses';
 import { DORM_DOOR, HUM_DOOR } from './campus';
 import type { Ctx, Enemy } from './enemies';
+import { studentLook } from './looks';
 import { Person, peopleKit, type Look } from './people';
 import { docTex } from './textures';
 
@@ -20,7 +22,9 @@ import { docTex } from './textures';
 // - 대운동장 — 총장실로 메일 쓰는 학생 (2D StudentEnemy presidentMail): 메일을 다 쓰면 "지시" 서류 셋이 떨어진다. 쓰는 중에 맞히면 멈춘다
 // - 인문과학관 앞 보스 — 오검토 처장 (2D Supervisor gumto): 처리된 민원을 "재검토!"로 되살린다
 // - 국제학사 앞 보스 — 최몰라 처장 (2D Supervisor molla): "몰라~" 하며 메일·전화를 떠넘긴다
-// 학생 이름은 2D처럼 판마다 김러샤·이엘LT·박불어·최터키·심절먼·김첵호·신세크 가운데 무작위로 붙는다 (최민원은 고정).
+// 학생 이름은 2D처럼 판마다 students.ts 일곱 명 가운데 무작위로 붙는다 (최민원은 고정).
+// 11차(2026-11-21): 몸·머리·성별은 이름을 따른다 (looks.ts studentLook — 2D createNamedStudentRig와 같다).
+// 유형마다 다른 것은 손에 든 물건뿐. 처음 나타날 때 나라말로 인사한다 (hello).
 
 export type MidKind = 'wrongNumber' | 'noticeBoss' | 'deadline' | 'minwon' | 'presidentMail';
 
@@ -41,7 +45,7 @@ function part(parent: THREE.Object3D, w: number, h: number, d: number, x: number
 
 const pick = <T>(a: readonly T[]): T => a[Math.floor(Math.random() * a.length)];
 
-// ---------- 민원 학생 외형 (2D createStudentRig: 과잠 차림) ----------
+// ---------- 민원 학생 외형 (이름이 students.ts에 없을 때만: 2D createStudentRig 과잠 차림) ----------
 
 interface StuLook {
   jacket: number;
@@ -78,11 +82,15 @@ export interface MidPerson {
   sheet: THREE.Group | null;
   /** 몸에 붙는 안내문 세 장 (공지 안 읽는 학생) */
   notices: THREE.Mesh[];
+  /** 처음 나타날 때 하는 나라말 인사 (최민원은 없음) */
+  hello: string;
 }
 
 function studentPerson(kind: MidKind, name: string): MidPerson {
   const L = STU_LOOKS[kind];
   const label = kind === 'minwon' ? '최민원 · 단대학생회 간부' : `${name} · ${TYPE_LABEL[kind]}`;
+  const named = kind === 'minwon' ? undefined : studentByName(name);
+  if (named) return namedStudentPerson(kind, name, label, studentLook(named.look, 1.42), named.hello);
   const look: Look = {
     top: L.jacket,
     pants: 0x3b5a8a,
@@ -105,6 +113,16 @@ function studentPerson(kind: MidKind, name: string): MidPerson {
   part(p.body, 0.72, 0.07, 0.42, 0, 0.9, 0, SLEEVE);
   part(p.body, 0.16, 0.16, 0.02, -0.17, 1.42, 0.21, SLEEVE);
   part(p.body, 0.06, 0.66, 0.02, 0.22, 1.3, 0.212, 0x2b2b2b);
+  return midProps(p, kind, name, label, '');
+}
+
+/** 이름이 있는 학생 (students.ts): 그 사람 외형 + 유형별 손에 든 물건 */
+function namedStudentPerson(kind: MidKind, name: string, label: string, look: Look, hello: string): MidPerson {
+  return midProps(new Person('meeting', label, TAG_COLOR[kind], look), kind, name, label, hello);
+}
+
+/** 유형별 손에 든 물건 (과제 뭉치·서명지·휴대폰)과 붙는 안내문 */
+function midProps(p: Person, kind: MidKind, name: string, label: string, hello: string): MidPerson {
   // 결재판 대신 투명 파일에 끼운 서류
   (p.clip.children[0] as THREE.Mesh).material = lambert(0x9fc4e8);
   const y = -0.8;
@@ -143,7 +161,7 @@ function studentPerson(kind: MidKind, name: string): MidPerson {
   p.root.traverse((o) => {
     if ((o as THREE.Mesh).isMesh) o.castShadow = true;
   });
-  return { person: p, name, label, sheet, notices };
+  return { person: p, name, label, sheet, notices, hello };
 }
 
 /** 이번 판의 중간보스 다섯 (이름은 판마다 무작위, 최민원은 고정) */
@@ -212,6 +230,7 @@ const L_MOLLA_OK = '몰라~ 결재해 줄게.';
 /** 미리 그려 둘 대사 */
 export const MID_LINES: string[] = [
   ...Object.values(LINES).flat(),
+  ...ALL_STUDENTS.map((s) => s.hello),
   ...Object.values(THANKS),
   L_VANISH,
   L_APPEAR,
@@ -404,7 +423,12 @@ export class StaffMid extends PersonBoss {
 
   protected think(dt: number, c: Ctx): void {
     if (this.state === 'enter') {
-      if (this.stateT < dt * 1.5) this.say(this.mid === 'minwon' ? L_M_RALLY : pick(LINES[this.mid]), 2.4);
+      // 처음 나타나면 나라말 인사 → 이어서 원래 등장 대사 (최민원은 인사 없이 바로)
+      const hello = this.mp.hello;
+      if (this.stateT < dt * 1.5) {
+        if (hello) this.say(hello, 1.6);
+        else this.say(this.mid === 'minwon' ? L_M_RALLY : pick(LINES[this.mid]), 2.4);
+      } else if (hello && this.stateT >= 1.6 && this.stateT - dt < 1.6) this.say(pick(LINES[this.mid]), 2.0);
       const there = this.walkTo(this.spot.x, this.spot.z, 2.8, dt, null, 0.4);
       this.faceTo(c.eye.x, c.eye.z, dt);
       if (there || this.stateT > 5) this.setState('idle');

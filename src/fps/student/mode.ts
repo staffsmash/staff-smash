@@ -796,7 +796,7 @@ export class StudentMode implements StuCtx {
     const help = document.getElementById('help');
     if (help) {
       if (!this.applied) this.helpHtml = help.innerHTML;
-      help.innerHTML = this.helpHtml.replace('도장 던지기', '서류 던지기').replace('경비원 인사 E', '대출기 대여 E');
+      help.innerHTML = this.helpHtml.replace('도장 던지기', '서류 던지기').replace('경비 선생님 인사 E', '대출기 대여 E');
     }
     this.applied = true;
   }

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { lambert } from './blocks';
 import { HeadTag } from './speech';
+import { decorateFace, headbandTex, plaidTex } from './looktex';
 import { clipPaperTex, faceTex, mailTex, stampMarkTex } from './textures';
 
 // 1인칭 시험판 v4의 사람 보스 (로블록스풍 블록 사람). 외형은 본편 2D rigs.ts 값을 옮겼다.
@@ -12,7 +13,9 @@ import { clipPaperTex, faceTex, mailTex, stampMarkTex } from './textures';
 // 사람 보스는 다치지 않는다: 맞으면 몸이 아니라 들고 있는 결재판에 도장 자국과 반짝임이 생긴다.
 // 머리 위 이름표·말풍선은 speech.ts의 HeadTag (화면에서 늘 같은 크기, 자막도 같이).
 // 모형은 처음에 한 번만 만들고(미리 그리기) 판마다 다시 쓴다.
-// 조력자(동료 직원·친구)와 경비원도 같은 블록 사람이다 (perks.ts — 후드티·백팩·앞치마·근무모 등은 Look의 선택 항목).
+// 조력자(동료 직원·친구)와 경비 선생님도 같은 블록 사람이다 (perks.ts — 후드티·백팩·앞치마·근무모 등은 Look의 선택 항목).
+// 11차(2026-11-21): 남녀 외형 — female(얼굴)·blouse·neck(리본·스카프)·skirt·hairStyle bob/ponytail/crew·glassesStyle·
+// headband·rulebook·varsity·check. 주인공·학생 외형을 Look으로 바꾸는 것은 looks.ts (staffLook·studentLook·guardLook).
 
 export type Who = 'chonggwal' | 'bogo' | 'meeting' | 'president';
 
@@ -23,7 +26,9 @@ export interface Look {
   tie: number;
   skin: number;
   hair: number;
-  hairStyle: 'long' | 'bald' | 'full' | 'swept';
+  /** long = 긴 머리, bald = 옆·뒷머리만, full = 짧은 머리, swept = 위로 넘긴 머리 (총장),
+   *  bob = 단발, ponytail = 묶은 머리 (뒤로 늘어진 꼬리 + 머리끈), crew = 짧은 스포츠머리 (11차) */
+  hairStyle: 'long' | 'bald' | 'full' | 'swept' | 'bob' | 'ponytail' | 'crew';
   jacket: boolean;
   glasses?: boolean;
   mustache?: number;
@@ -39,7 +44,7 @@ export interface Look {
   /** 왼손에 드는 것 ('none' = 따로 붙인다: 학생 모드 창구 직원) */
   left: 'keys' | 'report' | 'megaphone' | 'stamp' | 'none';
   scale: number;
-  // 아래는 조력자(동료 직원·친구)와 경비원용 (perks.ts, 2026-11-14)
+  // 아래는 조력자(동료 직원·친구)와 경비 선생님용 (perks.ts, 2026-11-14)
   /** 눈썹 색 (비우면 원래대로) */
   brow?: number;
   /** 넥타이 없음 (학생·앞치마) */
@@ -54,10 +59,31 @@ export interface Look {
   earphones?: boolean;
   /** 앞치마 (김학생식당) */
   apron?: boolean;
-  /** 모자 색 (경비원 근무모) */
+  /** 모자 색 (경비 선생님 근무모) */
   cap?: number;
   /** 운동화 색 */
   shoes?: number;
+  // 아래는 11차(2026-11-21) 남녀 외형 — 모두 선택 항목이라 예전 Look은 그대로 보인다
+  /** 여성 얼굴: 속눈썹·붉은 입술·볼터치 (머리 모양·옷은 따로 고른다) */
+  female?: boolean;
+  /** 블라우스 차림: 넥타이 대신 흰 둥근 깃 + neck(기본 리본) */
+  blouse?: boolean;
+  /** 넥타이 자리에 두르는 것 (색은 tie): ribbon = 리본, scarf = 스카프. 주면 넥타이는 그리지 않는다 */
+  neck?: 'ribbon' | 'scarf';
+  /** 치마 (색은 pants. 다리는 치마 밑에서 움직인다) */
+  skirt?: boolean;
+  /** 안경 모양 (glasses 없이 써도 된다): horn = 뿔테, silver = 은테, sun = 선글라스 */
+  glassesStyle?: 'horn' | 'silver' | 'sun';
+  /** 이마에 두른 띠의 글자 (나진취 "취업률 100%"). 빈 문자열 = 글자 없는 띠 */
+  headband?: string;
+  /** 머리띠 색 (기본 흰색) */
+  headbandColor?: number;
+  /** 왼팔에 끼고 있는 규정집 (김학종지) */
+  rulebook?: boolean;
+  /** 외대 야구잠바: top = 남색 몸통, 흰 소매, 줄무늬 목깃·밑단, 가슴에 흰 "H" */
+  varsity?: boolean;
+  /** 체크 셔츠: top 색 바탕의 체크 무늬 (tee와 같이 쓰면 앞이 열린 셔츠) */
+  check?: boolean;
 }
 
 const SKIN = 0xf1c7a0;
@@ -143,19 +169,30 @@ export class Person {
     this.who = who;
     const L = (this.look = look);
     const k = peopleKit();
-    this.faceMat = new THREE.MeshLambertMaterial({
-      map: faceTex({
-        skin: hex(L.skin),
-        brow: hex(L.brow ?? (who === 'chonggwal' ? L.hair : who === 'president' ? L.hair : 0x6b6b6b)),
-        glasses: L.glasses,
-        mustache: L.mustache ? hex(L.mustache) : undefined,
-        smile: L.smile,
-      }),
+    const face = faceTex({
+      skin: hex(L.skin),
+      brow: hex(L.brow ?? (who === 'chonggwal' ? L.hair : who === 'president' ? L.hair : 0x6b6b6b)),
+      glasses: L.glasses && !L.glassesStyle,
+      mustache: L.mustache ? hex(L.mustache) : undefined,
+      smile: L.smile,
     });
-    k.textures.push(this.faceMat.map as THREE.Texture);
+    if (L.female || L.glassesStyle) decorateFace(face, { female: L.female, glassesStyle: L.glassesStyle });
+    this.faceMat = new THREE.MeshLambertMaterial({ map: face });
+    k.textures.push(face);
     this.root.add(this.body);
     this.root.scale.setScalar(L.scale);
-    const top = lambert(L.top);
+    let top = lambert(L.top);
+    // 소매: 야구잠바는 흰 소매, 체크 셔츠는 세로로 긴 팔에 맞춰 무늬를 되풀이한다
+    let sleeve = L.varsity ? lambert(0xf4f4f4) : top;
+    if (L.check) {
+      const tex = plaidTex(L.top);
+      const armTex = tex.clone();
+      armTex.repeat.set(1, 2.5);
+      armTex.needsUpdate = true;
+      k.textures.push(tex, armTex);
+      top = new THREE.MeshLambertMaterial({ map: tex });
+      sleeve = new THREE.MeshLambertMaterial({ map: armTex });
+    }
     const skin = lambert(L.skin);
     const hair = lambert(L.hair);
     const ink = lambert(0x161616);
@@ -170,9 +207,23 @@ export class Person {
       this.part(leg, 0.29, 0.12, 0.38, 0, -0.8, 0.04, L.shoes !== undefined ? lambert(L.shoes) : ink);
       this.body.add(leg);
     }
+    // 치마 (허리 아래로 넓게, 0.56 ~ 0.92)
+    if (L.skirt) this.part(this.body, 0.78, 0.36, 0.48, 0, 0.74, 0, lambert(L.pants));
     // 몸통 (0.86 ~ 1.62)
     this.part(this.body, 0.7, 0.78, 0.4, 0, 1.24, 0, top);
-    if (L.hoodie) {
+    if (L.varsity) {
+      // 외대 야구잠바: 줄무늬 목깃·밑단, 똑딱단추, 가슴에 흰 "H"
+      const dk = lambert(darken(L.top));
+      const w = lambert(0xf4f4f4);
+      this.part(this.body, 0.5, 0.08, 0.44, 0, 1.6, 0, dk);
+      this.part(this.body, 0.51, 0.02, 0.45, 0, 1.6, 0, w);
+      this.part(this.body, 0.72, 0.08, 0.42, 0, 0.9, 0, dk);
+      this.part(this.body, 0.73, 0.02, 0.43, 0, 0.9, 0, w);
+      for (const y of [1.44, 1.3, 1.16, 1.02]) this.part(this.body, 0.035, 0.035, 0.02, 0, y, 0.205, lambert(0xd9d9d9));
+      this.part(this.body, 0.035, 0.16, 0.02, -0.18, 1.4, 0.208, w);
+      this.part(this.body, 0.035, 0.16, 0.02, -0.08, 1.4, 0.208, w);
+      this.part(this.body, 0.1, 0.035, 0.02, -0.13, 1.4, 0.208, w);
+    } else if (L.hoodie) {
       // 후드티: 목 뒤 모자, 흰 끈 두 줄, 앞주머니, 아랫단
       const dk = lambert(darken(L.top));
       this.part(this.body, 0.52, 0.2, 0.16, 0, 1.6, -0.22, dk);
@@ -199,15 +250,35 @@ export class Person {
       this.part(this.body, 0.05, 0.05, 0.02, 0.08, 0.96, 0.225, lambert(0xd9d9d9));
       // 허리띠
       this.part(this.body, 0.72, 0.07, 0.42, 0, 0.88, 0, lambert(0x1c1c1c));
+    } else if (L.blouse) {
+      // 블라우스: 흰 둥근 깃 둘 + 단추 줄
+      const w = lambert(0xffffff);
+      this.part(this.body, 0.14, 0.07, 0.02, -0.08, 1.59, 0.207, w).rotation.z = -0.25;
+      this.part(this.body, 0.14, 0.07, 0.02, 0.08, 1.59, 0.207, w).rotation.z = 0.25;
+      this.part(this.body, 0.03, 0.5, 0.02, 0, 1.2, 0.205, lambert(darken(L.top)));
     } else {
       // 셔츠 단추 줄
       this.part(this.body, 0.03, 0.6, 0.02, 0.09, 1.25, 0.205, lambert(darken(L.top)));
     }
     if (L.beltKeys) this.keyBunch(this.body, -0.28, 0.84, 0.23, 0.06);
+    const neck = L.neck ?? (L.blouse ? 'ribbon' : undefined);
     if (L.apron) {
       // 앞치마 (위끝에 넥타이 색 띠)
       this.part(this.body, 0.56, 0.62, 0.02, 0, 1.13, 0.215, lambert(0xfff3d6));
       this.part(this.body, 0.3, 0.05, 0.03, 0, 1.45, 0.22, lambert(L.tie));
+    } else if (neck === 'ribbon') {
+      // 리본: 양쪽 고리 + 매듭 + 늘어진 끈 둘
+      const rb = lambert(L.tie);
+      this.part(this.body, 0.12, 0.08, 0.03, -0.065, 1.55, 0.225, rb).rotation.z = 0.25;
+      this.part(this.body, 0.12, 0.08, 0.03, 0.065, 1.55, 0.225, rb).rotation.z = -0.25;
+      this.part(this.body, 0.03, 0.13, 0.02, -0.03, 1.46, 0.222, rb).rotation.z = -0.25;
+      this.part(this.body, 0.03, 0.13, 0.02, 0.03, 1.46, 0.222, rb).rotation.z = 0.25;
+      this.part(this.body, 0.045, 0.055, 0.035, 0, 1.55, 0.232, lambert(darken(L.tie)));
+    } else if (neck === 'scarf') {
+      // 스카프: 목에 감은 띠 + 앞으로 늘어진 끝
+      const sc = lambert(L.tie);
+      this.part(this.body, 0.42, 0.08, 0.44, 0, 1.61, 0, sc);
+      this.part(this.body, 0.09, 0.24, 0.03, 0.08, 1.47, 0.218, sc).rotation.z = 0.15;
     } else if (!L.noTie) {
       this.part(this.body, 0.09, 0.07, 0.03, 0, 1.58, 0.225, lambert(L.tie));
       this.part(this.body, 0.08, 0.4, 0.03, 0, 1.36, 0.225, lambert(L.tie));
@@ -234,11 +305,19 @@ export class Person {
       [this.armR, 0.45],
     ] as [THREE.Group, number][]) {
       arm.position.set(x, 1.56, 0);
-      this.part(arm, 0.2, 0.66, 0.24, 0, -0.31, 0, top);
+      this.part(arm, 0.2, 0.66, 0.24, 0, -0.31, 0, sleeve);
       this.part(arm, 0.18, 0.16, 0.2, 0, -0.71, 0, skin);
+      // 야구잠바 소맷부리 (몸통 색)
+      if (L.varsity) this.part(arm, 0.21, 0.07, 0.25, 0, -0.6, 0, lambert(darken(L.top)));
       this.body.add(arm);
     }
     if (L.watch) this.part(this.armL, 0.21, 0.06, 0.25, 0, -0.6, 0, lambert(0xc9ced4));
+    if (L.rulebook) {
+      // 규정집: 두꺼운 초록 책 (금색 띠·흰 책장) — 왼팔 앞에 끼고 있다
+      this.part(this.armL, 0.3, 0.4, 0.09, 0.03, -0.42, 0.17, lambert(0x1f5e45));
+      this.part(this.armL, 0.31, 0.05, 0.095, 0.03, -0.32, 0.17, lambert(0xd9b44a));
+      this.part(this.armL, 0.27, 0.36, 0.07, 0.05, -0.42, 0.172, lambert(0xf4f0e0)).position.x = 0.06;
+    }
     // 머리 (목 = 1.64)
     this.head.position.set(0, 1.64, 0);
     this.body.add(this.head);
@@ -316,6 +395,43 @@ export class Person {
         this.part(h, 0.56, 0.3, 0.07, 0, 0.36, -0.27, hair);
         this.part(h, 0.03, 0.03, 0.18, -0.12, 0.63, 0.1, lambert(0x4a3a30));
         break;
+      case 'bob':
+        // 단발: 턱 높이까지 내려온 옆·뒷머리 + 앞머리
+        this.part(h, 0.56, 0.14, 0.52, 0, 0.55, -0.01, hair);
+        this.part(h, 0.58, 0.44, 0.13, 0, 0.33, -0.255, hair);
+        this.part(h, 0.08, 0.42, 0.44, -0.29, 0.34, -0.02, hair);
+        this.part(h, 0.08, 0.42, 0.44, 0.29, 0.34, -0.02, hair);
+        this.part(h, 0.46, 0.08, 0.06, 0, 0.47, 0.24, hair);
+        break;
+      case 'ponytail':
+        // 묶은 머리: 짧은 옆·뒷머리, 뒤통수에서 늘어진 꼬리, 파란 머리끈, 앞머리
+        this.part(h, 0.56, 0.14, 0.52, 0, 0.55, -0.01, hair);
+        this.part(h, 0.07, 0.24, 0.4, -0.29, 0.4, -0.03, hair);
+        this.part(h, 0.07, 0.24, 0.4, 0.29, 0.4, -0.03, hair);
+        this.part(h, 0.56, 0.32, 0.07, 0, 0.37, -0.27, hair);
+        this.part(h, 0.15, 0.46, 0.14, 0, 0.3, -0.37, hair);
+        this.part(h, 0.18, 0.07, 0.18, 0, 0.51, -0.35, lambert(0x2f6fd1));
+        this.part(h, 0.46, 0.08, 0.06, 0, 0.47, 0.24, hair);
+        break;
+      case 'crew':
+        // 짧은 스포츠머리: 얇게 깎은 윗머리와 옆·뒷머리
+        this.part(h, 0.54, 0.06, 0.5, 0, 0.535, -0.01, hair);
+        this.part(h, 0.06, 0.14, 0.38, -0.28, 0.44, -0.03, hair);
+        this.part(h, 0.06, 0.14, 0.38, 0.28, 0.44, -0.03, hair);
+        this.part(h, 0.54, 0.18, 0.06, 0, 0.42, -0.255, hair);
+        break;
+    }
+    if (this.look.headband !== undefined || this.look.headbandColor !== undefined) {
+      // 머리띠: 이마를 두른 띠, 앞면에 글자 (나진취 "취업률 100%")
+      const color = this.look.headbandColor ?? 0xffffff;
+      const side = lambert(color);
+      const tex = headbandTex(this.look.headband ?? '', hex(color));
+      peopleKit().textures.push(tex);
+      const front = new THREE.MeshLambertMaterial({ map: tex });
+      const band = new THREE.Mesh(peopleKit().unit, [side, side, side, side, front, side]);
+      band.scale.set(0.575, 0.12, 0.535);
+      band.position.set(0, 0.445, -0.005);
+      h.add(band);
     }
     if (this.look.cap !== undefined) {
       // 근무모: 둥근 윗부분 + 검은 챙 + 금색 모표

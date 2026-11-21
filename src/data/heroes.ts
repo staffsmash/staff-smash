@@ -14,6 +14,12 @@ export interface StaffLook {
   /** 여성 외형 (블라우스·재킷 차림, 넥타이 대신 리본·스카프 — 그리는 쪽에서 정한다) */
   female?: boolean;
   longHair?: boolean;
+  /** 단발 (11차 그림 쪽 선택 항목 — 지금 여섯 명은 쓰지 않는다) */
+  bob?: boolean;
+  /** 묶은 머리 (11차 그림 쪽 선택 항목) */
+  ponytail?: boolean;
+  /** 여성의 아랫도리: 비우면 치마, false면 바지 (색은 pants) */
+  skirt?: boolean;
   /** 짧은 스포츠머리 */
   crew?: boolean;
   /** 안경: true = 평범한 안경 (예전 값) */
