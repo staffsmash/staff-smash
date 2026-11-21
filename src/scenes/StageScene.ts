@@ -26,10 +26,12 @@ import { NoticeBoss } from '../entities/NoticeBoss';
 import { DeadlineBoss } from '../entities/DeadlineBoss';
 import { ChonghakGroup, ChonghakMember } from '../entities/Chonghak';
 import { WINDOW_STAFF, WINDOW_STAFF_KINDS, WindowStaff, windowStaffHero, type WindowStaffKind } from '../entities/WindowStaff';
-import { BanryeoBoss, DocTower } from '../entities/BanryeoBoss';
-import { BansaBoss } from '../entities/BansaBoss';
+import { JeonpilBoss, DocTower } from '../entities/JeonpilBoss';
+import { BujaeBoss } from '../entities/BujaeBoss';
+import { HanhakgoBoss } from '../entities/HanhakgoBoss';
 import { PresidentBoss } from '../entities/PresidentBoss';
-import { Coin, Darkness, PenLine, Puddle } from '../entities/FloorGimmicks';
+import { Cobweb, PenLine, SignLine } from '../entities/FloorGimmicks';
+import { ChonghakAide } from '../entities/ChonghakAide';
 import { Projectile } from '../entities/Projectile';
 import { Hazard } from '../entities/Hazard';
 import { Pickup, type PickupKind } from '../entities/Pickup';
@@ -48,9 +50,12 @@ import {
 } from '../entities/rigs';
 import {
   createBigStamp,
+  createBookCart,
+  createCapIcon,
   createErrorWindow,
   createPacket,
   createPassportIcon,
+  createRankArrow,
   createZachetDrop,
   weaponIcon,
 } from '../entities/studentRigs';
@@ -67,13 +72,13 @@ import { drawBackground } from './background';
 import * as fx from '../fx';
 
 // 스테이지. 구역을 차례로 잠그고 웨이브(교직원 src/data/stageN.json, 학생 studentN.json)를 정리한다.
-// run.mode가 모든 것을 정한다: 교직원 모드는 민원 처리(방해 상사, 결재 대기), 학생 모드는 행정 돌파(창구 직원, 처장·부총장·총장).
+// run.mode가 모든 것을 정한다: 교직원 모드는 민원 처리(방해 상사, 교수 서명 대기), 학생 모드는 행정 돌파(창구 직원, 학과장·교수·학장·총장).
 
 const MAX_ATTACKERS = 2;
 const TRIGGER_X = 330;
 const STUDENT_KINDS: StudentKind[] = ['wrongNumber', 'lateDoc', 'tantrum', 'graduation', 'presidentMail'];
-/** 학생 모드 보스 (처리되면 남은 잡몹이 함께 물러난다) */
-const STUDENT_BOSSES = ['banryeoBoss', 'bansaBoss', 'presidentBoss'];
+/** 학생 모드 보스 (처리되면 남은 잡몹이 함께 물러난다). 한학고 학장은 3스테이지 총장실 앞 관문 */
+const STUDENT_BOSSES = ['jeonpilBoss', 'bujaeBoss', 'hanhakgoBoss', 'presidentBoss'];
 /** 잡몹 (조력자가 한꺼번에 처리해 주고, 처리하면 가끔 무언가를 떨어뜨린다). 나머지는 중간보스·보스다 */
 const ORDINARY = new Set(['mail', 'phone', 'bubble', 'docbomb', 'queue']);
 /** 조력자 이벤트: 맞고 남은 체력이 이 비율 이하로 떨어지면 HELPER_CHANCE 확률로 온다 (스테이지마다 한 번) */
@@ -160,11 +165,17 @@ export class StageScene extends Phaser.Scene {
   private traps: ReportTrap[] = [];
   private sups: Supervisor[] = [];
   private meetings: MeetingCircle[] = [];
-  private puddles: Puddle[] = [];
   private penLines: PenLine[] = [];
-  private coins: Coin[] = [];
-  private coinFreeze = 1.2;
-  private darkness: Darkness | null = null;
+  /** 최내놔 처장의 거미줄과 던진 처장 (밟으면 그 처장 곁으로 끌려간다) */
+  private webs: { web: Cobweb; sup: Supervisor }[] = [];
+  /** 거미줄에 걸려 끌려가는 중 */
+  private pull: { fx: number; fy: number; tx: number; ty: number; t: number } | null = null;
+  /** 권학생이 부른 총학 집행부 */
+  private aides: ChonghakAide[] = [];
+  /** 프레지던트 캉의 MOU 서명선 */
+  private signs: SignLine[] = [];
+  /** 잠깐 멈췄을 때 위쪽 안내 (성적표 F·거미줄) */
+  private freezeNote = '';
   private storm: ServerStorm | null = null;
   private ticketNo = 86;
   private boss: BossLike | null = null;
@@ -228,10 +239,12 @@ export class StageScene extends Phaser.Scene {
     this.traps = [];
     this.sups = [];
     this.meetings = [];
-    this.puddles = [];
     this.penLines = [];
-    this.coins = [];
-    this.darkness = null;
+    this.webs = [];
+    this.pull = null;
+    this.aides = [];
+    this.signs = [];
+    this.freezeNote = '';
     this.storm = null;
     this.ticketNo = 86;
     this.boss = null;
@@ -365,7 +378,7 @@ export class StageScene extends Phaser.Scene {
       if (c.consume('pause')) this.setPaused(!this.paused);
       if (!this.paused) this.step(dt);
     } else if (this.studentMode) {
-      // 마무리 연출: 승인하는 프레지던트 캉, 퇴근하는 처장이 멈춰 버리지 않게 움직임만 이어 간다
+      // 마무리 연출: 승인하는 프레지던트 캉, 걸어 나가는 학과장·교수가 멈춰 버리지 않게 움직임만 이어 간다
       for (const e of this.enemies) e.update(dt, this.player);
       this.enemies = this.enemies.filter((e) => !e.removed);
     }
@@ -397,16 +410,15 @@ export class StageScene extends Phaser.Scene {
   }
 
   private noticeLine(): string {
-    if (this.approval === 'waiting') return `결재 대기 중 · 김부재중 처장 부재중 (${Math.ceil(this.approvalT)}초)`;
-    if (this.approval === 'called') return '김부재중 처장이 오는 중…';
+    if (this.approval === 'waiting') return `교수 서명 대기 중 · 김부재중 교수 부재중 (${Math.ceil(this.approvalT)}초)`;
+    if (this.approval === 'called') return '김부재중 교수가 오는 중…';
     if (this.player.clingBy) return '매달렸다! J(처리) 연타로 떼어 내기';
     if (this.player.state === 'meeting') return '회의 중… 회의록 작성 중';
     if (this.storm) {
       const n = Math.max(1, Math.round((this.storm.queue * this.storm.t) / this.storm.sec));
       return `수강신청 서버 폭주! 대기 인원 ${n.toLocaleString('ko-KR')}명 — 빨간 표시를 피하세요`;
     }
-    if (this.darkness) return `점호 중 · 소등 (${Math.ceil(this.darkness.remaining)}초)`;
-    if (this.player.state === 'frozen') return '신청 기간이 아닙니다… (잠깐 멈춤)';
+    if (this.player.state === 'frozen') return this.freezeNote || '잠깐 멈춤…';
     return '';
   }
 
@@ -423,6 +435,7 @@ export class StageScene extends Phaser.Scene {
     if (this.bumpCd > 0) this.bumpCd -= dt;
     const prevX = this.player.x;
     this.player.update(dt, this.controls);
+    this.updatePull(dt);
     for (const e of this.enemies) e.update(dt, this.player);
     this.enemies = this.enemies.filter((e) => !e.removed);
     this.updateProjectiles(dt);
@@ -484,12 +497,12 @@ export class StageScene extends Phaser.Scene {
     }
     this.supplyItems(dt, z);
 
-    // 김부재중 처장 결재: 웨이브를 다 정리한 뒤 버텨야 한다
+    // 김부재중 교수 서명: 웨이브를 다 정리한 뒤 버텨야 한다
     if (z.approval && this.approval === 'none' && this.queue.length === 0 && this.enemies.length === 0) {
       this.approval = 'waiting';
       this.approvalT = 9;
       this.approvalAddT = 1.2;
-      fx.banner(this, '다음 구역은 결재가 필요합니다', '김부재중 처장 부재중… 돌아올 때까지 버티세요', 2200);
+      fx.banner(this, '다음 구역은 교수 서명이 필요합니다', '김부재중 교수 부재중… 돌아올 때까지 버티세요', 2200);
     }
     if (this.approval === 'waiting') {
       this.approvalT -= dt;
@@ -503,7 +516,7 @@ export class StageScene extends Phaser.Scene {
         this.sups.push(
           new Supervisor(this, 'bujae', 0, () => {
             this.approval = 'done';
-            fx.banner(this, '결재 완료!', '이제 다음 구역으로 갈 수 있습니다', 1400);
+            fx.banner(this, '서명 완료!', '이제 다음 구역으로 갈 수 있습니다', 1400);
           }),
         );
       }
@@ -512,12 +525,12 @@ export class StageScene extends Phaser.Scene {
     if (approved && this.queue.length === 0 && !this.enemiesLeft) this.clearZone();
   }
 
-  /** 기믹에 필요한 물건을 떨어지지 않게 공급한다 (안내문 롤, 규정집, 반사반사 부총장전의 던질 것) */
+  /** 기믹에 필요한 물건을 떨어지지 않게 공급한다 (안내문 롤, 규정집, 김부재중 교수전의 던질 것) */
   private supplyItems(dt: number, z: ZoneDef): void {
     let need: WeaponId | null = null;
     if (this.noticeBoss?.wantsNotice) need = 'notice';
     else if (this.enemies.some((e) => e.kind === 'tantrum' && !e.dead)) need = 'rulebook';
-    else if (this.enemies.some((e) => e.kind === 'bansaBoss' && !e.dead)) need = 'stapler';
+    else if (this.enemies.some((e) => e.kind === 'bujaeBoss' && !e.dead)) need = 'stapler';
     if (!need) return;
     const anyThrowable = need === 'stapler';
     const exists =
@@ -599,8 +612,10 @@ export class StageScene extends Phaser.Scene {
     this.goText.setVisible(false);
     const bossZone = z.waves.some((w) => w.endsWith('Boss') || w === 'chonghak');
     if (!bossZone) fx.banner(this, z.label, this.studentMode ? '서류 들고 돌파!' : '민원 접수 중', 1200);
+    // 학생 3스테이지는 관문(한학고 학장) 뒤 총장실이라 보스 구역마다 새로 센다
+    else this.bossDefeated = false;
     for (const k of z.supervisors) {
-      const delay = k === 'gumto' ? 1.0 : k === 'meeting' ? 9 : k === 'hoho' ? 6 : 3.5;
+      const delay = k === 'meeting' ? 9 : k === 'hoho' ? 6 : 3.5;
       this.sups.push(new Supervisor(this, k as SupervisorKind, delay));
     }
   }
@@ -679,21 +694,29 @@ export class StageScene extends Phaser.Scene {
         fx.banner(this, '최종 보스 · 총학 집행부', '김데시벨 · 오시위 · 박드러누움 — 누운 사람은 마지막에 일어납니다', 3000);
         break;
       }
-      case 'banryeoBoss': {
+      case 'jeonpilBoss': {
         const by = Phaser.Math.Clamp(p.y - 30, FLOOR_TOP + 10, FLOOR_BOTTOM - 40);
-        const b = new BanryeoBoss(this, x, by, tx - 120);
+        const b = new JeonpilBoss(this, x, by, tx - 120);
         this.enemies.push(b);
         this.boss = b;
-        fx.banner(this, '보스 · 박반려 서류반려처장', '서류 탑부터 무너뜨려야 설득할 수 있어요 — 반려 도장 그림자를 피하세요', 3000);
+        fx.banner(this, '보스 · 전필수 스페인어과 학과장', '수강편람 탑부터 무너뜨려야 설득할 수 있어요 — 재수강 도장 그림자를 피하세요', 3000);
         break;
       }
-      case 'bansaBoss': {
+      case 'bujaeBoss': {
         const by = Phaser.Math.Clamp(p.y, FLOOR_TOP + 20, FLOOR_BOTTOM - 20);
-        const b = new BansaBoss(this, x, by, tx - 80);
+        const b = new BujaeBoss(this, x, by, tx - 80);
         this.enemies.push(b);
         this.boss = b;
         this.supplyT = 2;
-        fx.banner(this, '보스 · 반사반사 결재부총장', '던진 물건은 되받아칩니다 — 반사 직후나 등 뒤를 노리세요', 3000);
+        fx.banner(this, '보스 · 김부재중 교수', '던진 물건은 되받아칩니다 — 반사 직후나 등 뒤를 노리세요', 3000);
+        break;
+      }
+      case 'hanhakgoBoss': {
+        const by = Phaser.Math.Clamp(p.y, FLOOR_TOP + 20, FLOOR_BOTTOM - 20);
+        const b = new HanhakgoBoss(this, x, by, tx - 100);
+        this.enemies.push(b);
+        this.boss = b;
+        fx.banner(this, '관문 · 한학고 영어대학 학장', '성적표 둘 중 하나는 F — A+만 주우세요', 3000);
         break;
       }
       case 'presidentBoss': {
@@ -1001,12 +1024,18 @@ export class StageScene extends Phaser.Scene {
       pr.update(dt);
       if (pr.removed) continue;
       // 사원증·학생증: 돌아와서 손에 잡힌다
-      if (pr.returnTo) {
+      if (pr.returnTo && pr.owner === 'player') {
         const caught = pr.returning && Math.abs(pr.x - p.x) < 28;
         if (caught || pr.expired) {
           // 날아가 있는 동안 다른 물건으로 바꿔 들었으면 사원증은 발밑에 떨어진다
           if (p.weapon?.def.boomerang) p.catchCard();
           else this.dropCard(pr.x, p.y);
+          pr.destroy();
+          continue;
+        }
+      } else if (pr.returnTo) {
+        // 프레지던트 캉의 학사모: 돌아와 손에 잡히면 사라진다
+        if ((pr.returning && Math.abs(pr.x - pr.returnTo.x) < 30) || pr.expired) {
           pr.destroy();
           continue;
         }
@@ -1017,28 +1046,42 @@ export class StageScene extends Phaser.Scene {
       }
       if (pr.owner === 'enemy') {
         const near = Math.abs(pr.y - p.y) <= DEPTH_RANGE && Math.abs(pr.x - p.x) <= pr.halfW + p.halfW;
-        if (near && pr.z >= p.z - 10 && pr.z <= p.z + 80) {
+        // 학사모(부메랑)는 가고 올 때 한 번씩만 맞고 그대로 날아간다
+        const boomerang = !!pr.returnTo;
+        if (near && pr.z >= p.z - 10 && pr.z <= p.z + 80 && !(boomerang && pr.hitSet.has(p))) {
           const dir = Math.sign(pr.vx) || 1;
           const guarding =
             !!p.weapon?.def.guard && p.facing === -dir && ['idle', 'walk', 'wattack'].includes(p.state);
           const kb = pr.tag === 'sonic' ? 220 : 120;
           if (p.takeHit({ dmg: pr.dmg, dir, kb, knockdown: pr.knockdown })) {
             fx.hitSpark(this, p.x, p.y - p.z - 60);
-            pr.destroy();
+            if (boomerang) pr.hitSet.add(p);
+            else pr.destroy();
           } else if (guarding || p.shieldPopT > 0) {
             // 결재판으로 막았거나 연차 쿠폰(공결 확인서)에 막혔다
-            pr.destroy();
+            if (boomerang) pr.hitSet.add(p);
+            else pr.destroy();
           }
         }
         continue;
+      }
+      // 권학생이 부른 총학 집행부가 던진 물건을 막는다 (사원증·학생증은 지나간다)
+      if (!pr.returnTo) {
+        const aide = this.aides.find((a) => a.stops(pr.x, pr.y, pr.z, pr.halfW));
+        if (aide) {
+          aide.blockedText();
+          if (pr.explodes) this.explode(pr.x, pr.y, 90, { player: 0, enemies: 3 }, this.studentMode ? '따르릉!' : '펑!');
+          pr.destroy();
+          continue;
+        }
       }
       for (const e of this.enemies) {
         if (pr.hitSet.has(e) || !e.hittable) continue;
         if (Math.abs(pr.y - e.y) > DEPTH_RANGE || Math.abs(pr.x - e.x) > pr.halfW + e.halfW) continue;
         if (pr.z < e.z - 10 || pr.z > e.z + e.height + 10) continue;
         pr.hitSet.add(e);
-        // 반사반사 부총장: 정면으로 날아온 것은 결재판으로 되받아친다
-        if (e instanceof BansaBoss && e.canReflect(Math.sign(pr.vx) || 1)) {
+        // 김부재중 교수: 정면으로 날아온 것은 결재판으로 되받아친다
+        if (e instanceof BujaeBoss && e.canReflect(Math.sign(pr.vx) || 1)) {
           this.reflect(pr, e);
           break;
         }
@@ -1071,8 +1114,8 @@ export class StageScene extends Phaser.Scene {
     this.projectiles = this.projectiles.filter((x) => !x.removed);
   }
 
-  /** 반사반사 부총장이 던진 무기를 결재판으로 되받아친다 */
-  private reflect(pr: Projectile, boss: BansaBoss): void {
+  /** 김부재중 교수가 던진 무기를 결재판으로 되받아친다 */
+  private reflect(pr: Projectile, boss: BujaeBoss): void {
     const dir = -(Math.sign(pr.vx) || 1);
     if (pr.returnTo) this.player.catchCard();
     const obj = pr.weaponId ? weaponIcon(this, pr.weaponId, this.studentMode) : createDemandPaper(this);
@@ -1201,6 +1244,14 @@ export class StageScene extends Phaser.Scene {
           break;
         case 'petition':
           fx.floatText(this, p.x, p.y - 128, '단체 서명지 접수 완료!', '#7CFC9A', 18);
+          break;
+        case 'gradeA':
+          p.heal(3);
+          fx.floatText(this, p.x, p.y - 128, 'A+ 성적표! 체력 +3', '#7CFC9A', 18);
+          break;
+        case 'gradeF':
+          if (!p.freeze(1.4, 'F 학점…')) continue;
+          this.freezeNote = 'F 학점… 정정 기간이 아닙니다 (잠깐 멈춤)';
           break;
       }
       it.destroy();
@@ -1643,7 +1694,7 @@ export class StageScene extends Phaser.Scene {
     this.traps.push(new ReportTrap(this, fromX, laneY, tx, ty));
   }
 
-  /** 최몰라 처장: "몰라~" 하며 메일 하나를 넘긴다 */
+  /** 박학과장: "그건 선생님이 알아서 하세요" 하며 메일 하나를 넘긴다 */
   passMail(x: number): void {
     const left = this.cameras.main.scrollX;
     const sx = Phaser.Math.Clamp(x, left + 40, left + GAME_W - 40);
@@ -1652,7 +1703,15 @@ export class StageScene extends Phaser.Scene {
     fx.floatText(this, sx, FLOOR_TOP - 90, '넘겨받은 민원', '#ffd27f', 15);
   }
 
-  /** 회의소집 부총장: 플레이어 발밑에 회의 원을 그린다 */
+  /** 최내놔 처장: 거미줄을 (x, y)에 던진다 (그림자 예고 → 바닥에 4초) */
+  throwWeb(sup: Supervisor, x: number, y: number): void {
+    const left = this.cameras.main.scrollX;
+    const wx = Phaser.Math.Clamp(x, left + 70, left + GAME_W - 70);
+    const wy = Phaser.Math.Clamp(y, FLOOR_TOP + 14, FLOOR_BOTTOM - 10);
+    this.webs.push({ web: new Cobweb(this, sup.posX, sup.laneY - 80, wx, wy), sup });
+  }
+
+  /** 회의회의부총장: 플레이어 발밑에 회의 원을 그린다 */
   callMeeting(x: number, y: number): void {
     const c = this.add.container(x, y).setDepth(-3);
     const ring = this.add.ellipse(0, 0, 168, 60, 0x7c3aed, 0.25).setStrokeStyle(3, 0x7c3aed, 0.9);
@@ -1663,7 +1722,7 @@ export class StageScene extends Phaser.Scene {
     this.meetings.push({ x, y, t: 0, obj: c });
   }
 
-  /** 허허실실 부총장: 간식 하나와 일거리 하나 */
+  /** 몰라몰라부총장: 간식 하나와 일거리 하나 */
   dropSnacks(_fromX: number, px: number, py: number): void {
     const left = this.cameras.main.scrollX;
     const real = (['donkatsu', 'gimbap', 'americano'] as const)[Phaser.Math.Between(0, 2)];
@@ -1683,28 +1742,51 @@ export class StageScene extends Phaser.Scene {
     return String(this.ticketNo).padStart(3, '0');
   }
 
-  /** 박국제학사: 소등 */
-  lightsOut(sec: number): void {
-    this.darkness?.destroy();
-    this.darkness = new Darkness(this, sec);
-    this.cameras.main.flash(120, 0, 0, 0);
-  }
-
-  get isDark(): boolean {
-    return this.darkness !== null;
-  }
-
-  /** 김학생식당: 국물을 쏟는다 (한꺼번에 세 군데까지) */
-  spillSoup(x: number, y: number, life: number): void {
+  /** 김전략: 플레이어 주위에 빨간 순위 하락 화살표가 떨어진다 (하나는 플레이어 자리) */
+  dropRankArrows(px: number, py: number, n: number): void {
     const left = this.cameras.main.scrollX;
-    const px = Phaser.Math.Clamp(x, left + 80, left + GAME_W - 80);
-    const py = Phaser.Math.Clamp(y, FLOOR_TOP + 16, FLOOR_BOTTOM - 12);
-    this.puddles.push(new Puddle(this, px, py, life));
-    while (this.puddles.filter((p) => !p.removed).length > 3) this.puddles.find((p) => !p.removed)?.destroy();
-    fx.floatText(this, px, py - 40, '국물 주의!', '#ffd27f', 16);
+    for (let i = 0; i < n; i++) {
+      const aim = i === 0;
+      const x = Phaser.Math.Clamp(px + (aim ? 0 : Phaser.Math.Between(-170, 170)), left + 50, left + GAME_W - 50);
+      const y = Phaser.Math.Clamp(py + (aim ? 0 : Phaser.Math.Between(-50, 50)), FLOOR_TOP + 6, FLOOR_BOTTOM - 6);
+      this.hazards.push(new Hazard(this, { x, y, delay: 0.9 + i * 0.22, radius: 40, owner: 'enemy', dmg: 1, obj: createRankArrow(this) }));
+    }
   }
 
-  /** 이진취: 플레이어 양옆에 빨간 첨삭 선을 긋는다 */
+  /** 최도서관: 플레이어 깊이(y)로 책수레를 밀어 보낸다 (바닥을 굴러서 점프로 넘는다) */
+  pushBookCart(from: Enemy, y: number): void {
+    const f = from.facing;
+    this.projectiles.push(
+      new Projectile(this, {
+        x: from.x + f * 40,
+        y: Phaser.Math.Clamp(y, FLOOR_TOP + 6, FLOOR_BOTTOM - 6),
+        z: 0,
+        vx: f * 330,
+        owner: 'enemy',
+        dmg: 1,
+        knockdown: false,
+        tag: 'cart',
+        halfW: 30,
+        ttl: 3.6,
+        obj: createBookCart(this),
+      }),
+    );
+  }
+
+  /** 권학생: 총학 집행부 둘이 화면 끝에서 달려와 권학생 앞(플레이어 쪽)에 선다 */
+  callAides(staff: Enemy, px: number): void {
+    const left = this.cameras.main.scrollX;
+    const dir = Math.sign(px - staff.x) || 1;
+    const fromX = dir > 0 ? left + GAME_W + 60 : left - 60;
+    const roles = ['protest', 'decibel'] as const;
+    roles.forEach((role, i) => this.aides.push(new ChonghakAide(this, role, fromX + dir * i * 50, staff, i)));
+  }
+
+  hasAides(): boolean {
+    return this.aides.some((a) => !a.removed);
+  }
+
+  /** 나진취: 플레이어 양옆에 빨간 첨삭 선을 긋는다 */
   drawPenLines(px: number, life: number): void {
     const left = this.cameras.main.scrollX;
     for (const side of [-1, 1]) {
@@ -1738,7 +1820,7 @@ export class StageScene extends Phaser.Scene {
     }
   }
 
-  /** 오학종지: 대기번호표 줄을 부른다 */
+  /** 김학종지: 대기번호표 줄을 부른다 */
   summonTickets(n: number): void {
     const { x, tx, y } = this.edgeSpawn();
     this.spawnQueue(x, y, tx, n);
@@ -1750,42 +1832,27 @@ export class StageScene extends Phaser.Scene {
     return this.enemies.filter((e) => e instanceof QueueSlip && !e.dead).length;
   }
 
-  /** 최장학: 동전을 뿌린다 (밟으면 잠깐 멈춘다) */
-  scatterCoins(fromX: number, fromY: number, n: number, freezeSec: number): void {
-    this.coinFreeze = freezeSec;
-    const left = this.cameras.main.scrollX;
-    const p = this.player;
-    for (let i = 0; i < n; i++) {
-      let x = p.x + Phaser.Math.Between(-240, 240);
-      let y = p.y + Phaser.Math.Between(-70, 70);
-      if (Math.abs(x - p.x) < 60 && Math.abs(y - p.y) < 30) x += (x < p.x ? -1 : 1) * 80;
-      x = Phaser.Math.Clamp(x, left + 50, left + GAME_W - 50);
-      y = Phaser.Math.Clamp(y, FLOOR_TOP + 8, FLOOR_BOTTOM - 8);
-      this.coins.push(new Coin(this, fromX, fromY, x, y));
-    }
-    fx.floatText(this, fromX, fromY - 140, '장학금…?', '#ffe066', 18);
-  }
-
-  hasCoins(): boolean {
-    return this.coins.some((c) => !c.removed);
-  }
-
-  collectCoins(x: number, y: number): void {
-    for (const c of this.coins) c.collectTo(x, y);
-  }
-
   /** 창구 직원이 퇴근하면 그 사람이 남긴 기믹을 거둔다 */
   onWindowStaffDone(e: WindowStaff): void {
-    if (e.kind === 'janghak') this.collectCoins(e.x, e.y - 60);
-    if (e.kind === 'haksa' && this.darkness) {
-      this.darkness.destroy();
-      this.darkness = null;
-      fx.floatText(this, this.player.x, this.player.y - 140, '불 켜짐!', '#ffe066', 20);
-    }
     if (e.kind === 'jinchwi') for (const l of this.penLines) l.destroy();
   }
 
-  /** 박반려 처장: 서류 탑을 세운다 */
+  /** 한학고 학장: 플레이어 양옆에 성적표 둘 (A+ 하나, F 하나 — 어느 쪽인지는 무작위) */
+  dropGrades(fromX: number, px: number, py: number): void {
+    const left = this.cameras.main.scrollX;
+    const kinds: PickupKind[] = Math.random() < 0.5 ? ['gradeA', 'gradeF'] : ['gradeF', 'gradeA'];
+    kinds.forEach((k, i) => {
+      const x = Phaser.Math.Clamp(px + (i === 0 ? -1 : 1) * Phaser.Math.Between(70, 120), left + 60, left + GAME_W - 60);
+      const y = Phaser.Math.Clamp(py + Phaser.Math.Between(-24, 24), FLOOR_TOP + 8, FLOOR_BOTTOM - 8);
+      this.pickups.push(new Pickup(this, k, x, y, 9, true).tossFrom(fromX, y, 70, 0.5, 60));
+    });
+  }
+
+  hasGrades(): boolean {
+    return this.pickups.some((i) => (i.kind === 'gradeA' || i.kind === 'gradeF') && !i.removed);
+  }
+
+  /** 전필수 학과장: 수강편람 탑을 세운다 */
   spawnDocTower(x: number, y: number): DocTower {
     const t = new DocTower(this, x, y);
     this.enemies.push(t);
@@ -1793,7 +1860,7 @@ export class StageScene extends Phaser.Scene {
     return t;
   }
 
-  /** 거대 도장 내리찍기 (박반려 "반려", 프레지던트 캉 "보류"·"재검토") */
+  /** 거대 도장 내리찍기 (전필수 학과장 "재수강", 프레지던트 캉 "보류"·"재검토") */
   slamStamp(x: number, y: number, label: string, delay: number): void {
     const left = this.cameras.main.scrollX;
     this.hazards.push(
@@ -1807,6 +1874,58 @@ export class StageScene extends Phaser.Scene {
         knockdown: true,
         mark: label,
         obj: createBigStamp(this, label),
+      }),
+    );
+  }
+
+  /** 프레지던트 캉 MOU 서명: 플레이어를 지나는 긴 서명선 (cross = 2페이즈, 두 줄이 엇갈린다) */
+  signLines(px: number, py: number, cross: boolean): void {
+    const left = this.cameras.main.scrollX;
+    const clampY = (y: number) => Phaser.Math.Clamp(y, FLOOR_TOP + 4, FLOOR_BOTTOM - 4);
+    const x1 = Math.max(left + 30, px - 300);
+    const x2 = Math.min(left + GAME_W - 30, px + 300);
+    if (cross) {
+      this.signs.push(new SignLine(this, x1, clampY(py - 60), x2, clampY(py + 60)));
+      this.signs.push(new SignLine(this, x1, clampY(py + 60), x2, clampY(py - 60)));
+    } else {
+      const tilt = Phaser.Math.Between(-24, 24);
+      this.signs.push(new SignLine(this, x1, clampY(py - tilt), x2, clampY(py + tilt)));
+    }
+  }
+
+  /** 프레지던트 캉 기념 촬영: 캉 쪽을 보고 있으면 2초 동안 화면이 하얘진다 (피해 없음) */
+  cameraFlash(from: Enemy): void {
+    const p = this.player;
+    fx.floatText(this, from.x, from.y - from.height * from.baseScale - 30, '찰칵!', '#ffffff', 22);
+    const facing = p.facing === (Math.sign(from.x - p.x) || 1);
+    if (!facing || !p.targetable) {
+      this.cameras.main.flash(90, 255, 255, 255);
+      fx.floatText(this, p.x, p.y - 130, '고개 돌리기 성공!', '#7CFC9A', 16);
+      return;
+    }
+    const white = this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0xffffff, 1).setScrollFactor(0).setDepth(2300);
+    this.tweens.add({ targets: white, alpha: 0, delay: 1400, duration: 600, onComplete: () => white.destroy() });
+    fx.floatText(this, p.x, p.y - 130, '눈부셔!', '#ffe066', 18);
+  }
+
+  /** 프레지던트 캉 학위 수여: 학사모가 부메랑처럼 날아갔다 돌아온다 (점프하거나 위아래로 비킨다) */
+  throwCap(from: Enemy, y: number): void {
+    const f = from.facing;
+    this.projectiles.push(
+      new Projectile(this, {
+        x: from.x + f * 40,
+        y: Phaser.Math.Clamp(y, FLOOR_TOP + 6, FLOOR_BOTTOM - 6),
+        z: 30,
+        vx: f * 600,
+        owner: 'enemy',
+        dmg: 1,
+        knockdown: false,
+        tag: 'cap',
+        halfW: 22,
+        ttl: 3.4,
+        obj: createCapIcon(this),
+        spin: 14 * f,
+        returnTo: from,
       }),
     );
   }
@@ -1871,39 +1990,70 @@ export class StageScene extends Phaser.Scene {
 
   private updateFloorGimmicks(dt: number, prevX: number): void {
     const p = this.player;
-    for (const pd of this.puddles) pd.update(dt, p);
-    this.puddles = this.puddles.filter((x) => !x.removed);
     for (const l of this.penLines) {
       l.update(dt);
       if (!l.removed) l.block(p, prevX);
     }
     this.penLines = this.penLines.filter((x) => !x.removed);
-    for (const c of this.coins) {
-      c.update(dt);
-      if (c.touching(p) && p.freeze(this.coinFreeze, '신청 기간이 아닙니다!')) c.destroy();
+    // 최내놔 처장의 거미줄: 밟으면 처장 곁으로 끌려간다 (피해 없음)
+    for (const w of this.webs) {
+      w.web.update(dt);
+      if (w.web.removed || !w.web.landed || this.pull || p.z > 6 || !w.web.contains(p.x, p.y)) continue;
+      if (!p.freeze(0.75, '거미줄에 걸렸다!')) continue;
+      const left = this.cameras.main.scrollX;
+      const side = p.x >= w.sup.posX ? 1 : -1;
+      this.pull = {
+        fx: p.x,
+        fy: p.y,
+        tx: Phaser.Math.Clamp(w.sup.posX + side * 60, left + 40, left + GAME_W - 40),
+        ty: FLOOR_TOP + 10,
+        t: 0,
+      };
+      this.freezeNote = '거미줄에 걸렸다! (끌려가는 중)';
+      w.web.destroy();
     }
-    this.coins = this.coins.filter((x) => !x.removed);
-    if (this.darkness) {
-      const cam = this.cameras.main;
-      this.darkness.update(dt, p.x - cam.scrollX, p.y - p.z - 55);
-      if (this.darkness.removed) {
-        this.darkness = null;
-        fx.floatText(this, p.x, p.y - 140, '불 켜짐!', '#ffe066', 20);
-        // 박국제학사: "어? 누가 불 켰어요?"
-        for (const e of this.enemies) if (e instanceof WindowStaff && e.kind === 'haksa') e.onLightsOn();
+    this.webs = this.webs.filter((w) => !w.web.removed);
+    // 권학생이 부른 총학 집행부: 닿으면 밀려날 뿐 아프지 않다
+    for (const a of this.aides) {
+      a.update(dt, p.x);
+      if (!a.removed) a.push(p);
+    }
+    this.aides = this.aides.filter((a) => !a.removed);
+    // 프레지던트 캉의 MOU 서명선
+    for (const s of this.signs) {
+      s.update(dt);
+      if (s.touches(p)) {
+        s.hit = true;
+        p.takeHit({ dmg: 1, dir: p.facing > 0 ? -1 : 1, kb: 120, knockdown: false });
       }
     }
+    this.signs = this.signs.filter((x) => !x.removed);
+  }
+
+  /** 거미줄에 걸리면 0.6초 동안 처장 곁(약 60px)으로 끌려간다 */
+  private updatePull(dt: number): void {
+    const q = this.pull;
+    if (!q) return;
+    q.t += dt;
+    const k = Math.min(1, q.t / 0.6);
+    const e = 1 - (1 - k) * (1 - k);
+    const p = this.player;
+    p.x = q.fx + (q.tx - q.fx) * e;
+    p.y = q.fy + (q.ty - q.fy) * e;
+    p.sync();
+    if (k >= 1) this.pull = null;
   }
 
   private clearFloorGimmicks(): void {
-    for (const x of this.puddles) x.destroy();
     for (const x of this.penLines) x.destroy();
-    for (const x of this.coins) x.destroy();
-    this.puddles = [];
+    for (const w of this.webs) w.web.destroy();
+    for (const a of this.aides) a.destroy();
+    for (const x of this.signs) x.destroy();
     this.penLines = [];
-    this.coins = [];
-    this.darkness?.destroy();
-    this.darkness = null;
+    this.webs = [];
+    this.aides = [];
+    this.signs = [];
+    this.pull = null;
     this.storm = null;
   }
 
@@ -1957,12 +2107,16 @@ export class StageScene extends Phaser.Scene {
       this.onBossDefeated('마감 처리 완료!', `${this.run.names.deadline} 학생의 과제가 제출되었습니다`);
       return;
     }
-    if (e.kind === 'banryeoBoss') {
-      this.onBossDefeated('반려 철회!', '박반려 처장이 졸업 서류를 통과시켰습니다');
+    if (e.kind === 'jeonpilBoss') {
+      this.onBossDefeated('승인 완료!', '전필수 학과장이 졸업 사정을 통과시켰습니다');
       return;
     }
-    if (e.kind === 'bansaBoss') {
-      this.onBossDefeated('결재 완료!', '반사반사 부총장이 결재판에 서명했습니다');
+    if (e.kind === 'bujaeBoss') {
+      this.onBossDefeated('서명 완료!', '김부재중 교수가 서명했습니다');
+      return;
+    }
+    if (e.kind === 'hanhakgoBoss') {
+      this.onBossDefeated('승인 완료!', '한학고 학장이 성적 정정을 승인했습니다');
       return;
     }
     if (e.kind === 'presidentBoss') {
@@ -1971,7 +2125,6 @@ export class StageScene extends Phaser.Scene {
     }
     if (e.kind === 'chonghak') return;
     if (ORDINARY.has(e.kind) && !this.bossDefeated) this.randomDrop(e);
-    for (const s of this.sups) if (s.tryRecheck(e)) break;
   }
 
   onChonghakDone(): void {

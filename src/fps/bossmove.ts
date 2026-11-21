@@ -11,6 +11,8 @@ import type { DiffKey } from './settings';
 //   → 그 자리에서 솟아오른다. 숨은 동안은 맞힐 수 없다.
 // - 달려오기: 몸을 낮추고 "!"·먼지 (0.5~0.8초) → 그 순간 플레이어가 있던 쪽으로 곧게 달린다. 부딪히면 플레이어가
 //   밀려나고 느려진다 (보스는 다치지 않는다). 옆으로 비키면 피한다.
+// - 쿵쿵 달려오기 (11차, 김총괄): 1초 동안 발을 구르며 예고(쿵 소리·작은 화면 흔들림) → 더 빠르게 달려온다.
+//   달리는 동안 발소리와 화면 흔들림. 달려오기가 더 잦다. 부딪히면 피해는 같다 (RUSH_DMG).
 // 순서·간격은 무작위이고 난이도가 높을수록 자주·빠르게 (보스는 이미 diff.speed만큼 빨라진 시간을 받는다).
 // 보스 쪽은 roam()으로 지금 쓸 수 있는 움직임을 알려 준다: 기믹·대사 연출 중에는 'none', 결재판을 든 동안은 'step' 등.
 // 사라지기·달려오기 중에는 보스의 think()가 멈춘다 (기믹 타이머도 그동안 쉰다).
@@ -94,6 +96,11 @@ const PUSH_T = 0.22;
 const RUSH_DMG = 4;
 const RECOVER_T = 0.38;
 const DUST = 0x9a8f80;
+/** 쿵쿵 달려오기: 발 구르기 예고 (적 시간 초), 달리기 배율, 큰 움직임 간격 배율, 달려오기 몫 */
+const STOMP_PREP = 1.0;
+const STOMP_SPEED = 1.3;
+const STOMP_EVERY = 0.55;
+const STOMP_SHARE = 0.85;
 
 const rand = (a: number, b: number) => a + Math.random() * (b - a);
 
@@ -105,9 +112,11 @@ let shadowGeo: THREE.CircleGeometry | null = null;
 type Act = 'sink' | 'hide' | 'rise' | 'prep' | 'run' | 'recover';
 
 export class BossMove {
-  /** 이 보스가 쓰는 큰 움직임 (고유 기믹과 겹치면 끈다: 전화번호 학생은 원래 사라지고, 마감 학생·반사반사는 원래 달린다) */
+  /** 이 보스가 쓰는 큰 움직임 (고유 기믹과 겹치면 끈다: 전화번호 학생은 원래 사라지고, 마감 학생은 원래 달린다) */
   vanish = true;
   rush = true;
+  /** 쿵쿵 달려오기 (김총괄): 발 구르기 1초 예고 → 더 빠르게, 더 자주 */
+  stomp = false;
   /** 시험용 횟수 */
   readonly stats = { steps: 0, vanish: 0, rush: 0, rushHit: 0 };
   private readonly b: Mover;
@@ -207,9 +216,18 @@ export class BossMove {
         break;
       }
       case 'prep': {
-        // 몸을 낮추고 플레이어 쪽으로 겨눈다
-        const k = Math.min(1, this.actT / T.prep);
-        b.obj.scale.y = 1 - 0.16 * Math.sin(Math.min(1, k * 1.6) * Math.PI * 0.5);
+        // 몸을 낮추고 플레이어 쪽으로 겨눈다 (쿵쿵: 제자리에서 발을 구른다)
+        const k = Math.min(1, this.actT / (this.stomp ? STOMP_PREP : T.prep));
+        if (this.stomp) {
+          const n = Math.floor(this.actT / 0.25);
+          b.obj.scale.y = 1 - 0.1 * Math.abs(Math.sin(this.actT * Math.PI * 4));
+          if (n > this.steps) {
+            this.steps = n;
+            c.sound('boom', b.person.chest, 0.3);
+            c.quake(0.18, o);
+            c.fx.confetti(_v.set(o.x, this.baseY + 0.1, o.z), 6, 1.8, DUST, 0.6, 0.45);
+          }
+        } else b.obj.scale.y = 1 - 0.16 * Math.sin(Math.min(1, k * 1.6) * Math.PI * 0.5);
         b.roamFace(c.eye.x, c.eye.z, dt, 10);
         if (k >= 1) {
           this.dir.set(c.eye.x - o.x, 0, c.eye.z - o.z);
@@ -233,7 +251,16 @@ export class BossMove {
       case 'run': {
         b.stride();
         b.roamFace(o.x + this.dir.x, o.z + this.dir.z, dt, 12);
-        const want = T.rush * dt;
+        const want = T.rush * (this.stomp ? STOMP_SPEED : 1) * dt;
+        if (this.stomp) {
+          // 쿵쿵 발소리와 화면 흔들림
+          const n = Math.floor(this.actT / 0.18);
+          if (n > this.steps) {
+            this.steps = n;
+            c.sound('boom', b.person.chest, 0.25);
+            c.quake(0.22, o);
+          }
+        }
         const x0 = o.x;
         const z0 = o.z;
         o.x += this.dir.x * want;
@@ -395,14 +422,15 @@ export class BossMove {
     const canRush = this.rush && roam === 'all';
     const canVanish = this.vanish;
     let started = false;
-    const first = canRush && (!canVanish || Math.random() < T.rushShare) ? 'rush' : 'vanish';
+    const share = this.stomp ? STOMP_SHARE : T.rushShare;
+    const first = canRush && (!canVanish || Math.random() < share) ? 'rush' : 'vanish';
     for (const k of first === 'rush' ? ['rush', 'vanish'] : ['vanish', 'rush']) {
       if (k === 'rush' && canRush) started = this.startRush(c);
       else if (k === 'vanish' && canVanish) started = this.startVanish(c);
       if (started) break;
     }
     // 못 했으면 조금 뒤에 다시
-    this.bigT = started ? rand(T.every[0], T.every[1]) : 0.6;
+    this.bigT = started ? rand(T.every[0], T.every[1]) * (this.stomp ? STOMP_EVERY : 1) : 0.6;
   }
 
   private startRush(c: Ctx): boolean {

@@ -8,7 +8,7 @@ import * as fx from '../fx';
 
 // 모든 적의 공통 부분: 등장·피격·다운·기상·퇴장 상태와 판정, 이름표·말풍선.
 // 사물(메일·전화기 등)은 넘어지고, 학생은 넘어지지 않고 비틀거리다가 인사하고 돌아간다 (PRD 4절).
-// 학생 모드의 창구 직원·처장·부총장·총장도 넘어지지 않는다 — 맞는 것은 "설득"이고, 설득되면 퇴근하며 물러난다.
+// 학생 모드의 창구 직원·학과장·교수·학장·총장도 넘어지지 않는다 — 맞는 것은 "설득"이고, 설득되면 걸어 나간다 (퇴근은 창구 직원만).
 
 export type EnemyKind =
   | 'mail'
@@ -32,9 +32,11 @@ export type EnemyKind =
   | 'gukje'
   | 'hakjong'
   | 'janghak'
-  | 'banryeoBoss'
+  // 학생 모드 보스 (2026-11-21 11차): 전필수 학과장(수강편람 탑) · 김부재중 교수(반사) · 한학고 학장(성적표) · 총장
+  | 'jeonpilBoss'
   | 'docTower'
-  | 'bansaBoss'
+  | 'bujaeBoss'
+  | 'hanhakgoBoss'
   | 'presidentBoss';
 
 /** 보스 체력바에 보여 줄 정보 */
@@ -84,14 +86,11 @@ export abstract class Enemy extends Fighter {
   state = 'enter';
   hasToken = false;
   dead = false;
-  /** 오검토 처장의 재검토를 기다리는 중 (사라지지 않고 누워 있다) */
-  holdForRecheck = false;
   readonly uid = nextUid++;
   /** 학생 캐릭터: 넘어뜨리지 않는다 */
   readonly student: boolean = false;
   /** 가벼운 적: 넘어지지 않고 밀려나며, 체력이 다하면 바로 사라진다 */
   readonly light: boolean = false;
-  readonly canRecheck: boolean = true;
   /** 학생 모드의 사람(창구 직원·보스): 맞힌 자리에 "설득" 도장이 찍힌다 */
   readonly persuadable: boolean = false;
   /** 처리된 뒤에도 화면에 남아 구역 정리를 막지 않는다 (프레지던트 캉) */
@@ -237,7 +236,7 @@ export abstract class Enemy extends Fighter {
         if (this.x < camLeft - 70 || this.x > camLeft + GAME_W + 70) this.onLeft();
         break;
       case 'dying':
-        if (!this.holdForRecheck && this.stateT >= 0.8) this.destroy();
+        if (this.stateT >= 0.8) this.destroy();
         break;
       default:
         this.think(dt, player);
@@ -287,17 +286,6 @@ export abstract class Enemy extends Fighter {
     this.say(this.thanksText, 1.6);
     fx.floatText(this.scene, this.x, this.y - this.height - 30, this.scene.studentMode ? '설득 완료!' : '처리 완료', '#7CFC9A', 18);
     this.scene.onEnemyDefeated(this);
-  }
-
-  /** 오검토 처장의 재검토: 절반 체력으로 다시 일어난다 */
-  recheck(): void {
-    if (this.removed) return;
-    this.holdForRecheck = false;
-    this.dead = false;
-    this.hp = Math.max(1, Math.ceil(this.maxHp / 2));
-    this.set('getup');
-    this.invuln = 0.8;
-    fx.stampMark(this.scene, this.x, this.y - this.z - Math.min(this.height, 60) * 0.6, '재검토');
   }
 
   takeHit(h: HitInfo): boolean {

@@ -32,7 +32,7 @@
       "label": "교수학습개발원 앞",
       "art": "learningFront",
       "maxAlive": 3,
-      "waves": ["bansaBoss"],
+      "waves": ["bujaeBoss"],
       "adds": { "type": "mail", "every": 10, "max": 1 },
       "supervisors": []
     }

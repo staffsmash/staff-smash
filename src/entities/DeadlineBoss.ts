@@ -24,7 +24,6 @@ const MORE_LINES = ['출력만 하면 돼요!', '서명은 나중에 할게요!'
 export class DeadlineBoss extends Enemy implements BossLike {
   readonly kind = 'deadlineBoss' as const;
   readonly student = true;
-  readonly canRecheck = false;
   readonly usesToken = false;
   readonly halfW = 28;
   readonly height = 136;

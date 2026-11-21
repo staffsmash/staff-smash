@@ -1,35 +1,36 @@
 import * as THREE from 'three';
-import type { Rect } from '../blocks';
 import type { Ctx } from '../enemies';
+import type { Person } from '../people';
 import type { StudentKit } from './models';
 
-// 학생 모드 창구 직원·보스의 바닥·화면 기믹 (미리 만든 것을 돌려 쓴다).
-// - 빨간 첨삭 선 (이진취): 플레이어 양옆에 그어져 길을 막는다. 점프로 넘는다 (본편 2D PenLine과 같다).
-// - 소등 (박국제학사): 화면이 어두워지고 가운데(내 주변)만 보인다 (본편 2D Darkness와 같다).
-// - 국물 웅덩이 (김학생식당): 밟으면 미끄러진다 — 방향을 바꾸거나 멈추기 어렵다 (본편 2D Puddle·Player.slipT와 같다).
+// 학생 모드 창구 직원·보스의 바닥 기믹 (미리 만든 것을 돌려 쓴다).
+// - 빨간 첨삭 선 (나진취): 플레이어 양옆에 그어져 길을 막는다. 점프로 넘는다 (본편 2D PenLine과 같다).
 // - 여권 (김국제): 서류와 섞어 부채꼴로 날아온다. 피한다 (서류는 Game의 날아오는 종이라 서류로 맞혀 없앨 수 있다).
-// - 일거리 (허허실실 부총장): 삼각김밥처럼 생겼지만 서류 귀퉁이가 보인다. 주우면 잠깐 멈춘다 (본편 2D 'work').
+// - 책수레 (최도서관, 11차): 바닥을 굴러 플레이어 쪽으로 온다. 점프하거나 옆으로 비킨다.
+// - 총학 집행부 (권학생, 11차): 둘이 달려와 권학생 앞에 서서 면담 받는다. 길을 막고 던진 서류를 막는다.
+//   닿으면 밀려날 뿐 아프지 않다 (총학은 학생 편이다). 5초 뒤 돌아간다.
+// - 성적표 (한학고 학장, 11차): 플레이어 양옆에 둘. A+는 회복, F는 잠깐 멈춤 (예전 허허실실 부총장의 간식·일거리 자리).
+// 예전 기믹(소등·국물 쏟기)은 11차에 없앴다.
 
 const LINE_LEN = 16;
 const GROW = 0.35;
-/** 국물 웅덩이 반지름 (m), 한꺼번에 남는 수 */
-export const SOUP_R = 2.1;
-const SOUP_MAX = 3;
-/** 국물 위에서 원하는 쪽으로 붙는 빠르기 (2D SLIP_GRIP) */
-const SLIP_GRIP = 2.2;
 const PASS_N = 8;
 const PASS_HIT = 0.75;
-/** 일거리를 주우면 멈추는 시간 (2D startReport 1.6초) */
-const WORK_SEC = 1.6;
-
-interface Puddle {
-  mesh: THREE.Mesh;
-  on: boolean;
-  t: number;
-  life: number;
-  x: number;
-  z: number;
-}
+/** F 성적표를 주우면 멈추는 시간, A+ 성적표 회복량 (칸) */
+const GRADE_F_SEC = 1.6;
+const GRADE_A_HEAL = 2;
+const CART_N = 3;
+const CART_SPEED = 8.5;
+const CART_RANGE = 32;
+/** 책수레에 닿는 거리 (m), 이보다 높이 뛰면 넘는다 */
+const CART_HIT = 1.0;
+const CART_JUMP = 0.55;
+const AIDE_LIFE = 5;
+const AIDE_RUN = 7;
+/** 총학 집행부 몸 반지름 (밀어내기·서류 막기) */
+const AIDE_R = 0.75;
+/** ★ 면담 받는 동안 말풍선 */
+export const AIDE_LINE = '면담 중…';
 
 interface Passport {
   mesh: THREE.Mesh;
@@ -38,16 +39,41 @@ interface Passport {
   vel: THREE.Vector3;
 }
 
-interface Work {
+interface Grade {
   obj: THREE.Group;
   item: THREE.Object3D;
+  grade: 'A+' | 'F';
   t: number;
   ttl: number;
 }
 
-/** 여권·일거리가 플레이어에게 닿을 때 쓰는 것 (Game) */
+interface Cart {
+  obj: THREE.Group;
+  on: boolean;
+  t: number;
+  from: THREE.Vector3;
+  dir: THREE.Vector3;
+  hit: boolean;
+}
+
+interface Aide {
+  p: Person;
+  on: boolean;
+  t: number;
+  /** 'run' 달려오는 중 · 'stand' 면담 중 · 'leave' 돌아가는 중 */
+  st: 'run' | 'stand' | 'leave';
+  to: THREE.Vector3;
+  from: THREE.Vector3;
+  /** 권학생 자리 (그 사람 모형의 위치를 그대로 가리킨다 — 권학생이 움직이면 따라 선다) */
+  at: THREE.Vector3 | null;
+  side: number;
+}
+
+/** 여권·성적표·책수레·총학이 플레이어에게 닿을 때 쓰는 것 (Game) */
 export interface HazHost extends Ctx {
   readonly pos: THREE.Vector3;
+  hp: number;
+  shove?(dx: number, dz: number, slow: number): void;
 }
 
 interface PenLine {
@@ -70,39 +96,33 @@ export interface Walker {
   feet: number;
 }
 
+const _a = new THREE.Vector3();
+
 export class StudentHazards {
   readonly lines: PenLine[] = [];
-  readonly puddles: Puddle[] = [];
   readonly passports: Passport[] = [];
-  readonly works: Work[] = [];
-  private dark: HTMLDivElement;
-  private darkT = 0;
-  private darkLife = 0;
+  readonly grades: Grade[] = [];
+  readonly carts: Cart[] = [];
+  readonly aides: Aide[] = [];
   private lastX = NaN;
   private lastZ = NaN;
-  // 미끄러짐 (국물)
-  private slipT = 0;
-  private slipVX = 0;
-  private slipVZ = 0;
-  private prevX = NaN;
-  private prevZ = NaN;
   private readonly scene: THREE.Scene;
+  private readonly kit: StudentKit;
 
   constructor(scene: THREE.Scene, kit: StudentKit) {
     this.scene = scene;
-    const soupGeo = new THREE.CircleGeometry(SOUP_R, 28).rotateX(-Math.PI / 2);
-    for (let i = 0; i < SOUP_MAX; i++) {
-      const mesh = new THREE.Mesh(soupGeo, kit.soupMat.clone());
-      mesh.visible = false;
-      mesh.renderOrder = 1;
-      scene.add(mesh);
-      this.puddles.push({ mesh, on: false, t: 0, life: 0, x: 0, z: 0 });
-    }
+    this.kit = kit;
     for (let i = 0; i < PASS_N; i++) {
       const mesh = kit.passport();
       mesh.visible = false;
       scene.add(mesh);
       this.passports.push({ mesh, on: false, t: 0, vel: new THREE.Vector3() });
+    }
+    for (let i = 0; i < CART_N; i++) {
+      const obj = kit.bookCart();
+      obj.visible = false;
+      scene.add(obj);
+      this.carts.push({ obj, on: false, t: 0, from: new THREE.Vector3(), dir: new THREE.Vector3(), hit: false });
     }
     const geo = new THREE.PlaneGeometry(0.55, LINE_LEN).rotateX(-Math.PI / 2);
     for (let i = 0; i < 4; i++) {
@@ -125,14 +145,9 @@ export class StudentHazards {
       scene.add(mesh, label);
       this.lines.push({ mesh, label, on: false, t: 0, life: 0, cx: 0, cz: 0, ux: 0, uz: 1 });
     }
-    // 소등: 화면 가운데만 뚫린 어둠 (HUD보다 아래에 깐다)
-    this.dark = document.createElement('div');
-    this.dark.id = 'stuDark';
-    const app = document.getElementById('app');
-    app?.after(this.dark);
   }
 
-  /** 이진취: 플레이어 양옆(옆으로 3.4m)에 선을 긋는다. dir = 플레이어 → 이진취 (수평) */
+  /** 나진취: 플레이어 양옆(옆으로 3.4m)에 선을 긋는다. dir = 플레이어 → 나진취 (수평) */
   drawLines(px: number, pz: number, dx: number, dz: number, life: number): void {
     const d = Math.hypot(dx, dz) || 1;
     const ux = dx / d;
@@ -186,113 +201,6 @@ export class StudentHazards {
     return blocked;
   }
 
-  /** 박국제학사: 소등 (sec초) */
-  lightsOut(sec: number): void {
-    this.darkT = 0;
-    this.darkLife = sec;
-    this.dark.style.opacity = '0';
-    this.dark.classList.add('on');
-  }
-
-  get darkLeft(): number {
-    return this.darkLife > 0 ? Math.max(0, this.darkLife - this.darkT) : 0;
-  }
-
-  // ---------- 국물 (김학생식당) ----------
-
-  /** 국물을 쏟는다 (한꺼번에 셋까지: 가장 오래된 것을 다시 쓴다) */
-  spill(x: number, z: number, life: number): void {
-    let p = this.puddles.find((q) => !q.on);
-    if (!p) p = this.puddles.reduce((a, b) => (a.t > b.t ? a : b));
-    p.on = true;
-    p.t = 0;
-    p.life = life;
-    p.x = x;
-    p.z = z;
-    // 대운동장 인조 잔디·선(0.06~0.09m) 위로
-    p.mesh.position.set(x, 0.11, z);
-    p.mesh.rotation.y = Math.random() * Math.PI * 2;
-    p.mesh.scale.setScalar(0.2);
-    p.mesh.visible = true;
-    (p.mesh.material as THREE.MeshBasicMaterial).opacity = 1;
-  }
-
-  /** 국물 위에 서 있나 (점프 중이면 아니다) */
-  onSoup(x: number, z: number, feet: number): boolean {
-    if (feet > 0.3) return false;
-    for (const p of this.puddles) {
-      if (p.on && p.t < p.life && Math.hypot(x - p.x, z - p.z) < SOUP_R * Math.min(1, p.mesh.scale.x)) return true;
-    }
-    return false;
-  }
-
-  /**
-   * 국물 위에서는 미끄러진다: Game이 방금 옮긴 만큼을 "원하는 속도"로 보고, 실제 속도는 천천히만 따라간다.
-   * rects = 열린 구역, obstacles = 화단 등. 미끄러지는 중이면 true
-   */
-  slip(p: Walker, dt: number, rects: readonly Rect[], obstacles: readonly Rect[]): boolean {
-    if (this.onSoup(p.pos.x, p.pos.z, p.feet)) this.slipT = 0.15;
-    else if (this.slipT > 0) this.slipT -= dt;
-    if (Number.isNaN(this.prevX) || dt <= 0) {
-      this.prevX = p.pos.x;
-      this.prevZ = p.pos.z;
-      return false;
-    }
-    // 원하는 속도 (순간 이동은 무시)
-    let ix = (p.pos.x - this.prevX) / dt;
-    let iz = (p.pos.z - this.prevZ) / dt;
-    const sp = Math.hypot(ix, iz);
-    if (sp > 14) {
-      ix = 0;
-      iz = 0;
-    }
-    const sliding = this.slipT > 0;
-    if (sliding) {
-      const k = 1 - Math.exp(-SLIP_GRIP * dt);
-      this.slipVX += (ix - this.slipVX) * k;
-      this.slipVZ += (iz - this.slipVZ) * k;
-      let x = this.prevX + this.slipVX * dt;
-      let z = this.prevZ + this.slipVZ * dt;
-      // 열린 구역 가운데 가장 가까운 곳 안으로
-      let best = Infinity;
-      let bx = x;
-      let bz = z;
-      for (const r of rects) {
-        const cx = Math.max(r.minX, Math.min(r.maxX, x));
-        const cz = Math.max(r.minZ, Math.min(r.maxZ, z));
-        const d = (cx - x) ** 2 + (cz - z) ** 2;
-        if (d < best) {
-          best = d;
-          bx = cx;
-          bz = cz;
-        }
-      }
-      if (bx !== x) this.slipVX = 0;
-      if (bz !== z) this.slipVZ = 0;
-      x = bx;
-      z = bz;
-      for (const o of obstacles) {
-        const cx = Math.max(o.minX, Math.min(o.maxX, x));
-        const cz = Math.max(o.minZ, Math.min(o.maxZ, z));
-        const d = Math.hypot(x - cx, z - cz);
-        if (d < 0.45 && d > 0.0001) {
-          x = cx + ((x - cx) / d) * 0.45;
-          z = cz + ((z - cz) / d) * 0.45;
-          this.slipVX *= 0.3;
-          this.slipVZ *= 0.3;
-        }
-      }
-      p.pos.x = x;
-      p.pos.z = z;
-    } else {
-      this.slipVX = ix;
-      this.slipVZ = iz;
-    }
-    this.prevX = p.pos.x;
-    this.prevZ = p.pos.z;
-    return sliding;
-  }
-
   // ---------- 여권 (김국제) ----------
 
   throwPassport(from: THREE.Vector3, vel: THREE.Vector3): void {
@@ -306,35 +214,98 @@ export class StudentHazards {
     p.mesh.visible = true;
   }
 
-  // ---------- 일거리 (허허실실 부총장) ----------
+  // ---------- 책수레 (최도서관) ----------
 
-  /** obj = 바닥 물건 (Game의 음식 모형처럼 obj.children[0]이 떠 있는 물건) */
-  placeWork(obj: THREE.Group, x: number, z: number): void {
+  /** from에서 (tx, tz) 쪽으로 책수레를 민다 */
+  pushCart(from: THREE.Vector3, tx: number, tz: number): void {
+    const c = this.carts.find((q) => !q.on);
+    if (!c) return;
+    c.on = true;
+    c.t = 0;
+    c.hit = false;
+    c.from.set(from.x, 0, from.z);
+    c.dir.set(tx - from.x, 0, tz - from.z);
+    if (c.dir.lengthSq() < 1e-4) c.dir.set(0, 0, 1);
+    c.dir.normalize();
+    c.obj.position.copy(c.from);
+    c.obj.rotation.y = Math.atan2(c.dir.x, c.dir.z) + Math.PI / 2;
+    c.obj.visible = true;
+  }
+
+  // ---------- 총학 집행부 (권학생) ----------
+
+  /** 사람 모형 둘을 미리 받아 둔다 (student/people.ts) */
+  setAides(people: Person[]): void {
+    for (const p of people) {
+      p.root.visible = false;
+      this.aides.push({ p, on: false, t: 0, st: 'run', to: new THREE.Vector3(), from: new THREE.Vector3(), at: null, side: 1 });
+    }
+  }
+
+  /** 권학생(at — 모형 위치를 그대로 넘긴다) 앞, 플레이어(px, pz) 쪽에 둘이 선다. 옆에서 달려온다 */
+  callAides(at: THREE.Vector3, px: number, pz: number): void {
+    let dx = px - at.x;
+    let dz = pz - at.z;
+    const d = Math.hypot(dx, dz) || 1;
+    dx /= d;
+    dz /= d;
+    this.aides.forEach((a, i) => {
+      const side = i === 0 ? -1 : 1;
+      a.on = true;
+      a.t = 0;
+      a.st = 'run';
+      a.at = at;
+      a.side = side;
+      this.aideSpot(a, px, pz);
+      a.from.set(a.to.x - dz * side * 12, 0, a.to.z + dx * side * 12);
+      a.p.root.position.copy(a.from);
+      a.p.root.visible = true;
+      a.p.tag.hide();
+      this.scene.add(a.p.root);
+    });
+  }
+
+  /** 권학생에게서 플레이어 쪽으로 1.8m, 옆으로 0.5m씩 (어깨를 붙이고 서서 가운데로 서류가 빠지지 않는다) */
+  private aideSpot(a: Aide, px: number, pz: number): void {
+    const at = a.at;
+    if (!at) return;
+    let dx = px - at.x;
+    let dz = pz - at.z;
+    const d = Math.hypot(dx, dz) || 1;
+    dx /= d;
+    dz /= d;
+    a.to.set(at.x + dx * 1.8 - dz * a.side * 0.5, 0, at.z + dz * 1.8 + dx * a.side * 0.5);
+  }
+
+  get aidesOut(): boolean {
+    return this.aides.some((a) => a.on);
+  }
+
+  /** 서류가 p0 → p 로 날아가며 면담 중인 총학 집행부에 막혔는지 (그 사람 자리를 돌려준다) */
+  aideBlock(p: THREE.Vector3): THREE.Vector3 | null {
+    for (const a of this.aides) {
+      if (!a.on || a.st === 'leave') continue;
+      const o = a.p.root.position;
+      if (Math.hypot(p.x - o.x, p.z - o.z) < AIDE_R && p.y < 2.6 * a.p.look.scale * 0.9) return o;
+    }
+    return null;
+  }
+
+  // ---------- 성적표 (한학고 학장) ----------
+
+  placeGrade(grade: 'A+' | 'F', x: number, z: number): void {
+    const obj = this.kit.gradeSheet(grade);
     obj.position.set(x, 0.05, z);
     this.scene.add(obj);
-    this.works.push({ obj, item: obj.children[0], t: Math.random() * 6, ttl: 12 });
+    this.grades.push({ obj, item: obj.children[0], grade, t: Math.random() * 6, ttl: 11 });
   }
 
-  get worksOut(): number {
-    return this.works.length;
+  get gradesOut(): number {
+    return this.grades.length;
   }
 
-  /** 웅덩이·여권·일거리 (적 시간 dt). 플레이어에 닿으면 c.hurt / c.freeze */
+  /** 여권·책수레·총학·성적표 (적 시간 dt). 플레이어에 닿으면 c.hurt / c.freeze */
   updateThings(dt: number, c: HazHost): void {
-    for (const p of this.puddles) {
-      if (!p.on) continue;
-      p.t += dt;
-      const s = Math.min(1, 0.2 + (p.t / 0.26) * 0.8);
-      p.mesh.scale.setScalar(s < 1 ? s + Math.sin((p.t / 0.26) * Math.PI) * 0.08 : 1);
-      if (p.t >= p.life) {
-        const a = Math.max(0, 1 - (p.t - p.life) / 0.5);
-        (p.mesh.material as THREE.MeshBasicMaterial).opacity = a;
-        if (p.t >= p.life + 0.5) {
-          p.on = false;
-          p.mesh.visible = false;
-        }
-      }
-    }
     for (const p of this.passports) {
       if (!p.on) continue;
       p.t += dt;
@@ -351,53 +322,134 @@ export class StudentHazards {
         c.hurt(1, p.mesh.position, 'paper');
       }
     }
+    for (const k of this.carts) {
+      if (!k.on) continue;
+      k.t += dt;
+      const o = k.obj.position;
+      o.addScaledVector(k.dir, CART_SPEED * dt);
+      // 바퀴 굴러가는 덜컹거림
+      k.obj.position.y = Math.abs(Math.sin(k.t * 22)) * 0.03;
+      const a = c.area;
+      const out = o.x < a.minX || o.x > a.maxX || o.z < a.minZ || o.z > a.maxZ;
+      if (out || Math.hypot(o.x - k.from.x, o.z - k.from.z) > CART_RANGE) {
+        k.on = false;
+        k.obj.visible = false;
+        continue;
+      }
+      if (!k.hit && c.feet < CART_JUMP && Math.hypot(c.pos.x - o.x, c.pos.z - o.z) < CART_HIT) {
+        k.hit = true;
+        c.hurt(1, _a.set(o.x, 0.6, o.z), 'cart');
+        c.fx.confetti(_a.set(o.x, 0.8, o.z), 10, 2.5, 0x7a1f2b, 1.2, 0.5);
+      }
+    }
+    for (const a of this.aides) {
+      if (!a.on) continue;
+      a.t += dt;
+      const o = a.p.root.position;
+      let walking = false;
+      // 권학생이 움직이면 그 앞(플레이어 쪽)으로 따라 선다
+      if (a.st !== 'leave') this.aideSpot(a, c.pos.x, c.pos.z);
+      const to = a.st === 'leave' ? a.from : a.to;
+      const dx = to.x - o.x;
+      const dz = to.z - o.z;
+      const d = Math.hypot(dx, dz);
+      const step = AIDE_RUN * dt;
+      if (d <= step) {
+        o.set(to.x, 0, to.z);
+        if (a.st === 'leave') {
+          a.on = false;
+          a.p.root.visible = false;
+          a.p.root.removeFromParent();
+          continue;
+        }
+        if (a.st === 'run') {
+          a.st = 'stand';
+          a.t = 0;
+          a.p.say(AIDE_LINE, AIDE_LIFE, false);
+        }
+      } else {
+        o.x += (dx / d) * step;
+        o.z += (dz / d) * step;
+        walking = d > 0.15;
+      }
+      if (a.st === 'stand' && a.at) {
+        // 면담 중: 권학생을 본다
+        a.p.root.rotation.y = Math.atan2(a.at.x - o.x, a.at.z - o.z);
+        if (a.t >= AIDE_LIFE) {
+          a.st = 'leave';
+          a.t = 0;
+          a.p.tag.hide();
+        }
+      } else if (walking) a.p.root.rotation.y = Math.atan2(dx, dz);
+      a.p.update(dt, { walking, raise: 0, reach: a.st === 'stand' ? 0.4 : 0, wave: false });
+      // 닿으면 밀어낸다 (피해 없음)
+      if (a.st !== 'leave' && c.shove) {
+        const dx = c.pos.x - o.x;
+        const dz = c.pos.z - o.z;
+        const d = Math.hypot(dx, dz);
+        if (d < AIDE_R + 0.35 && d > 1e-3) {
+          const push = (AIDE_R + 0.35 - d) + 0.05;
+          c.shove((dx / d) * push, (dz / d) * push, 0);
+        }
+      }
+    }
     let n = 0;
-    for (const w of this.works) {
+    for (const w of this.grades) {
       w.t += dt;
       w.ttl -= dt;
-      w.item.position.y = 0.55 + Math.sin(w.t * 3) * 0.12;
+      w.item.position.y = 0.6 + Math.sin(w.t * 3) * 0.12;
       w.item.rotation.y += dt * 1.6;
       w.obj.visible = w.ttl > 3 || Math.floor(w.ttl * 8) % 2 === 0;
       const near = Math.hypot(c.pos.x - w.obj.position.x, c.pos.z - w.obj.position.z) < 1.3 && c.feet < 1;
-      // 이미 멈춰 있으면 줍지 않는다 (2D와 같다)
-      const took = near && c.freeze(WORK_SEC, '일거리였다… 검토 중');
-      if (took) c.fx.confetti(w.obj.position.clone().setY(0.8), 10, 2.5, 0xffffff, 1.5, 0.6);
+      let took = false;
+      if (near && w.grade === 'A+') {
+        took = true;
+        c.hp = Math.min(10, c.hp + GRADE_A_HEAL);
+        c.fx.text(_a.copy(w.obj.position).setY(1.6), 'A+ 성적표! 체력 회복', '#7CFC9A', 0.6);
+        c.sound('pickup', w.obj.position, 0.9);
+      } else if (near) {
+        // 이미 멈춰 있으면 줍지 않는다 (2D와 같다)
+        took = c.freeze(GRADE_F_SEC, 'F 학점… 정정 기간이 아닙니다');
+      }
+      if (took) c.fx.confetti(_a.copy(w.obj.position).setY(0.8), 10, 2.5, w.grade === 'F' ? 0xd0202f : 0x7cfc9a, 1.5, 0.6);
       if (took || w.ttl <= 0) {
         this.scene.remove(w.obj);
         continue;
       }
-      this.works[n++] = w;
+      this.grades[n++] = w;
     }
-    this.works.length = n;
+    this.grades.length = n;
   }
 
-  /** 창구 직원이 퇴근하면 남긴 기믹을 거둔다 */
+  /** 창구 직원·보스가 물러나면 남긴 기믹을 거둔다 */
   clear(): void {
     for (const l of this.lines) {
       l.on = false;
       l.mesh.visible = false;
       l.label.visible = false;
     }
-    for (const p of this.puddles) {
-      p.on = false;
-      p.mesh.visible = false;
-    }
     for (const p of this.passports) {
       p.on = false;
       p.mesh.visible = false;
     }
-    for (const w of this.works) this.scene.remove(w.obj);
-    this.works.length = 0;
-    this.slipT = 0;
-    this.prevX = NaN;
-    this.darkLife = 0;
-    this.dark.classList.remove('on');
-    this.dark.style.opacity = '0';
+    for (const k of this.carts) {
+      k.on = false;
+      k.obj.visible = false;
+    }
+    for (const a of this.aides) {
+      a.on = false;
+      a.at = null;
+      a.p.root.visible = false;
+      a.p.tag.hide();
+      a.p.root.removeFromParent();
+    }
+    for (const w of this.grades) this.scene.remove(w.obj);
+    this.grades.length = 0;
     this.lastX = NaN;
   }
 
-  /** 소등이 끝났으면 true (그 프레임에 한 번) */
-  update(dt: number): boolean {
+  /** 첨삭 선 (적 시간 dt) */
+  update(dt: number): void {
     for (const l of this.lines) {
       if (!l.on) continue;
       l.t += dt;
@@ -419,16 +471,5 @@ export class StudentHazards {
         l.label.material.opacity = k;
       }
     }
-    if (this.darkLife > 0) {
-      this.darkT += dt;
-      const a = Math.min(Math.min(1, this.darkT / 0.25), Math.max(0, (this.darkLife - this.darkT) / 0.4));
-      this.dark.style.opacity = a.toFixed(2);
-      if (this.darkT >= this.darkLife) {
-        this.darkLife = 0;
-        this.dark.classList.remove('on');
-        return true;
-      }
-    }
-    return false;
   }
 }

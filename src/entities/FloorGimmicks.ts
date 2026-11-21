@@ -1,70 +1,14 @@
 import Phaser from 'phaser';
-import { FLOOR_BOTTOM, FLOOR_TOP, FONT, GAME_H, GAME_W } from '../config';
+import { FLOOR_BOTTOM, FLOOR_TOP, FONT } from '../config';
 import type { Player } from './Player';
-import { createCoin } from './studentRigs';
 
-// 학생 모드 창구 중간보스가 남기는 바닥·화면 기믹. 판정과 수명은 각자 갖고, StageScene이 매 프레임 부른다.
-// - Puddle   김학생식당이 쏟은 국물: 밟으면 미끄러진다
-// - PenLine  이진취의 빨간 첨삭 선: 깊이 방향으로 길을 막는다 (점프하면 넘는다)
-// - Coin     최장학의 동전(미끼): 밟으면 잠깐 멈춘다. 잠시 뒤 최장학이 회수한다
-// - Darkness 박국제학사의 소등: 화면이 어두워지고 플레이어 주변만 보인다
+// 학생·교직원 모드 바닥 기믹. 판정과 수명은 각자 갖고, StageScene이 매 프레임 부른다.
+// - PenLine  나진취의 빨간 첨삭 선: 깊이 방향으로 길을 막는다 (점프하면 넘는다)
+// - Cobweb   최내놔 처장의 거미줄 (교직원 모드): 던져서 바닥에 4초 남는다. 밟으면 처장 곁으로 끌려간다 (피해 없음)
+// - SignLine 프레지던트 캉의 MOU 서명선: 바닥에 길게 그어진다. 1초 예고 뒤 금빛으로 빛나며 닿으면 아프다
+// (11차에 예전 창구 직원 기믹 — 소등·국물·동전 — 은 없앴다)
 
-/** 김학생식당이 쏟은 국물 */
-export class Puddle {
-  readonly x: number;
-  readonly y: number;
-  removed = false;
-  private t = 0;
-  private readonly life: number;
-  private readonly obj: Phaser.GameObjects.Container;
-  static readonly RX = 76;
-  static readonly RY = 22;
-
-  constructor(scene: Phaser.Scene, x: number, y: number, life: number) {
-    this.x = x;
-    this.y = y;
-    this.life = life;
-    const c = scene.add.container(x, y).setDepth(-4);
-    c.add(scene.add.ellipse(0, 0, Puddle.RX * 2, Puddle.RY * 2, 0xc9782e, 0.85));
-    c.add(scene.add.ellipse(4, 2, Puddle.RX * 1.5, Puddle.RY * 1.3, 0xd99545, 0.9));
-    c.add(scene.add.ellipse(-26, -7, 46, 8, 0xffe2b0, 0.65));
-    for (const [bx, by, col] of [
-      [-30, 4, 0x4caf50],
-      [18, -4, 0xf4f4f4],
-      [40, 6, 0x4caf50],
-      [-6, 9, 0xf4f4f4],
-    ] as const) {
-      c.add(scene.add.rectangle(bx, by, 7, 4, col));
-    }
-    c.setScale(0.2);
-    scene.tweens.add({ targets: c, scale: 1, duration: 260, ease: 'Back.Out' });
-    this.obj = c;
-  }
-
-  contains(px: number, py: number): boolean {
-    const dx = (px - this.x) / Puddle.RX;
-    const dy = (py - this.y) / Puddle.RY;
-    return dx * dx + dy * dy <= 1;
-  }
-
-  update(dt: number, player: Player): void {
-    this.t += dt;
-    if (this.t >= this.life) {
-      this.obj.alpha = Math.max(0, 1 - (this.t - this.life) / 0.5);
-      if (this.t >= this.life + 0.5) this.destroy();
-      return;
-    }
-    if (player.z < 6 && this.contains(player.x, player.y)) player.slipT = 0.15;
-  }
-
-  destroy(): void {
-    if (this.removed) return;
-    this.removed = true;
-    this.obj.destroy();
-  }
-}
-
-/** 이진취의 빨간 첨삭 선: 바닥을 앞뒤로 가로질러 길을 막는다. 점프하면 넘는다 */
+/** 나진취의 빨간 첨삭 선: 바닥을 앞뒤로 가로질러 길을 막는다. 점프하면 넘는다 */
 export class PenLine {
   readonly x: number;
   removed = false;
@@ -164,114 +108,163 @@ export class PenLine {
   }
 }
 
-/** 최장학이 뿌리는 동전 (미끼) */
-export class Coin {
-  x: number;
-  y: number;
+/** 최내놔 처장의 거미줄: 그림자 예고 → 바닥에 떨어져 4초 남는다. 밟으면 caught (StageScene이 처장 곁으로 끌어당긴다) */
+export class Cobweb {
+  readonly x: number;
+  readonly y: number;
   removed = false;
-  /** 땅에 떨어져 밟을 수 있다 */
-  landed = false;
-  private collecting = false;
-  private t = Math.random() * 6;
-  private readonly scene: Phaser.Scene;
-  private readonly obj: Phaser.GameObjects.Container;
+  private t = 0;
+  private readonly flight = 0.7;
+  private readonly life: number;
+  private readonly fromX: number;
+  private readonly fromY: number;
   private readonly shadow: Phaser.GameObjects.Ellipse;
+  private readonly web: Phaser.GameObjects.Graphics;
+  private readonly ball: Phaser.GameObjects.Graphics;
+  static readonly RX = 58;
+  static readonly RY = 19;
 
-  constructor(scene: Phaser.Scene, fromX: number, fromY: number, x: number, y: number) {
-    this.scene = scene;
+  constructor(scene: Phaser.Scene, fromX: number, fromY: number, x: number, y: number, life = 4) {
     this.x = x;
     this.y = y;
-    this.obj = createCoin(scene).setPosition(fromX, fromY - 80).setDepth(y);
-    this.shadow = scene.add.ellipse(x, y, 20, 6, 0x000000, 0.25).setDepth(-5);
-    const arc = { k: 0 };
-    scene.tweens.add({
-      targets: arc,
-      k: 1,
-      duration: 420 + Math.random() * 160,
-      ease: 'Sine.Out',
-      onUpdate: () => {
-        const k = arc.k;
-        this.obj.setPosition(fromX + (x - fromX) * k, fromY - 80 + (y - 12 - (fromY - 80)) * k - Math.sin(k * Math.PI) * 70);
-      },
-      onComplete: () => {
-        this.landed = true;
-      },
-    });
+    this.fromX = fromX;
+    this.fromY = fromY;
+    this.life = life;
+    this.shadow = scene.add.ellipse(x, y, Cobweb.RX * 2, Cobweb.RY * 2, 0x000000, 0.28).setDepth(-4).setScale(0.3);
+    this.web = scene.add.graphics().setDepth(-3).setVisible(false);
+    const g = this.web;
+    g.lineStyle(2, 0xf4f4f4, 0.9);
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      g.lineBetween(x, y, x + Math.cos(a) * Cobweb.RX, y + Math.sin(a) * Cobweb.RY);
+    }
+    for (const k of [0.35, 0.65, 0.95]) {
+      g.lineStyle(1.5, 0xe5e7eb, 0.85);
+      g.strokeEllipse(x, y, Cobweb.RX * 2 * k, Cobweb.RY * 2 * k);
+    }
+    // 날아가는 동안: 뭉친 거미줄 공
+    this.ball = scene.add.graphics();
+    this.ball.lineStyle(2, 0xf4f4f4, 1).strokeCircle(0, 0, 10).lineBetween(-10, 0, 10, 0).lineBetween(0, -10, 0, 10);
+    this.ball.setPosition(fromX, fromY);
   }
 
-  /** 플레이어가 밟았는지 */
-  touching(p: Player): boolean {
-    return this.landed && !this.collecting && Math.abs(p.x - this.x) < 26 && Math.abs(p.y - this.y) < 16 && p.z < 10;
+  /** 바닥에 떨어져 밟을 수 있다 */
+  get landed(): boolean {
+    return this.t >= this.flight && this.t < this.flight + this.life;
+  }
+
+  contains(px: number, py: number): boolean {
+    const dx = (px - this.x) / Cobweb.RX;
+    const dy = (py - this.y) / Cobweb.RY;
+    return dx * dx + dy * dy <= 1;
   }
 
   update(dt: number): void {
     this.t += dt;
-    if (this.landed && !this.collecting) {
-      this.obj.setPosition(this.x, this.y - 12 - Math.abs(Math.sin(this.t * 4)) * 4).setScale(Math.abs(Math.cos(this.t * 3)) * 0.7 + 0.3, 1);
+    if (this.t < this.flight) {
+      const k = this.t / this.flight;
+      this.ball.setPosition(this.fromX + (this.x - this.fromX) * k, this.fromY + (this.y - this.fromY) * k - Math.sin(k * Math.PI) * 110);
+      this.ball.rotation += dt * 9;
+      this.ball.setDepth(this.y + 1);
+      this.shadow.setScale(0.3 + 0.7 * k);
+      return;
     }
-  }
-
-  /** 최장학이 회수한다: 주인에게 날아가 사라진다 */
-  collectTo(x: number, y: number): void {
-    if (this.collecting || this.removed) return;
-    this.collecting = true;
-    this.shadow.setVisible(false);
-    this.scene.tweens.add({
-      targets: this.obj,
-      x,
-      y,
-      scale: 0.4,
-      duration: 380 + Math.random() * 200,
-      ease: 'Cubic.In',
-      onComplete: () => this.destroy(),
-    });
+    if (this.ball.visible) {
+      this.ball.setVisible(false);
+      this.web.setVisible(true);
+      this.shadow.setAlpha(0.12);
+    }
+    const left = this.flight + this.life - this.t;
+    if (left < 0.6) this.web.setAlpha(Math.max(0, left / 0.6));
+    if (left <= 0) this.destroy();
   }
 
   destroy(): void {
     if (this.removed) return;
     this.removed = true;
-    this.obj.destroy();
     this.shadow.destroy();
+    this.web.destroy();
+    this.ball.destroy();
   }
 }
 
-/** 박국제학사의 소등: 화면을 덮는 어둠 + 플레이어 주변의 빛. 2배 크기 텍스처에 구멍을 한 번 뚫고 플레이어를 따라 옮긴다 */
-export class Darkness {
+/** 프레지던트 캉의 MOU 서명선: (x1, y1) → (x2, y2) 바닥 선. warn초 예고(옅은 선) 뒤 glow초 동안 금빛으로 빛나며 닿으면 아프다 */
+export class SignLine {
   removed = false;
+  /** 이번 선에 이미 맞았다 */
+  hit = false;
   private t = 0;
-  private readonly life: number;
-  private readonly rt: Phaser.GameObjects.RenderTexture;
+  private readonly g: Phaser.GameObjects.Graphics;
+  private readonly pts: { x: number; y: number }[] = [];
 
-  constructor(scene: Phaser.Scene, life: number) {
-    this.life = life;
-    const w = GAME_W * 2;
-    const h = GAME_H * 2;
-    this.rt = scene.add.renderTexture(0, 0, w, h).setOrigin(0, 0).setScrollFactor(0).setDepth(1750).setAlpha(0);
-    this.rt.fill(0x04060c, 0.93);
-    const g = scene.make.graphics({}, false);
-    g.fillStyle(0xffffff, 0.5).fillCircle(w / 2, h / 2, 170);
-    g.fillStyle(0xffffff, 1).fillCircle(w / 2, h / 2, 128);
-    this.rt.erase(g, 0, 0);
-    g.destroy();
+  constructor(
+    scene: Phaser.Scene,
+    private readonly x1: number,
+    private readonly y1: number,
+    private readonly x2: number,
+    private readonly y2: number,
+    private readonly warn = 1.0,
+    private readonly glow = 0.7,
+  ) {
+    this.g = scene.add.graphics().setDepth(-3);
+    // 서명처럼 구불구불한 선 (점은 미리 정해 둔다)
+    const n = 24;
+    for (let i = 0; i <= n; i++) {
+      const k = i / n;
+      const wob = Math.sin(k * Math.PI * 7) * 6 + Math.sin(k * Math.PI * 3.2) * 4;
+      const len = Math.hypot(x2 - x1, y2 - y1) || 1;
+      const nx = -(y2 - y1) / len;
+      const ny = (x2 - x1) / len;
+      this.pts.push({ x: x1 + (x2 - x1) * k + nx * wob, y: y1 + (y2 - y1) * k + ny * wob * 0.4 });
+    }
+    this.draw(false, 0);
   }
 
-  get remaining(): number {
-    return Math.max(0, this.life - this.t);
+  /** 빛나는 중 (닿으면 아프다) */
+  get hot(): boolean {
+    return this.t >= this.warn && this.t < this.warn + this.glow;
   }
 
-  /** sx, sy = 빛의 가운데 (화면 좌표) */
-  update(dt: number, sx: number, sy: number): void {
+  private draw(hot: boolean, k: number): void {
+    const g = this.g;
+    g.clear();
+    if (hot) {
+      g.lineStyle(14, 0xf5c542, 0.35);
+      g.strokePoints(this.pts);
+      g.lineStyle(6, 0xffe066, 1);
+      g.strokePoints(this.pts);
+    } else {
+      g.lineStyle(3, 0xf5c542, 0.25 + 0.45 * (Math.floor(k * 8) % 2));
+      g.strokePoints(this.pts);
+    }
+  }
+
+  /** 플레이어가 선에 닿았는지 (깊이 차이는 2.5배로 본다, 점프 중이면 아니다) */
+  touches(p: Player): boolean {
+    if (!this.hot || this.hit || p.z > 20) return false;
+    const dx = this.x2 - this.x1;
+    const dy = (this.y2 - this.y1) * 2.5;
+    const px = p.x - this.x1;
+    const py = (p.y - this.y1) * 2.5;
+    const len2 = dx * dx + dy * dy || 1;
+    const k = Math.max(0, Math.min(1, (px * dx + py * dy) / len2));
+    return Math.hypot(px - dx * k, py - dy * k) < 26;
+  }
+
+  update(dt: number): void {
+    const was = this.hot;
     this.t += dt;
-    const fadeIn = Math.min(1, this.t / 0.25);
-    const fadeOut = Math.min(1, Math.max(0, (this.life - this.t) / 0.4));
-    this.rt.setAlpha(Math.min(fadeIn, fadeOut));
-    this.rt.setPosition(Math.round(sx - GAME_W), Math.round(sy - GAME_H));
-    if (this.t >= this.life) this.destroy();
+    if (this.t < this.warn) this.draw(false, this.t / this.warn);
+    else if (this.hot && !was) this.draw(true, 1);
+    else if (!this.hot) {
+      this.g.setAlpha(Math.max(0, 1 - (this.t - this.warn - this.glow) / 0.3));
+      if (this.t >= this.warn + this.glow + 0.3) this.destroy();
+    }
   }
 
   destroy(): void {
     if (this.removed) return;
     this.removed = true;
-    this.rt.destroy();
+    this.g.destroy();
   }
 }

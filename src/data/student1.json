@@ -32,7 +32,7 @@
       "label": "국제학사 앞",
       "art": "dormFront",
       "maxAlive": 2,
-      "waves": ["banryeoBoss"],
+      "waves": ["jeonpilBoss"],
       "adds": { "type": "mail", "every": 9, "max": 1 },
       "supervisors": []
     }

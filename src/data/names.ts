@@ -1,6 +1,9 @@
-// 민원 학생 이름(학과·언어 말장난)과 유형. 이름은 매 판 무작위로 유형에 붙는다 (PRD 4절).
+import { ALL_STUDENTS } from './students';
 
-export const STUDENT_NAMES = ['김러샤', '이엘LT', '박불어', '최터키', '심절먼', '김첵호', '신세크'];
+// 민원 학생 이름(학과·언어 말장난)과 유형. 이름은 매 판 무작위로 유형에 붙는다 (PRD 4절).
+// 2026-11-21 (11차): 외형·성별·나라말 인사는 이름을 따른다 (students.ts의 studentByName). 유형은 지금처럼 무작위.
+
+export const STUDENT_NAMES = ALL_STUDENTS.map((s) => s.name);
 
 export const STUDENT_TYPES = [
   'wrongNumber',

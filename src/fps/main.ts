@@ -4,14 +4,14 @@ import { armName, Arms, ARMS, BOOMERANG_TURN, type ArmDef, type ArmId } from './
 import { Sfx, type SfxName } from './audio';
 import type { Rect } from './blocks';
 import { addBoardButton, attachRecordForm } from './board';
-import { BODY_DMG, BOSS_HINTS, BOSS_NAMES, Bogo, Chonggwal, Meeting, PersonBoss, President, PRESIDENT_LINES, SERVER_SPOT, WEAK_DMG } from './bosses';
+import { BODY_DMG, BOSS_HINTS, BOSS_NAMES, Bogo, Chonggwal, Meeting, MEETING_LOOK, PersonBoss, President, PRESIDENT_LINES, SERVER_SPOT, WEAK_DMG } from './bosses';
 import { DORM_ENTER_Z, FIELD_GATE_X, GATE_Z0, GATE_Z1, HUM_DOOR, HUM_ENTER_X, PATH3_GUIDE, DORM_DOOR, type Stage } from './campus';
 import { Bomb, Bubble, Mail, Phone, type Ctx, type Enemy, type HurtKind, type Kind, type SheetKind } from './enemies';
 import { FIELD_ENTER_Z, FC } from './field';
 import { Fx } from './fx';
 import { Hazards, RING_H } from './hazards';
 import { Rescue } from './helpers';
-import { buildMidPeople, buildNewBossPeople, Gumto, MID_LINES, MID_TEXTS, Molla, ReviewPile, StaffMid, type MidKind, type MidPerson } from './mids';
+import { buildMidPeople, buildNewBossPeople, Hakgwa, MID_LINES, MID_TEXTS, Naenwa, StaffMid, type MidKind, type MidPerson } from './mids';
 import { Models, type FoodKind } from './models';
 import { badgeObj, ClingBubble, DodgeBubble, Fax, MobKit, NoteBadge } from './mobs';
 import { PileMob, Trap, type TrapHost } from './trapped';
@@ -47,8 +47,8 @@ import { Boo, type BooHost } from './boo';
 
 // Staff Smash: HUFS 1인칭 시험판 (v4).
 // 본관 앞에서 세 차례 몰려오는 민원(메일·전화기·말풍선·서류 뭉치)을 도장으로 처리하고,
-// 김총괄(본관 앞) → 김보고 처장(사회과학관 앞) → 오검토 처장(인문과학관 앞) → 최몰라 처장(국제학사 앞)
-// → 회의소집 부총장(대운동장) → 총장 프레지던트 캉(해 질 녘 본관 앞)의 결재를 받으면 퇴근.
+// 김총괄(본관 앞) → 김보고 처장(사회과학관 앞) → 박학과장(인문과학관 앞, 협조 서명) → 최내놔 처장(국제학사 앞)
+// → 회의회의부총장(대운동장) → 총장 프레지던트 캉(해 질 녘 본관 앞)의 결재를 받으면 퇴근.
 // 다섯 구역마다 보스 앞에 중간보스(민원 학생, mids.ts)가 먼저 나온다.
 // 잡몹은 사물이고, 사람(중간보스·보스)은 다치지 않고 들고 있는 서류·결재판에 도장을 받는다.
 // 본편(2D)과 따로 도는 시험용 페이지다. 프레지던트 캉을 제외한 인물은 모두 가상이다.
@@ -95,7 +95,7 @@ const RESCUE_HP = 0.3;
 const CLOSE_R = 4;
 const CLOSE_MUL = 2.5;
 /** 보스 공격 (잡몹이 아닌 것). 그 밖의 까닭은 맞은 물건이 보스 몸 가까이서 왔을 때만 */
-const BOSS_HURT: ReadonlySet<HurtKind> = new Set<HurtKind>(['wave', 'paper', 'rental', 'meeting', 'packet', 'bigstamp', 'error']);
+const BOSS_HURT: ReadonlySet<HurtKind> = new Set<HurtKind>(['wave', 'paper', 'rental', 'meeting', 'packet', 'bigstamp', 'error', 'sign', 'cap', 'cart']);
 const SP_MAX = 100;
 const JUMP_V = 5.4;
 const GRAVITY = 16;
@@ -181,6 +181,8 @@ const HURT_NOTE: Partial<Record<HurtKind, string>> = {
   wave: '회의 중… 회의록 작성 중',
   bigstamp: '보류! (느려짐)',
   error: '오류 창에 맞음… (느려짐)',
+  sign: 'MOU 서명선에 걸림… (느려짐)',
+  cap: '표창장에 맞음… (느려짐)',
   note: '메신저 알림 확인 중… (느려짐)',
   fax: '팩스 용지에 맞음… (느려짐)',
   boss: '부딪혀 밀려남… (느려짐)',
@@ -396,18 +398,16 @@ class Game implements Ctx {
   boss: PersonBoss | null = null;
   /** 보스 넷의 모형 (처음에 한 번 만든다) */
   people!: Record<Who, Person>;
-  /** 새 구역 보스 둘(오검토·최몰라 처장)의 모형 */
-  newPeople!: { gumto: Person; molla: Person };
+  /** 새 구역 보스 둘(박학과장·최내놔 처장)의 모형 */
+  newPeople!: { hakgwa: Person; naenwa: Person };
   /** 이번 판의 중간보스 다섯 (판마다 이름이 바뀐다) */
   mids: Record<MidKind, MidPerson> | null = null;
   /** 지금 구역의 싸움 차례: 민원 차례 → 중간보스 → (잠깐 쉬고) 보스 */
   fight: 'none' | 'wave' | 'mid' | 'between' | 'boss' = 'none';
   /** 중간보스가 물러난 뒤 보스가 나올 때까지 */
   nextBossT = -1;
-  /** 대운동장 단상에서 기다리는 회의소집 부총장 */
+  /** 대운동장 단상에서 기다리는 회의회의부총장 */
   waiting: Meeting | null = null;
-  /** 인문과학관 앞에서 처리된 민원 (오검토 처장이 되살린다) */
-  readonly pile = new ReviewPile();
   /** 마감 직전 학생이 늘린 초과근무 (분) */
   penaltyMin = 0;
   /** 지금 구역의 민원 차례들 */
@@ -582,7 +582,7 @@ class Game implements Ctx {
     this.people = {
       chonggwal: new Person('chonggwal', BOSS_NAMES.chonggwal, '#a7f3c0'),
       bogo: new Person('bogo', BOSS_NAMES.bogo, '#c9d3e6'),
-      meeting: new Person('meeting', BOSS_NAMES.meeting, '#d8c4ff'),
+      meeting: new Person('meeting', BOSS_NAMES.meeting, '#d8c4ff', MEETING_LOOK),
       president: new Person('president', BOSS_NAMES.president, '#ffe066'),
     };
     this.newPeople = buildNewBossPeople();
@@ -657,7 +657,7 @@ class Game implements Ctx {
       g.add(o);
     });
     // 보스 넷(+ 새 구역 보스 둘): 자세와 말풍선·도장 자국·메일 폭풍까지 한 번 그려 둔다
-    const ppl = [...Object.values(this.people), this.newPeople.gumto, this.newPeople.molla];
+    const ppl = [...Object.values(this.people), this.newPeople.hakgwa, this.newPeople.naenwa];
     ppl.forEach((pp, i) => {
       pp.root.position.set(-5 + i * 2, -1.6, -2);
       pp.say('…', 1, false);
@@ -1431,7 +1431,6 @@ class Game implements Ctx {
     this.fight = 'none';
     this.nextBossT = -1;
     this.waiting = null;
-    this.pile.clear();
     this.penaltyMin = 0;
     this.waves = AREA_WAVES[0];
     this.lowering = [];
@@ -1563,7 +1562,7 @@ class Game implements Ctx {
   /** 보스 막대와 이름 띠를 켠다 (새 구역 보스는 자기 공략 줄) */
   private announceBoss(b: PersonBoss): void {
     this.showBossBar(b.bossName);
-    this.banner(b.bossName, b instanceof Gumto || b instanceof Molla ? b.hintText : BOSS_HINTS[b.who]);
+    this.banner(b.bossName, b instanceof Hakgwa || b instanceof Naenwa ? b.hintText : BOSS_HINTS[b.who]);
     this.sound('volley');
   }
 
@@ -1603,8 +1602,8 @@ class Game implements Ctx {
         : a === 1
           ? new Bogo(this, this.people.bogo)
           : a === 2
-            ? new Gumto(this, this.newPeople.gumto, this.pile, this.world.obstacles, easy)
-            : new Molla(this, this.newPeople.molla, this.world.obstacles, easy);
+            ? new Hakgwa(this, this.newPeople.hakgwa, this.world.obstacles, easy)
+            : new Naenwa(this, this.newPeople.naenwa, this.world.obstacles, easy);
     this.placeBoss(b);
     this.announceBoss(b);
   }
@@ -1700,7 +1699,6 @@ class Game implements Ctx {
     this.stage = 'hum';
     this.bounds = [this.world.hum];
     this.world.arrows3.visible = false;
-    this.pile.clear();
     this.startWaves(2);
   }
 
@@ -1966,8 +1964,6 @@ class Game implements Ctx {
   }
 
   private onProcessed(e: Enemy): void {
-    // 인문과학관 앞에서 처리된 민원은 오검토 처장의 재검토 더미로
-    if (this.mode === 'staff' && areaOf(this.stage) === 2) this.pile.add(e);
     this.counts[e.kind]++;
     this.processed++;
     this.addSp(SP_GAIN[e.kind]);
@@ -2130,7 +2126,7 @@ class Game implements Ctx {
 
   // ---------- 단톡방 공지 캡처: 잡몹 멈춤 ----------
 
-  /** 살아 있는 잡몹을 모두 sec초 멈춘다 (사람 보스·창구 직원·박반려 처장의 서류 탑은 그대로). 멈춘 수 */
+  /** 살아 있는 잡몹을 모두 sec초 멈춘다 (사람 보스·창구 직원·전필수 학과장의 수강편람 탑은 그대로). 멈춘 수 */
   freezeMobs(sec: number): number {
     let n = 0;
     for (const e of this.enemies) {
@@ -2192,7 +2188,7 @@ class Game implements Ctx {
   // ---------- 인감 도장(출석 스티커): 잡몹 넘어뜨리기 ----------
 
   /**
-   * 기본 공격에 맞고 남은 잡몹을 넘어뜨린다. 사람(보스·창구 직원)·박반려 처장의 서류 탑·서류 뭉치(맞으면 터진다)는 빼고,
+   * 기본 공격에 맞고 남은 잡몹을 넘어뜨린다. 사람(보스·창구 직원)·전필수 학과장의 수강편람 탑·서류 뭉치(맞으면 터진다)는 빼고,
    * 아직 하늘에서 떨어지는 중인 전화기·결석 도장, 화면에 매달린 말풍선도 뺀다 (그림자 자리에 떨어져야 한다). 이미 넘어져 있으면 그대로.
    * from: 밀어내는 자리 (기본은 플레이어, 도장이 맞은 자리 둘레는 그 자리 — sealHit)
    */
@@ -2450,7 +2446,7 @@ class Game implements Ctx {
   /** 조력자 도착: 잡몹 모두 처리, 체력 +35%, 2초 무적, 사람 보스·창구 직원은 진행 +10% (5%는 남긴다) */
   private rescueHit(): void {
     for (const e of this.enemies) {
-      // 박반려 처장의 서류 탑은 보스 기믹이라 그대로 둔다
+      // 전필수 학과장의 수강편람 탑은 보스 기믹이라 그대로 둔다
       if (!e.targetable || isBoss(e) || e instanceof DocTower) continue;
       this.fx.mark(e.center, 1.3);
       if (e instanceof Bomb) {
@@ -2714,7 +2710,7 @@ class Game implements Ctx {
 
   /**
    * 도장(무기)이 맞았다. s: 던진 것 (무기 배율, 명중률은 한 번 던진 것을 한 번만 센다).
-   * 돌려주는 값: 반사반사 부총장이 되받아쳤으면 true (꿰뚫는 무기도 거기서 멈춘다)
+   * 돌려주는 값: 김부재중 교수가 되받아쳤거나 총학 집행부가 막았으면 true (꿰뚫는 무기도 거기서 멈춘다)
    */
   private stampHit(e: Enemy, at: THREE.Vector3, weak = false, s?: Stamp): boolean {
     if (!s || !s.scored) {
@@ -2727,7 +2723,7 @@ class Game implements Ctx {
       // 사람은 다치지 않는다: 결재판에 도장 자국과 반짝임만
       const before = e.hp;
       e.stamped(weak, this);
-      // 반사(학생 모드 반사반사 부총장)면 무거운 무기도 진행되지 않는다
+      // 반사(학생 모드 김부재중 교수)·총학 집행부 막기면 무거운 무기도 진행되지 않는다
       reflected = e.hp > before;
       this.sound(weak ? 'weak' : 'process', e.weakPoint, weak ? 1 : 0.5);
       if (weak) {
@@ -3380,12 +3376,12 @@ class Game implements Ctx {
     if (this.side) this.side.syncUi(this.phase === 'play');
     if (this.boo) this.boo.syncUi(this.phase === 'play');
     if (this.dating) this.dating.syncUi(this.phase === 'play');
-    // 보스 막대 = 결재 진행 (0% → 100%)
+    // 보스 막대 = 결재 진행 (0% → 100%, 박학과장은 협조 서명)
     const boss = this.boss;
     if (boss) {
       const pr = Math.round(boss.progress * 100);
       this.setStyle('bossbar', 'width', `${pr}%`);
-      this.setText('bossprog', `${student ? this.stu.barWord() : boss instanceof StaffMid ? '처리' : '결재 진행'} ${pr}%`);
+      this.setText('bossprog', `${student ? this.stu.barWord() : boss instanceof StaffMid ? '처리' : boss instanceof Hakgwa ? '협조 서명' : '결재 진행'} ${pr}%`);
     }
     this.setClass('bossbox', 'weak', !!boss && boss.open);
     if (this.bannerTimer > 0) {
@@ -3463,5 +3459,5 @@ function clockText(min: number): string {
 
 const game = new Game();
 void game.init();
-if (DEBUG) Object.assign(window as object, { __fps: game, __fpsLib: { Mail, Phone, Bubble, Bomb, PersonBoss, Chonggwal, Bogo, Meeting, President, StaffMid, Gumto, Molla, THREE, FC } });
+if (DEBUG) Object.assign(window as object, { __fps: game, __fpsLib: { Mail, Phone, Bubble, Bomb, PersonBoss, Chonggwal, Bogo, Meeting, President, StaffMid, Hakgwa, Naenwa, THREE, FC } });
 if (DEBUG) Object.assign((window as unknown as { __fpsLib: object }).__fpsLib, { ClingBubble, DodgeBubble, NoteBadge, Fax, DueBadge, AttendQR });

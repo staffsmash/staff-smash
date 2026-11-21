@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { SPELLS } from '../../data/spells';
 import { lambert } from '../blocks';
+import { FONT } from '../../config';
 import { canvasTex, docTex, labelTex } from '../textures';
 import {
   absenceBottomTex,
@@ -10,15 +11,52 @@ import {
   paperDecalTex,
   passportTex,
   penLineTex,
-  soupTex,
   rejectDocTex,
   signTex,
   ticketTex,
-  towerTex,
 } from './textures';
 
 // 학생 모드 물건 모형: 서류 비행기(던지는 것), 잡몹 넷(반려 서류·결석 도장·휴강 공지 봇·대기번호표),
-// 박반려 처장의 서류 탑, 총장실 꾸밈. 모양과 재질은 처음에 한 번 만들어 함께 쓴다.
+// 전필수 학과장의 수강편람 탑, 최도서관의 책수레, 한학고 학장의 성적표, 총장실 꾸밈. 모양과 재질은 처음에 한 번 만들어 함께 쓴다.
+
+/** 수강편람 책등 (탑 옆면): 청록·남색·자주 표지가 번갈아 쌓이고 "수강편람" 글씨 */
+function catalogTex(): THREE.CanvasTexture {
+  const t = canvasTex(128, 256, (g) => {
+    const covers = ['#13707a', '#1f3a6b', '#7a1f2b'];
+    for (let i = 0; i < 8; i++) {
+      g.fillStyle = covers[i % 3];
+      g.fillRect(0, i * 32, 128, 32);
+      g.fillStyle = '#f4f0e0';
+      g.fillRect(0, i * 32 + 29, 128, 3);
+      g.fillStyle = '#ffffff';
+      g.font = `bold 15px ${FONT}`;
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.fillText('수강편람', 64, i * 32 + 15);
+    }
+  });
+  return t;
+}
+
+/** 성적표 한 장 (A+ 초록 / F 빨강) */
+function gradeTex(grade: 'A+' | 'F'): THREE.CanvasTexture {
+  return canvasTex(128, 160, (g) => {
+    g.fillStyle = '#ffffff';
+    g.fillRect(0, 0, 128, 160);
+    g.fillStyle = '#002c52';
+    g.fillRect(0, 0, 128, 26);
+    g.fillStyle = '#ffffff';
+    g.font = `bold 15px ${FONT}`;
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText('성적표', 64, 13);
+    g.fillStyle = '#c9ced4';
+    for (let i = 0; i < 4; i++) g.fillRect(14, 40 + i * 14, 50, 5);
+    g.fillStyle = grade === 'F' ? '#d0202f' : '#1d7a3a';
+    g.font = `bold ${grade === 'F' ? 72 : 56}px ${FONT}`;
+    g.fillText(grade, 70, 114);
+  });
+}
 
 const hexStr = (n: number) => `#${n.toString(16).padStart(6, '0')}`;
 
@@ -51,9 +89,12 @@ export class StudentKit {
   private ticketFaces = new Map<string, THREE.MeshLambertMaterial>();
   private legGeo = new THREE.BoxGeometry(0.1, 0.3, 0.1);
   private armGeo = new THREE.BoxGeometry(0.08, 0.24, 0.08);
-  // 서류 탑
+  // 수강편람 탑
   private towerMat: THREE.MeshLambertMaterial;
-  private towerTop = lambert(0xfbf8f0);
+  private towerTop = lambert(0xf4f0e0);
+  // 성적표 (A+ · F)
+  private gradeGeo = new THREE.BoxGeometry(0.62, 0.8, 0.03);
+  private gradeMats: Record<'A+' | 'F', THREE.Material[]>;
   // 첨삭 선
   readonly penTex: THREE.Texture;
   readonly penLabel: THREE.SpriteMaterial;
@@ -65,12 +106,9 @@ export class StudentKit {
   readonly paperDecal: THREE.Texture;
   readonly rejectSheet: THREE.Texture;
   readonly approvalSheet: THREE.Texture;
-  // 국물 웅덩이 (김학생식당) · 여권 (김국제)
-  readonly soupMat: THREE.MeshBasicMaterial;
+  // 여권 (김국제)
   private passGeo = new THREE.BoxGeometry(0.34, 0.46, 0.05);
   private passMats: THREE.Material[];
-  private cornerGeo = new THREE.BoxGeometry(0.34, 0.42, 0.02);
-  private cornerMat = lambert(0xffffff);
 
   constructor() {
     // 서류 비행기: 앞(-z)이 뾰족한 날개 두 장 + 아래 용골
@@ -92,9 +130,16 @@ export class StudentKit {
     this.padMats = [red, red, red, new THREE.MeshLambertMaterial({ map: bottom }), red, red];
     this.bodyMats = [wood, wood, wood, wood, new THREE.MeshLambertMaterial({ map: front }), wood];
     this.botTex = cancelBotTex();
-    const tower = towerTex();
+    const tower = catalogTex();
     tower.wrapS = THREE.RepeatWrapping;
     this.towerMat = new THREE.MeshLambertMaterial({ map: tower });
+    const ga = gradeTex('A+');
+    const gf = gradeTex('F');
+    const edge0 = lambert(0xe5e7eb);
+    const fa = new THREE.MeshLambertMaterial({ map: ga });
+    const ff = new THREE.MeshLambertMaterial({ map: gf });
+    this.gradeMats = { 'A+': [edge0, edge0, edge0, edge0, fa, fa], F: [edge0, edge0, edge0, edge0, ff, ff] };
+    this.textures.push(ga, gf);
     this.penTex = penLineTex();
     const pl = labelTex('첨삭', '#ffffff', 'rgba(208,32,47,0.92)', '');
     this.penLabel = new THREE.SpriteMaterial({ map: pl, transparent: true, depthWrite: false });
@@ -107,20 +152,11 @@ export class StudentKit {
     this.approvalSheet = docTex('결재 서류', '#22304f');
     this.textures.push(face, bottom, front, this.botTex, tower, this.penTex, pl, this.passMark, this.persuadeMark, this.reflectMark, this.paperDecal);
     this.textures.push(...this.spellMarks.values(), this.rejectSheet, this.approvalSheet);
-    const soup = soupTex();
-    this.soupMat = new THREE.MeshBasicMaterial({
-      map: soup,
-      transparent: true,
-      depthWrite: false,
-      polygonOffset: true,
-      polygonOffsetFactor: -5,
-      polygonOffsetUnits: -10,
-    });
     const pass = passportTex();
     const cover = new THREE.MeshLambertMaterial({ map: pass });
     const edge = lambert(0x16294d);
     this.passMats = [edge, edge, lambert(0xf3ecdd), edge, cover, cover];
-    this.textures.push(soup, pass);
+    this.textures.push(pass);
   }
 
   /** 김국제가 던지는 여권 한 권 */
@@ -130,12 +166,37 @@ export class StudentKit {
     return m;
   }
 
-  /** 허허실실 부총장의 "일거리": 삼각김밥 위로 삐져나온 서류 귀퉁이 (2D createFoodIcon('work')) */
-  workCorner(): THREE.Mesh {
-    const m = new THREE.Mesh(this.cornerGeo, this.cornerMat);
-    m.position.set(0.16, 0.14, -0.06);
-    m.rotation.set(0, 0.2, 0.4);
-    return m;
+  /** 한학고 학장의 성적표 한 장 (바닥에 떠서 돈다 — obj.children[0]이 떠 있는 물건) */
+  gradeSheet(grade: 'A+' | 'F'): THREE.Group {
+    const obj = new THREE.Group();
+    const item = new THREE.Group();
+    const m = new THREE.Mesh(this.gradeGeo, this.gradeMats[grade]);
+    m.castShadow = true;
+    item.add(m);
+    item.position.y = 0.6;
+    obj.add(item);
+    return obj;
+  }
+
+  /** 최도서관의 책수레 (바퀴 넷, 선반 둘에 꽂힌 책). 앞 = +z */
+  bookCart(): THREE.Group {
+    const g = new THREE.Group();
+    const metal = lambert(0x6b7280);
+    const dark = lambert(0x374151);
+    const box = (w: number, h: number, d: number, x: number, y: number, z: number, mat: THREE.Material) => {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+      m.position.set(x, y, z);
+      m.castShadow = true;
+      g.add(m);
+    };
+    box(1.3, 0.06, 0.7, 0, 0.22, 0, metal);
+    box(1.3, 0.06, 0.7, 0, 0.62, 0, metal);
+    for (const x of [-0.62, 0.62]) for (const z of [-0.32, 0.32]) box(0.05, 0.6, 0.05, x, 0.48, z, dark);
+    for (const x of [-0.55, 0.55]) for (const z of [-0.3, 0.3]) box(0.12, 0.12, 0.12, x, 0.07, z, lambert(0x1d1d22));
+    const spines = [0x7a1f2b, 0x13707a, 0xd9b44a, 0x1f3a6b, 0xc8202f, 0x2f6b5a];
+    for (let i = 0; i < 10; i++) box(0.1, 0.3, 0.5, -0.52 + i * 0.115, 0.4, 0, lambert(spines[i % spines.length]));
+    for (let i = 0; i < 8; i++) box(0.1, 0.26, 0.5, -0.42 + i * 0.12, 0.78, 0, lambert(spines[(i + 2) % spines.length]));
+    return g;
   }
 
   /** 던지는 서류 비행기 (앞 = -z) */
@@ -246,7 +307,7 @@ export class StudentKit {
     for (const n of nos) this.ticketFace(n);
   }
 
-  /** 박반려 처장의 서류 탑 (층층이 조금씩 어긋난 종이 묶음 셋) */
+  /** 전필수 학과장의 수강편람 탑 (층층이 조금씩 어긋난 책 묶음 셋) */
   docTower(): THREE.Group {
     const g = new THREE.Group();
     const t = this.towerTop;
