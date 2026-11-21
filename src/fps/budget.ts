@@ -8,7 +8,7 @@ import { prepareSpeech } from './speech';
 import { canvasTex, FONT } from './textures';
 
 // 1인칭 교직원 모드: 예산팀 직원 기절 이벤트 (2026-11-17).
-// - 이름 없는 가상 인물. 머리 위 이름표는 "예산팀 직원"만. 흰 셔츠·팔토시·안경, 왼손에 계산기.
+// - 가상 인물. 머리 위 이름표는 "예산팀 낙선생" (2026-11-21 사용자 지정, 예전 "예산팀 직원"). 흰 셔츠·팔토시·안경, 왼손에 계산기.
 //   11차(2026-11-21): 여성 — 흰 블라우스·자주 리본·짙은 치마, 묶은 머리.
 // - 교직원 모드에서만, 구역마다 민원 차례(웨이브) 중 한 번: 본관 앞은 2차 민원, 인문과학관 앞·국제학사 앞은 1차 민원이
 //   시작되고 몇 초 뒤. 사회과학관 앞·대운동장·해 질 녘 본관 앞은 민원 차례 없이 중간보스·보스부터라 나오지 않는다.
@@ -38,7 +38,7 @@ export interface BudgetGame {
   freeze(sec: number, text: string, exact?: boolean): boolean;
 }
 
-const NAME = '예산팀 직원';
+const NAME = '예산팀 낙선생';
 const LINE = '돈 좀 아껴쓰세요';
 const STUN_TEXT = '예산 절감 중… (멈춤)';
 /** 기절 시간 (초). 난이도별로 그대로 쓴다 */
@@ -193,7 +193,7 @@ export class Budget {
           this.beepT = 0;
           this.showWarn(true);
           // 처음 한 번 안내
-          h.hint('budget', h.touch ? '예산팀 직원의 파동은 파란 버튼으로 뛰어넘으세요!' : '예산팀 직원의 파동은 Space로 뛰어넘으세요!', 3.4);
+          h.hint('budget', h.touch ? '예산팀 낙선생의 파동은 파란 버튼으로 뛰어넘으세요!' : '예산팀 낙선생의 파동은 Space로 뛰어넘으세요!', 3.4);
         }
         break;
       case 'warn': {
