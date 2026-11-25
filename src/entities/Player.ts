@@ -52,9 +52,10 @@ export const JUMP_ATTACK: AttackDef = {
   knockdown: true,
 };
 
-const WALK = 250;
-const RUN = 430;
-const DEPTH_SPEED = 165;
+// 이동 속도 (px/s). 2026-11-25 사용자 요청으로 예전 값(걷기 250·달리기 430·깊이 165)의 0.85배로 느리게 했다 (교직원·학생 공통)
+const WALK = 213;
+const RUN = 366;
+const DEPTH_SPEED = 140;
 const JUMP_V = 640;
 /** 메일에 맞으면 잠깐 느려진다 */
 const SLOW_MUL = 0.55;

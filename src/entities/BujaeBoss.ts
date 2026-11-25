@@ -222,7 +222,7 @@ export class BujaeBoss extends Enemy implements BossLike {
       this.blocks++;
       if (this.scene.time.now - this.blockSaid > 1600) {
         this.blockSaid = this.scene.time.now;
-        this.sayMix(this.blocks < 4 ? '결재판 보이시죠?' : '정면은 안 됩니다~', MORE_BLOCK, 1.0);
+        this.sayMix(this.blocks < 4 ? '결재판 보이시죠?' : '정면은 통하지 않습니다 후후', MORE_BLOCK, 1.0);
         fx.floatText(this.scene, this.x, this.y - this.height * this.baseScale - 24, '막힘! 등 뒤로 돌거나 던져 보세요', '#cfd6e3', 14);
       }
       return false;
