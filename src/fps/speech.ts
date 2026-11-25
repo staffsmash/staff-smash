@@ -162,6 +162,10 @@ export class HeadTag {
   readonly color: string;
   private parentScale: number;
   private t = 0;
+  /** 이름표 아래(머리 바로 위)에 끼우는 그림 — 돌발 방문 결재판 (visit.ts). 이름표·말풍선은 그 위로 올라간다 */
+  private extra: THREE.Sprite | null = null;
+  /** extra 높이 = 말풍선 높이 × 이 값 */
+  private extraK = 1;
 
   /**
    * @param name 이름표 글자이자 자막 이름 ('' 이면 이름표 없음)
@@ -199,6 +203,23 @@ export class HeadTag {
     if (subtitle) showSubtitle(this.name, text, sec, this.color, this);
   }
 
+  /**
+   * 머리 바로 위에 그림 하나를 끼운다 (화면에서 늘 같은 크기, 높이 = 말풍선 높이 × k).
+   * 이름표와 말풍선은 그 위로 쌓인다. 그림 재질은 sizeAttenuation을 끄고, 텍스처 userData.aspect(가로/세로)를 준다
+   */
+  setExtra(s: THREE.Sprite | null, k = 1): void {
+    if (this.extra) this.group.remove(this.extra);
+    this.extra = s;
+    this.extraK = k;
+    if (s) {
+      s.center.set(0.5, 0);
+      s.renderOrder = 8;
+      s.frustumCulled = false;
+      this.group.add(s);
+    }
+    this.fit();
+  }
+
   /** 말풍선을 내린다 (이 사람의 자막도) */
   hide(): void {
     this.bubble.visible = false;
@@ -217,16 +238,25 @@ export class HeadTag {
   /** 화면 px 크기를 월드 배율로 (sizeAttenuation을 끈 스프라이트는 배율 = 화면 높이 비율 × 2tan(fov/2)) */
   private fit(): void {
     const k = tan2 / viewH / this.parentScale;
+    // 머리 위에 끼운 그림 (돌발 방문 결재판): 이름표·말풍선을 그만큼 위로
+    let lift = 0;
+    const ex = this.extra;
+    if (ex && ex.visible) {
+      const px = Math.round(bubblePx * this.extraK);
+      ex.scale.set(px * k * aspectOf(ex.material), px * k, 1);
+      lift = px + GAP_PX;
+    }
     if (this.label) {
       const a = aspectOf(this.label.material);
       this.label.scale.set(tagPx * k * a, tagPx * k, 1);
+      this.label.center.set(0.5, -lift / tagPx);
     }
     const talking = this.bubble.visible;
     if (this.label) this.label.visible = stack || !talking;
     if (talking) {
       const a = aspectOf(this.bubble.material);
       this.bubble.scale.set(bubblePx * k * a, bubblePx * k, 1);
-      this.bubble.center.set(0.5, this.label && stack ? -(tagPx + GAP_PX) / bubblePx : 0);
+      this.bubble.center.set(0.5, -((this.label && stack ? tagPx + GAP_PX : 0) + lift) / bubblePx);
     }
   }
 }

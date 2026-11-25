@@ -17,6 +17,7 @@ import { Models, type FoodKind } from './models';
 import { badgeObj, ClingBubble, DodgeBubble, Fax, MobKit, NoteBadge } from './mobs';
 import { PileMob, Trap, type TrapHost } from './trapped';
 import { SideJob, type SideHost } from './sidejob';
+import { Visit, VisitPerson, type VisitHost } from './visit';
 import { SEAL_R, SealRolls } from './seal';
 import { AttendQR, DueBadge, stuMobTextures } from './student/mobs';
 import { Person, peopleKit, type Who } from './people';
@@ -58,6 +59,7 @@ import { playDream } from './dream';
 // 조력자 이벤트(helpers.ts), 식권·보조배터리.
 // 연차 쿠폰(학생: 공결 확인서 — 다음 한 번 막기)·셔틀버스 시간표(10초 빨리 걷기)·단톡방 공지 캡처(잡몹 2.5초 멈춤).
 // 2026-11-15: 인감 도장(학생: 출석 스티커 — 8초 동안 기본 공격에 맞은 잡몹이 넘어진다), 조력자 규칙(30% 이하 반드시, 한 방이면 먼저).
+// 2026-11-25: 교직원별 돌발 방문 이벤트와 보상 6종 (visit.ts — 한 판에 한 번, 2~5구역 민원 차례 중. 보상은 F 칸 맨 앞).
 
 const params = new URLSearchParams(location.search);
 const DEBUG = params.has('debug');
@@ -188,6 +190,13 @@ const HURT_NOTE: Partial<Record<HurtKind, string>> = {
   note: '메신저 알림 확인 중… (느려짐)',
   fax: '팩스 용지에 맞음… (느려짐)',
   boss: '부딪혀 밀려남… (느려짐)',
+  // 돌발 방문 상대의 공격 (visit.ts)
+  punch: '로켓 펀치에 맞음… (느려짐)',
+  cursor: '마우스 커서에 맞음… (느려짐)',
+  resume: '자소서 더미에 맞음… (느려짐)',
+  luggage: '이삿짐에 부딪힘… (느려짐)',
+  inspect: '지적 사항 적발… (느려짐)',
+  book: '책에 맞음… (느려짐)',
 };
 
 type Phase = 'title' | 'play' | 'paused' | 'clear' | 'over';
@@ -491,6 +500,8 @@ class Game implements Ctx {
   trap!: Trap;
   /** 교직원 3~5구역: 미화·조리사 선생님 돕기 이벤트와 받은 아이템 F·R (sidejob.ts) */
   side!: SideJob;
+  /** 교직원 2~5구역 중 한 곳: 교직원별 돌발 방문 이벤트와 보상 (visit.ts) */
+  visit!: Visit;
   /** 두 모드: Boo 호출 벨 — 2구역부터 잡몹이 드물게 떨어뜨리고, G로 Boo를 불러 안전한 곳으로 옮겨진다 (boo.ts) */
   boo!: Boo;
   private seen = new Set<string>();
@@ -604,6 +615,7 @@ class Game implements Ctx {
     this.dating = new Dating(this.datingHost());
     this.trap = new Trap(this.trapHost());
     this.side = new SideJob(this.sideHost());
+    this.visit = new Visit(this.visitHost());
     this.boo = new Boo(this.booHost());
     this.bounds = [this.world.yard];
     this.world.setDusk(0);
@@ -676,7 +688,7 @@ class Game implements Ctx {
     const unwarmProps = this.props.warm(g);
     const unwarmRescue = this.rescue.warm(g);
     const unwarmMore = [this.budget.warm(g), this.vend.warm(g), this.dating.warm(g)];
-    unwarmMore.push(this.side.warm(g), this.boo.warm(g));
+    unwarmMore.push(this.side.warm(g), this.visit.warm(g), this.boo.warm(g));
     this.scene.add(g);
     const p = _v.set(0, 1.6, 6);
     this.fx.confetti(p, 4, 1);
@@ -727,6 +739,7 @@ class Game implements Ctx {
     for (const t of this.hz.textures) this.renderer.initTexture(t);
     for (const t of this.stu.textures) this.renderer.initTexture(t);
     for (const t of [...this.mobs.textures, ...stuMobTextures()]) this.renderer.initTexture(t);
+    for (const t of this.visit.warmTextures) this.renderer.initTexture(t);
     this.renderer.render(this.scene, this.camera);
     unwarm();
     unwarmProps();
@@ -847,6 +860,7 @@ class Game implements Ctx {
         !g.rescue.busy &&
         g.freezeT <= 0 &&
         !g.rescueHeld() &&
+        g.visit.state === 'idle' &&
         (g.mode === 'student' || g.budget.shown.includes(areaOf(g.stage)) || g.queue.length === 0),
       count: () => g.diff.count,
       addPile: (slot, n, anchor) => {
@@ -907,13 +921,14 @@ class Game implements Ctx {
       solids: () => [...g.world.obstacles, ...g.props.solids, ...g.vend.solids],
       areaNo: () => areaOf(g.stage),
       waveOk: () => g.mode === 'staff' && g.fight === 'wave',
-      // 구조 장면(trapHost.free)과 같은 조건 + 구조 장면이 끝난 뒤
+      // 구조 장면(trapHost.free)과 같은 조건 + 구조 장면·돌발 방문이 끝난 뒤
       free: () =>
         !g.budget.busy &&
         !g.rescue.busy &&
         g.freezeT <= 0 &&
         !g.rescueHeld() &&
         g.trap.state === 'idle' &&
+        g.visit.state === 'idle' &&
         (g.budget.shown.includes(areaOf(g.stage)) || g.queue.length === 0),
       enemies: () => g.enemies,
       isBoss,
@@ -921,6 +936,68 @@ class Game implements Ctx {
       minions: () => g.minions(),
       spawnMob: () => g.spawnKind(Math.random() < 0.75 ? 'mail' : 'phone'),
       heal: (n) => (g.hp = Math.min(MAX_HP, g.hp + n)),
+      // F 칸: 돌발 방문 보상이 먼저 (visit.ts)
+      useVisitItem: () => g.visit.useItem(),
+      visitItem: () => g.visit.itemUi(),
+      banner: (title, sub) => g.banner(title, sub),
+      note: (text, time) => g.note(text, time),
+      sound: (name, at, vol) => g.sound(name, at, vol),
+    };
+  }
+
+  /** 교직원별 돌발 방문 이벤트·보상(visit.ts)이 빌려 쓰는 Game 안쪽 기능 (교직원 모드만) */
+  private visitHost(): VisitHost {
+    const g = this;
+    return {
+      touch: TOUCH,
+      ctx: this,
+      scene: this.scene,
+      fx: this.fx,
+      get mode() {
+        return g.mode;
+      },
+      get playing() {
+        return g.phase === 'play';
+      },
+      // Boo가 들고 나는 동안은 구경만 한다: 보상(F)도 못 쓴다 (boo.ts)
+      get frozen() {
+        return g.freezeT > 0 || g.boo.carrying;
+      },
+      get pos() {
+        return g.pos;
+      },
+      get eyeY() {
+        return EYE + g.jumpY;
+      },
+      get yaw() {
+        return g.yaw;
+      },
+      get pitch() {
+        return g.pitch;
+      },
+      get area() {
+        return g.area;
+      },
+      solids: () => [...g.world.obstacles, ...g.props.solids, ...g.vend.solids],
+      areaNo: () => areaOf(g.stage),
+      heroId: () => g.pick.hero.id,
+      sideArea: () => g.side.eventArea,
+      waveOk: () => g.mode === 'staff' && g.fight === 'wave',
+      // 돕기 이벤트(sideHost.free)와 같은 조건 + 돕기 이벤트가 끝난 뒤
+      free: () =>
+        !g.budget.busy &&
+        !g.rescue.busy &&
+        g.freezeT <= 0 &&
+        !g.rescueHeld() &&
+        g.trap.state === 'idle' &&
+        g.side.state === 'idle' &&
+        (g.budget.shown.includes(areaOf(g.stage)) || g.queue.length === 0),
+      enemies: () => g.enemies,
+      addEnemy: (e) => g.enemies.push(e),
+      isBoss,
+      itemHit: (e, stamps) => g.itemHit(e, stamps),
+      minions: () => g.minions(),
+      spawnMob: () => g.spawnKind(Math.random() < 0.75 ? 'mail' : 'phone'),
       banner: (title, sub) => g.banner(title, sub),
       note: (text, time) => g.note(text, time),
       sound: (name, at, vol) => g.sound(name, at, vol),
@@ -1490,6 +1567,7 @@ class Game implements Ctx {
     this.rescue.clear();
     this.trap.clear();
     this.side.clear();
+    this.visit.clear();
     this.boo.clear();
     this.dating.clear();
     this.budget.clear();
@@ -1977,6 +2055,8 @@ class Game implements Ctx {
   }
 
   private onProcessed(e: Enemy): void {
+    // 돌발 방문 상대는 결재판만 찬다: 처리 수·구역 넘어가기와 상관없다 (visit.ts가 성공을 처리한다)
+    if (e instanceof VisitPerson) return;
     this.counts[e.kind]++;
     this.processed++;
     this.addSp(SP_GAIN[e.kind]);
@@ -2362,6 +2442,8 @@ class Game implements Ctx {
 
   hurt(dmg: number, from: THREE.Vector3, kind: HurtKind = 'mail', close = true): void {
     if (this.invuln > 0 || this.phase !== 'play' || this.stage === 'done') return;
+    // 실사 통과 현판(visit.ts): 둘레 5m 안은 피해 없는 안전지대
+    if (this.visit.guard(this.pos)) return;
     // 연차 쿠폰(공결 확인서): 다음 한 번은 통째로 막는다 (피해·느려짐·흔들림 없음)
     if (this.shieldT > 0) {
       this.shieldT = 0;
@@ -2535,7 +2617,8 @@ class Game implements Ctx {
     // 손에 든 무기가 있으면 그 무기를 던진다 (arms.ts)
     const arm = this.arms.def;
     const fast = this.buffT > 0;
-    this.curCd = arm ? (fast ? arm.cdFast : arm.cd) : fast ? FIRE_CD_FAST : FIRE_CD;
+    // 매크로 클리커(visit.ts): 연사 3배
+    this.curCd = (arm ? (fast ? arm.cdFast : arm.cd) : fast ? FIRE_CD_FAST : FIRE_CD) / this.visit.fireRate;
     this.cooldown = this.curCd;
     this.swing = 1;
     this.thrown++;
@@ -2794,9 +2877,11 @@ class Game implements Ctx {
     s.life = kind === 'paper' ? 4 : 4.5;
   }
 
-  private updateSheets(dt: number): void {
+  private updateSheets(edt: number): void {
     for (const s of this.sheets) {
       if (!s.on) continue;
+      // 팩스기(잡몹)가 쏜 종이는 쉿! 정숙 표지판(visit.ts)이 서 있으면 절반 빠르기
+      const dt = s.kind === 'fax' ? edt * this.visit.mobRate : edt;
       s.life -= dt;
       s.obj.position.addScaledVector(s.vel, dt);
       if (s.kind === 'rental' || s.kind === 'meeting') {
@@ -3239,8 +3324,9 @@ class Game implements Ctx {
       }
     }
 
-    // 적은 난이도만큼 빠르게(느리게) 움직인다
+    // 적은 난이도만큼 빠르게(느리게) 움직인다. 쉿! 정숙 표지판(visit.ts)이 서 있으면 잡몹(사람 빼고)은 절반 빠르기
     const edt = dt * this.diff.speed;
+    const mdt = edt * this.visit.mobRate;
     for (let i = 0; i < this.enemies.length; i++) {
       const e = this.enemies[i];
       if (e.noticeT >= 0) {
@@ -3248,7 +3334,7 @@ class Game implements Ctx {
         if (e.noticeT < 0) this.noticeHit(e);
       }
       // 인감 도장으로 넘어진(구르는) 잡몹·단톡방 공지 캡처로 멈춘 잡몹은 움직이지도 공격하지도 않는다
-      if (!e.gone && !this.rolls.hold(e, dt) && !this.holdDown(e, dt) && !this.holdFrozen(e)) e.update(edt, this);
+      if (!e.gone && !this.rolls.hold(e, dt) && !this.holdDown(e, dt) && !this.holdFrozen(e)) e.update(isBoss(e) ? edt : mdt, this);
     }
     // 학생 모드 총장실 옮기기처럼 판에서 바로 빠진 잡몹은 넘어진 목록에서도 뺀다
     if (this.downs.size) for (const e of this.downs.keys()) if (!e.obj.parent) this.downs.delete(e);
@@ -3274,6 +3360,7 @@ class Game implements Ctx {
     this.rescue.update(dt);
     this.trap.update(dt);
     this.side.update(dt);
+    this.visit.update(dt);
     this.boo.update(dt);
     this.dating.update(dt);
     this.fx.update(dt);
@@ -3289,8 +3376,8 @@ class Game implements Ctx {
         this.spawnKind(this.queue.pop() as SpawnKind);
         this.spawnT = 0.85;
       }
-    } else if (this.minions() === 0 && !this.budget.busy && !this.trap.holds() && !this.side.holds()) {
-      // 예산팀 직원이 와 있거나 동료 구조 장면·돕기 이벤트가 안 끝났으면 차례를 끝내지 않는다 (budget.ts, trapped.ts, sidejob.ts)
+    } else if (this.minions() === 0 && !this.budget.busy && !this.trap.holds() && !this.side.holds() && !this.visit.holds()) {
+      // 예산팀 직원이 와 있거나 동료 구조 장면·돕기 이벤트·돌발 방문이 안 끝났으면 차례를 끝내지 않는다 (budget.ts, trapped.ts, sidejob.ts, visit.ts)
       if (this.waveDelay < 0) this.waveDelay = 1.6;
       this.waveDelay -= dt;
       if (this.waveDelay <= 0) {
@@ -3392,6 +3479,8 @@ class Game implements Ctx {
     if (ts) wave = `${ts} · ${wave}`;
     const ss = this.side?.status();
     if (ss) wave = `${ss} · ${wave}`;
+    const vs = this.visit?.status();
+    if (vs) wave = `${vs} · ${wave}`;
     this.setText('wave', wave);
     this.setText('buff', this.buffT > 0 ? `아메리카노 ${Math.ceil(this.buffT)}초 · 빨리 던지기` : '');
     // 연차 쿠폰(공결 확인서)·셔틀버스 시간표
@@ -3399,6 +3488,8 @@ class Game implements Ctx {
     if (this.shieldT > 0) perks.push(`${this.mode === 'student' ? '공결 확인서' : '연차 쿠폰'} · 한 번 막음 ${Math.ceil(this.shieldT)}초`);
     if (this.shuttleT > 0) perks.push(`셔틀버스 시간표 · 빨라짐 ${Math.ceil(this.shuttleT)}초`);
     if (this.sealT > 0) perks.push(`${this.mode === 'student' ? '출석 스티커' : '인감 도장'} · 넘어뜨림 ${Math.ceil(this.sealT)}초`);
+    // 돌발 방문 보상 효과 (visit.ts)
+    if (this.visit) perks.push(...this.visit.perks());
     this.setText('perks', perks.join('  ·  '));
     this.setText('weapon', this.arms.hud());
     if (this.props) this.props.syncUi(this.phase === 'play');

@@ -18,6 +18,7 @@ import { prepareSpeech } from './speech';
 //   · 조리사 선생님 (흰 조리복·조리모·식재료 수레): 식재료 상자 3개를 하나씩 들어 수레로 나른다 (든 동안 조금 느려진다)
 //     → 소고기콩나물밥(체력 +5) · 교직원 식당 통닭(체력 모두 회복) (R로 먹는다, 콩나물밥부터. 체력이 가득하면 안 먹는다)
 // - 아이템은 쓸 때까지 들고 간다 (다음 구역·대장 보스·총장전 포함). 쓰러지거나 다시 하면 사라진다 (clear).
+//   F 칸 순서 (2026-11-25): 교직원별 돌발 방문 보상(visit.ts)이 먼저, 그다음 빗자루 → 쓰레기통 폭탄. 터치는 같은 아이템 단추.
 //   빗자루: 일직선으로 날아가며 잡몹 최대 3개 처리, 보스(사람)는 도장 몸통 3발만큼 결재 진행.
 //   쓰레기통 폭탄: 떨어진 자리 둘레 4m 잡몹 처리, 보스는 도장 8발만큼 (Game.itemHit — 사람은 다치지 않는다).
 // - 선생님은 사람이라 다치지 않는다 (적 목록에 없다 — 도장이 지나간다). 학생 모드에는 나오지 않는다.
@@ -120,6 +121,10 @@ export interface SideHost {
   /** 돕는 동안 민원 하나 더 (메일·전화기) */
   spawnMob(): void;
   heal(n: number): void;
+  /** 돌발 방문 보상 (visit.ts): F 칸에서 빗자루·폭탄보다 먼저 쓴다. 썼으면 true */
+  useVisitItem(): boolean;
+  /** 돌발 방문 보상의 HUD 줄·터치 단추 글 (들고 있지 않으면 null) */
+  visitItem(): { line: string; btn: string } | null;
   banner(title: string, sub?: string): void;
   note(text: string, time?: number): void;
   sound(name: SfxName, at?: THREE.Vector3, vol?: number): void;
@@ -240,8 +245,8 @@ function buildFoodCart(): THREE.Group {
   return g;
 }
 
-/** 구역 안, 장애물 밖으로 (trapped.ts와 같은 방식) */
-function placeIn(a: Rect, solids: readonly Rect[], x: number, z: number, margin: number): [number, number] {
+/** 구역 안, 장애물 밖으로 (trapped.ts와 같은 방식. 돌발 방문 visit.ts도 쓴다) */
+export function placeIn(a: Rect, solids: readonly Rect[], x: number, z: number, margin: number): [number, number] {
   const M = 1.4;
   for (let it = 0; it < 3; it++) {
     x = Math.max(a.minX + margin, Math.min(a.maxX - margin, x));
@@ -263,8 +268,8 @@ function placeIn(a: Rect, solids: readonly Rect[], x: number, z: number, margin:
   return [x, z];
 }
 
-/** 선분 a→b 와 점 c 사이 거리 */
-function segDist(a: THREE.Vector3, b: THREE.Vector3, c: THREE.Vector3): number {
+/** 선분 a→b 와 점 c 사이 거리 (돌발 방문 visit.ts도 쓴다) */
+export function segDist(a: THREE.Vector3, b: THREE.Vector3, c: THREE.Vector3): number {
   _ab.subVectors(b, a);
   const l2 = _ab.lengthSq();
   const t = l2 > 1e-9 ? Math.max(0, Math.min(1, _ac.subVectors(c, a).dot(_ab) / l2)) : 0;
@@ -780,10 +785,15 @@ export class SideJob {
 
   // ---------- 아이템: 빗자루·쓰레기통 폭탄 (F), 소고기콩나물밥·교직원 식당 통닭 (R) ----------
 
-  /** F: 빗자루부터, 다 쓰면 쓰레기통 폭탄. 던졌으면 true */
+  /** F: 돌발 방문 보상(visit.ts)이 먼저, 그다음 빗자루, 다 쓰면 쓰레기통 폭탄. 썼으면 true */
   useItem(): boolean {
     const h = this.h;
-    if (h.mode !== 'staff' || !h.playing || h.frozen || this.useCd > 0 || this.brooms + this.bins <= 0) return false;
+    if (h.mode !== 'staff' || !h.playing || h.frozen || this.useCd > 0) return false;
+    if (h.useVisitItem()) {
+      this.useCd = 0.35;
+      return true;
+    }
+    if (this.brooms + this.bins <= 0) return false;
     this.useCd = 0.35;
     const kind = this.brooms > 0 ? 'broom' : 'bin';
     if (kind === 'broom') this.brooms--;
@@ -923,9 +933,12 @@ export class SideJob {
     const lines: string[] = [];
     let throwN = 0;
     let eatN = 0;
+    // 돌발 방문 보상은 F 칸 맨 앞 (visit.ts)
+    const vi = staff ? this.h.visitItem() : null;
     if (staff) {
       throwN = this.brooms + this.bins;
       eatN = this.bap + this.tongdak;
+      if (vi) lines.push(`${vi.line}${touch ? '' : ' (F)'}`);
       const a: string[] = [];
       if (this.brooms > 0) a.push(`빗자루 ${this.brooms}`);
       if (this.bins > 0) a.push(`폭탄 ${this.bins}`);
@@ -936,7 +949,7 @@ export class SideJob {
       if (b.length) lines.push(`${b.join(' · ')}${touch ? '' : ' (R)'}`);
     }
     const on = play && staff && this.near;
-    const key = `${on ? this.kind : ''}|${lines.join('|')}|${play ? 1 : 0}|${this.brooms},${this.bins},${this.bap},${this.tongdak}`;
+    const key = `${on ? this.kind : ''}|${lines.join('|')}|${play ? 1 : 0}|${this.brooms},${this.bins},${this.bap},${this.tongdak}|${vi ? vi.btn : ''}`;
     if (key === this.uiKey) return;
     this.uiKey = key;
     const el = this.el;
@@ -948,8 +961,8 @@ export class SideJob {
       el.btn.classList.toggle('on', on);
     }
     if (el.itemBtn) {
-      el.itemBtn.innerHTML = this.brooms > 0 ? `빗자루<br>${this.brooms}` : `폭탄<br>${this.bins}`;
-      el.itemBtn.classList.toggle('on', play && throwN > 0);
+      el.itemBtn.innerHTML = vi ? vi.btn : this.brooms > 0 ? `빗자루<br>${this.brooms}` : `폭탄<br>${this.bins}`;
+      el.itemBtn.classList.toggle('on', play && (throwN > 0 || !!vi));
     }
     if (el.lunchBtn) {
       el.lunchBtn.innerHTML = this.bap > 0 ? `콩나물밥<br>${this.bap}` : `통닭<br>${this.tongdak}`;
