@@ -27,6 +27,10 @@ export interface ProjectileOpts {
   vy?: number;
   /** 플레이어가 던진 무기 (되받아칠 때 같은 모양으로 돌려보낸다) */
   weaponId?: WeaponId;
+  /** 맞혀도 멈추지 않고 꿰뚫고 지나간다 (돌발 방문 보상: 로켓 펀치 장갑·취업률 상승 그래프) */
+  pierce?: boolean;
+  /** 부메랑이 되돌아오기 시작하는 거리 (px). 없으면 사원증처럼 짧게 (감속 1500px/s²) */
+  range?: number;
 }
 
 export class Projectile {
@@ -42,6 +46,7 @@ export class Projectile {
   readonly returnTo: Fighter | undefined;
   readonly explodes: boolean;
   readonly weaponId: WeaponId | undefined;
+  readonly pierce: boolean;
   vy: number;
   removed = false;
   returning = false;
@@ -49,6 +54,8 @@ export class Projectile {
   readonly hitSet = new Set<Fighter>();
   private ttl: number;
   private readonly v0: number;
+  /** 부메랑 감속 (px/s²) */
+  private readonly decel: number;
   private readonly spin: number;
   private readonly obj: Phaser.GameObjects.Container;
   private readonly shadow: Phaser.GameObjects.Ellipse;
@@ -70,6 +77,8 @@ export class Projectile {
     this.explodes = !!o.explodes;
     this.vy = o.vy ?? 0;
     this.weaponId = o.weaponId;
+    this.pierce = !!o.pierce;
+    this.decel = o.range ? (o.vx * o.vx) / (2 * o.range) : 1500;
     this.obj = o.obj;
     this.shadow = scene.add.ellipse(o.x, o.y, o.halfW * 1.4, 8, 0x000000, 0.22).setDepth(-5);
     this.sync();
@@ -84,7 +93,7 @@ export class Projectile {
     if (back) {
       // 앞으로 날아가며 느려지다가 방향을 바꿔 던진 사람에게 돌아온다
       if (!this.returning) {
-        this.vx -= Math.sign(this.v0) * 1500 * dt;
+        this.vx -= Math.sign(this.v0) * this.decel * dt;
         if (Math.sign(this.vx) !== Math.sign(this.v0)) {
           this.returning = true;
           this.hitSet.clear();

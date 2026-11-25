@@ -2,15 +2,18 @@ import Phaser from 'phaser';
 import { FONT } from '../config';
 import { createFoodIcon, createPetitionIcon, type FoodKind } from './rigs';
 import { createGradeSheet, weaponIcon } from './studentRigs';
+import { createRewardBox } from './visitRigs';
 import { WEAPONS, isWeaponId, weaponName, type WeaponId } from './weapons';
+import type { VisitReward } from '../data/visits';
 
 // 바닥에 놓인 물건.
 // - 무기: 위에 서서 L(또는 맨손 공격)로 줍는다.
 // - 음식·식권·보조배터리·연차 쿠폰(공결 확인서)·셔틀버스 시간표·단톡방 공지 캡처·인감 도장(출석 스티커)·일거리·서명지: 밟으면 바로 줍는다. 일거리는 김밥처럼 생겼지만 서류 귀퉁이가 보인다.
 // - 경비원이 던져 주거나 상자에서 튀어나온 물건은 날아가는 동안(toss) 줍지 못한다.
 // - 성적표 (학생 모드 한학고 학장, 11차): A+는 회복, F는 잠깐 멈춤. 밟으면 바로 줍는다.
+// - 보상 상자 (교직원 모드 돌발 방문, 2026-11-25): 성공한 방문 상대가 떠나며 떨어뜨린다. 밟으면 바로 집고, 이름표는 보상 이름이다.
 
-export type PickupKind = WeaponId | FoodKind | 'petition' | 'gradeA' | 'gradeF';
+export type PickupKind = WeaponId | FoodKind | 'petition' | 'gradeA' | 'gradeF' | 'visitBox';
 
 const LABELS: Record<string, string> = {
   donkatsu: '학식 돈가스',
@@ -26,6 +29,7 @@ const LABELS: Record<string, string> = {
   petition: '단체 서명지',
   gradeA: '성적표',
   gradeF: '성적표',
+  visitBox: '보상 상자',
 };
 
 /** 학생 모드에서 이름이 바뀌는 것 */
@@ -48,6 +52,8 @@ export class Pickup {
   readonly kind: PickupKind;
   readonly x: number;
   readonly y: number;
+  /** 보상 상자에 든 것 (visitBox만) */
+  readonly reward: VisitReward | null;
   removed = false;
   private t = Math.random() * 6;
   private ttl: number;
@@ -57,25 +63,41 @@ export class Pickup {
   private readonly shadow: Phaser.GameObjects.Ellipse;
   private readonly label: Phaser.GameObjects.Text;
 
-  /** ttl: 0이면 사라지지 않는다. student: 학생 모드 이름·모양 (텀블러·장우산·전공책·학생증) */
-  constructor(scene: Phaser.Scene, kind: PickupKind, x: number, y: number, ttl = 0, student = false) {
+  /** ttl: 0이면 사라지지 않는다. student: 학생 모드 이름·모양 (텀블러·장우산·전공책·학생증).
+   *  reward: 보상 상자에 든 것 — 이름표에 그 이름(rewardName)을 쓴다 */
+  constructor(
+    scene: Phaser.Scene,
+    kind: PickupKind,
+    x: number,
+    y: number,
+    ttl = 0,
+    student = false,
+    reward: VisitReward | null = null,
+    rewardName = '',
+  ) {
     this.scene = scene;
     this.kind = kind;
     this.x = x;
     this.y = y;
     this.ttl = ttl;
+    this.reward = reward;
     if (isWeaponId(kind)) this.obj = weaponIcon(scene, kind, student);
+    else if (kind === 'visitBox') this.obj = createRewardBox(scene);
     else if (kind === 'petition') this.obj = createPetitionIcon(scene);
     else if (kind === 'gradeA' || kind === 'gradeF') this.obj = createGradeSheet(scene, kind === 'gradeA' ? 'A+' : 'F');
     else this.obj = createFoodIcon(scene, kind, student);
     this.shadow = scene.add.ellipse(x, y, 46, 10, 0x000000, 0.25).setDepth(-5);
-    const name = isWeaponId(kind) ? weaponName(WEAPONS[kind], student) : ((student && STUDENT_LABELS[kind]) || LABELS[kind]);
+    const name = isWeaponId(kind)
+      ? weaponName(WEAPONS[kind], student)
+      : kind === 'visitBox' && rewardName
+        ? rewardName
+        : (student && STUDENT_LABELS[kind]) || LABELS[kind];
     this.label = scene.add
       .text(x, y - 40, name, {
         fontFamily: FONT,
-        fontSize: '11px',
+        fontSize: kind === 'visitBox' ? '13px' : '11px',
         fontStyle: 'bold',
-        color: '#ffffff',
+        color: kind === 'visitBox' ? '#ffe066' : '#ffffff',
         stroke: '#111318',
         strokeThickness: 3,
       })

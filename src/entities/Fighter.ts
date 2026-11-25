@@ -17,6 +17,8 @@ export interface HitInfo {
   tag?: string;
   /** 던진 물건에 맞았다 (가드를 푼다) */
   thrown?: boolean;
+  /** 돌발 방문 상대(사람)의 결재판을 몇 칸 채우는지 — 필살기·보상 아이템은 사람 보스와 같은 양(도장 몇 발만큼). 없으면 1칸 */
+  stamps?: number;
 }
 
 export interface AttackDef {

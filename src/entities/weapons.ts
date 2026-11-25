@@ -3,9 +3,11 @@ import type { AttackDef } from './Fighter';
 
 // 교직원 무기 4종(스테이플러·안내문 롤·결재판·사원증)과 던지기 전용 물건 2종(규정집·마감 서류 뭉치).
 // 학생 모드는 성능이 같고 이름·모양만 다르다: 텀블러·장우산·전공책·학생증, 던지기 전용 마감 시계 (PRD 9절).
+// 돌발 방문 보상(교직원 모드, 2026-11-25): 던지기 전용 로켓 펀치 장갑(3발, 꿰뚫기)·취업률 상승 그래프(1번, 부메랑).
+// 경비원은 이 둘을 주지 않는다 (스테이지 자료의 items에 없다) — 보상 상자에서만 나온다.
 
-export type WeaponId = 'stapler' | 'notice' | 'clipboard' | 'idcard' | 'rulebook' | 'bomb';
-export const WEAPON_IDS: WeaponId[] = ['stapler', 'notice', 'clipboard', 'idcard', 'rulebook', 'bomb'];
+export type WeaponId = 'stapler' | 'notice' | 'clipboard' | 'idcard' | 'rulebook' | 'bomb' | 'glove' | 'graph';
+export const WEAPON_IDS: WeaponId[] = ['stapler', 'notice', 'clipboard', 'idcard', 'rulebook', 'bomb', 'glove', 'graph'];
 
 interface RawWeapon {
   name: string;
@@ -36,7 +38,7 @@ export interface WeaponDef {
   guard: boolean;
   /** 던지면 돌아온다 (사원증) */
   boomerang: boolean;
-  /** 휘두르지 못하고 던지기만 한다 (규정집, 서류 뭉치) */
+  /** 휘두르지 못하고 던지기만 한다 (규정집, 서류 뭉치, 로켓 펀치 장갑, 취업률 상승 그래프). durability가 2 이상이면 그만큼 던진다 */
   throwOnly: boolean;
 }
 

@@ -26,7 +26,9 @@ import {
   createHeldTumbler,
   createHeldUmbrella,
 } from './studentRigs';
+import { createHeldGlove, createHeldGraph } from './visitRigs';
 import { WEAPONS, weaponName, type WeaponDef, type WeaponId } from './weapons';
+import { CLICKER_MUL } from '../data/visits';
 import * as fx from '../fx';
 import { play } from '../sound';
 
@@ -53,9 +55,9 @@ export const JUMP_ATTACK: AttackDef = {
 };
 
 // 이동 속도 (px/s). 2026-11-25 사용자 요청으로 예전 값(걷기 250·달리기 430·깊이 165)의 0.85배로 느리게 했다 (교직원·학생 공통)
-const WALK = 213;
+export const WALK = 213;
 const RUN = 366;
-const DEPTH_SPEED = 140;
+export const DEPTH_SPEED = 140;
 const JUMP_V = 640;
 /** 메일에 맞으면 잠깐 느려진다 */
 const SLOW_MUL = 0.55;
@@ -104,7 +106,7 @@ export interface Clinger {
   releaseCling(): void;
 }
 
-type PropId = 'stamp' | 'board' | 'stapler' | 'notice' | 'card' | 'book' | 'bomb' | 'bag';
+type PropId = 'stamp' | 'board' | 'stapler' | 'notice' | 'card' | 'book' | 'bomb' | 'bag' | 'glove' | 'graph';
 
 export class Player extends Fighter {
   readonly halfW = 20;
@@ -125,6 +127,12 @@ export class Player extends Fighter {
   shuttleT = 0;
   /** 인감 도장(학생: 출석 스티커): 남은 시간. 그동안 맨손 공격이 잡몹을 넘어뜨린다 */
   sealT = 0;
+  /** 매크로 클리커(돌발 방문 보상): 남은 시간. 그동안 도장(공격) 연사 속도가 CLICKER_MUL배 */
+  clickT = 0;
+  /** 이번 프레임에 시간을 더하기 전의 stateT — 공격이 빨라져 한 프레임에 판정 구간을 건너뛰어도 맞게 한다 */
+  private prevT = 0;
+  /** 안전지대(실사 통과 현판)에서 막았다는 글자를 너무 자주 띄우지 않게 */
+  private safeNoteT = 0;
   /** 국물 위에 서 있다 (김학생식당). 스테이지가 매 프레임 채운다 */
   slipT = 0;
   clingBy: Clinger | null = null;
@@ -164,6 +172,8 @@ export class Player extends Fighter {
         book: createHeldBook(scene, rig),
         bomb: createHeldClock(scene, rig),
         bag: createHeldBag(scene, rig, hero.look.bag),
+        glove: createHeldGlove(scene, rig),
+        graph: createHeldGraph(scene, rig),
       };
       this.backpack = (rig.torso.getByName(BACKPACK_NAME) as Phaser.GameObjects.Container | null) ?? null;
     } else {
@@ -176,6 +186,8 @@ export class Player extends Fighter {
         book: createHeldBook(scene, rig),
         bomb: createHeldBomb(scene, rig),
         bag: empty(),
+        glove: createHeldGlove(scene, rig),
+        graph: createHeldGraph(scene, rig),
       };
       this.backpack = null;
     }
@@ -215,9 +227,11 @@ export class Player extends Fighter {
   }
 
   update(dt: number, c: Controls): void {
+    this.prevT = this.stateT;
     this.stateT += dt;
-    // 아메리카노: 공격 동작이 빨라진다
-    if (this.coffeeT > 0 && (this.state === 'attack' || this.state === 'wattack')) this.stateT += dt * (COFFEE_MUL - 1);
+    // 아메리카노·매크로 클리커: 공격 동작이 빨라진다 (둘 다면 곱한다)
+    const fast = (this.coffeeT > 0 ? COFFEE_MUL : 1) * (this.clickT > 0 ? CLICKER_MUL : 1);
+    if (fast > 1 && (this.state === 'attack' || this.state === 'wattack')) this.stateT += dt * (fast - 1);
     if (this.invuln > 0) this.invuln -= dt;
     if (this.slowT > 0) this.slowT -= dt;
     if (this.coffeeT > 0) this.coffeeT -= dt;
@@ -226,6 +240,8 @@ export class Player extends Fighter {
     if (this.shieldPopT > 0) this.shieldPopT -= dt;
     if (this.shuttleT > 0) this.shuttleT -= dt;
     if (this.sealT > 0) this.sealT -= dt;
+    if (this.clickT > 0) this.clickT -= dt;
+    if (this.safeNoteT > 0) this.safeNoteT -= dt;
 
     // 손에 든 마감 서류 뭉치
     if (this.weapon?.id === 'bomb') {
@@ -453,7 +469,7 @@ export class Player extends Fighter {
       this.buffered = true;
       this.countShake();
     }
-    if (this.stateT >= a.active[0] && this.stateT <= a.active[1]) {
+    if (this.inWindow(a)) {
       this.scene.resolvePlayerAttack(this, a, this.hitSet);
     }
     if (this.buffered && this.combo < COMBO.length - 1 && this.stateT >= a.chainAt) {
@@ -461,6 +477,11 @@ export class Player extends Fighter {
       return;
     }
     if (this.stateT >= a.total) this.set('idle');
+  }
+
+  /** 이번 프레임(prevT~stateT)이 공격 판정 구간에 걸치는지. 빨라진 공격이 구간을 한 프레임에 건너뛰어도 맞는다 */
+  private inWindow(a: AttackDef): boolean {
+    return this.stateT >= a.active[0] && Math.min(this.prevT, this.stateT) <= a.active[1];
   }
 
   // ---------- 무기 ----------
@@ -497,7 +518,7 @@ export class Player extends Fighter {
       this.buffered = true;
       this.countShake();
     }
-    if (this.stateT >= a.active[0] && this.stateT <= a.active[1]) {
+    if (this.inWindow(a)) {
       this.scene.resolvePlayerAttack(this, a, this.hitSet);
     }
     const chain = this.buffered && this.stateT >= a.chainAt;
@@ -529,6 +550,12 @@ export class Player extends Fighter {
     if (w.def.boomerang) {
       if (w.inFlight) return null;
       w.inFlight = true;
+      return w;
+    }
+    // 여러 번 던지는 것 (로켓 펀치 장갑 3발): 다 쓸 때까지 손에 남는다
+    if (w.def.throwOnly && w.def.durability > 1) {
+      w.dur--;
+      if (w.dur <= 0) this.weapon = null;
       return w;
     }
     this.weapon = null;
@@ -590,6 +617,14 @@ export class Player extends Fighter {
 
   takeHit(h: HitInfo): boolean {
     if (!h.force && !this.hittable) return false;
+    // 실사 통과 현판(돌발 방문 보상) 둘레: 피해 없는 안전지대
+    if (!h.force && this.scene.safeAt(this.x, this.y)) {
+      if (this.safeNoteT <= 0) {
+        this.safeNoteT = 0.8;
+        fx.floatText(this.scene, this.x, this.y - 128, '안전지대!', '#7CFC9A', 16);
+      }
+      return false;
+    }
     // 결재판을 들고 정면을 보고 있으면 막는다
     const w = this.weapon;
     const front = this.facing === -Math.sign(h.dir);
@@ -828,6 +863,8 @@ export class Player extends Fighter {
       book: id === 'rulebook' && holding,
       bomb: id === 'bomb' && holding,
       bag: swingBag,
+      glove: id === 'glove' && holding,
+      graph: id === 'graph' && holding,
     };
     for (const k of Object.keys(show) as PropId[]) this.props[k].setVisible(show[k]);
     this.backpack?.setVisible(!swingBag);

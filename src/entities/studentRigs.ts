@@ -3,6 +3,7 @@ import { FONT } from '../config';
 import { HUFS_NAVY } from '../hufs';
 import { Rig } from './Rig';
 import { INK, box, createWeaponIcon, tone } from './rigs';
+import { createGloveIcon, createGraphIcon } from './visitRigs';
 import type { WeaponId } from './weapons';
 
 // 학생 모드 외형 모음: 무기(텀블러·장우산·전공책·학생증·마감 시계), 잡몹(행정 그 자체),
@@ -57,6 +58,9 @@ export function createStudentWeaponIcon(scene: Phaser.Scene, id: WeaponId): Phas
 
 /** 모드에 맞는 무기 아이콘 */
 export function weaponIcon(scene: Phaser.Scene, id: WeaponId, student: boolean): Phaser.GameObjects.Container {
+  // 돌발 방문 보상 (두 모드 같은 모양)
+  if (id === 'glove') return createGloveIcon(scene);
+  if (id === 'graph') return createGraphIcon(scene);
   return student ? createStudentWeaponIcon(scene, id) : createWeaponIcon(scene, id);
 }
 

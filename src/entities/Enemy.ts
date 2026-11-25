@@ -38,7 +38,9 @@ export type EnemyKind =
   | 'docTower'
   | 'bujaeBoss'
   | 'hanhakgoBoss'
-  | 'presidentBoss';
+  | 'presidentBoss'
+  // 교직원 모드 돌발 방문 상대 (2026-11-25, Visitor.ts): 사람이라 다치지 않고 결재판만 찬다
+  | 'visit';
 
 /** 보스 체력바에 보여 줄 정보 */
 export interface BossLike {
@@ -110,6 +112,8 @@ export abstract class Enemy extends Fighter {
   private label: Phaser.GameObjects.Text | null = null;
   private speech: Phaser.GameObjects.Text | null = null;
   private speechT = 0;
+  /** 말풍선을 머리 위로 더 올리는 높이 (돌발 방문 상대: 머리 위 결재판 위로) */
+  protected speechLift = 0;
   /** 마지막으로 말한 뒤 지난 시간 (초) — 싸우는 중 혼잣말 간격 */
   private quietT = 0;
   /** 단톡방 공지 캡처: 남은 멈춤 시간 (초)과 머리 위 "…" */
@@ -437,7 +441,7 @@ export abstract class Enemy extends Fighter {
     }
     if (this.speech) {
       this.speechT -= dt;
-      this.speech.setPosition(this.x, top - (this.label ? 16 : 0)).setVisible(visible && this.speechT > 0);
+      this.speech.setPosition(this.x, top - (this.label ? 16 : 0) - this.speechLift).setVisible(visible && this.speechT > 0);
     }
     this.frostMark
       ?.setPosition(this.x + 14, top + 4)
