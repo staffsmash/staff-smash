@@ -1318,7 +1318,7 @@ class Game implements Ctx {
     this.phase = 'title';
     const o = this.overlay(`
       <div class="panel title">
-        <img class="emblem" src="hufs/emblem-mono.png" alt=""> <img class="type" src="hufs/hufs-type.png" alt="HUFS">
+        <img class="badge" src="logo/badge.png" alt="">
         <h1>Three Party Problem</h1>
         ${this.stu.modeButtons()}
         <div class="tlinks">${appHomeLink()}<button id="setBtn" type="button">설정</button><a href="./">2D 본편</a></div>

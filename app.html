@@ -42,18 +42,39 @@
           calc(16px + env(safe-area-inset-bottom)) calc(20px + env(safe-area-inset-left));
         text-align: center;
       }
-      .sig {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        opacity: 0.95;
-      }
-      .sig img {
+      /* 로고 배지 (2026-11-25): 화면에서 가장 큰 그림. 제목·단추는 .side */
+      .badge {
         display: block;
-        height: clamp(28px, 7vh, 52px);
+        width: clamp(120px, min(46vw, 38vh), 300px);
+        height: auto;
+        aspect-ratio: 1;
+        filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.35));
       }
-      .sig img.type {
-        height: clamp(18px, 4.6vh, 34px);
+      .side {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: clamp(10px, 3.2vh, 28px);
+        width: 100%;
+      }
+      /* 낮은 가로 화면(휴대폰 가로): 로고는 왼쪽, 제목·단추는 오른쪽 */
+      @media (orientation: landscape) and (max-height: 560px) {
+        main {
+          flex-direction: row;
+          gap: clamp(16px, 4vw, 44px);
+        }
+        .badge {
+          width: min(72vh, 34vw);
+          flex: none;
+        }
+        .side {
+          width: auto;
+          flex: 1 1 0;
+          min-width: 0;
+        }
+        h1 {
+          font-size: clamp(24px, min(5vw, 11vh), 48px);
+        }
       }
       h1 {
         margin: 0;
@@ -124,15 +145,14 @@
   </head>
   <body>
     <main>
-      <div class="sig">
-        <img src="/hufs/emblem-mono.png" alt="" />
-        <img class="type" src="/hufs/hufs-type.png" alt="HUFS" />
+      <img class="badge" src="/logo/badge.png" alt="" />
+      <div class="side">
+        <h1>Three Party Problem</h1>
+        <nav>
+          <a href="./">2D 게임</a>
+          <a href="./fps.html">1인칭 게임</a>
+        </nav>
       </div>
-      <h1>Three Party Problem</h1>
-      <nav>
-        <a href="./">2D 게임</a>
-        <a href="./fps.html">1인칭 게임</a>
-      </nav>
     </main>
   </body>
 </html>

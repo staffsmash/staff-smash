@@ -14,6 +14,9 @@ import { addSoundControls } from '../ui/soundControls';
 // 타이틀: 교직원 모드(출근하기)와 학생 모드(등교하기) 중 하나를 고른다.
 // 키보드: Enter·1 = 교직원 모드, 2 = 학생 모드, B = 기록판.
 
+/** 로고 배지 (2026-11-25, public/logo/badge.png — assets/icons/make_icons.py가 굽는다) */
+const LOGO_KEY = 'logo-badge';
+
 export class TitleScene extends Phaser.Scene {
   private controls!: Controls;
   private started = false;
@@ -25,6 +28,7 @@ export class TitleScene extends Phaser.Scene {
 
   preload(): void {
     loadHufsAssets(this);
+    if (!this.textures.exists(LOGO_KEY)) this.load.image(LOGO_KEY, 'logo/badge.png');
   }
 
   create(): void {
@@ -43,23 +47,19 @@ export class TitleScene extends Phaser.Scene {
     hufsImage(this, HUFS_KEYS.line, cx, 470, { h: 300, alpha: 0.07, tint: 0xffffff });
 
     this.add
-      .text(cx, 84, 'Three Party Problem', {
+      .text(cx, 204, 'Three Party Problem', {
         fontFamily: FONT,
-        fontSize: '64px',
+        fontSize: '54px',
         fontStyle: 'bold',
         color: '#ffffff',
         stroke: '#2f6fd1',
         strokeThickness: 10,
       })
       .setOrigin(0.5);
-    // 학교 약명 시그니처 (심벌 + HUFS, 어두운 바탕이라 흰색)
-    hufsImage(this, HUFS_KEYS.line, cx - 69, 152, { h: 60, tint: 0xffffff });
-    const type = hufsImage(this, HUFS_KEYS.type, cx + 34, 152, { h: 40, tint: 0xffffff });
-    if (!type) {
-      this.add.text(cx + 34, 152, 'HUFS', { fontFamily: FONT, fontSize: '34px', fontStyle: 'bold', color: '#ffffff' }).setOrigin(0.5);
-    }
+    // 로고 배지: 제목 위 (학교 약명 시그니처는 뺐다 — 사용자 2026-11-25)
+    if (this.textures.exists(LOGO_KEY)) this.add.image(cx, 88, LOGO_KEY).setDisplaySize(164, 164);
     this.add
-      .text(cx, 198, '오후 4시 52분, 마감 8분 전 · 교직원은 정시 퇴근을, 학생은 서류 제출 승인을 노린다', {
+      .text(cx, 246, '오후 4시 52분, 마감 8분 전 · 교직원은 정시 퇴근을, 학생은 서류 제출 승인을 노린다', {
         fontFamily: FONT,
         fontSize: '17px',
         color: '#c9d3e6',
@@ -82,19 +82,19 @@ export class TitleScene extends Phaser.Scene {
     const help = touch
       ? '왼쪽 화면 드래그: 이동   A: 처리·공격   B: 점프   줍기: 무기 줍기·던지기   SP: 필살기'
       : '이동 방향키·WASD   대시 같은 방향 두 번   처리·공격 J   점프 K   줍기·던지기 L   필살기 I';
-    this.add.text(cx, 238, help, { fontFamily: FONT, fontSize: '14px', color: '#e6ebf3' }).setOrigin(0.5);
+    this.add.text(cx, 270, help, { fontFamily: FONT, fontSize: '14px', color: '#e6ebf3' }).setOrigin(0.5);
 
     // 모드 고르기: 버튼 아래에 한 줄 소개
     const modeX = { staff: cx - 135, student: cx + 135 };
-    makeButton(this, modeX.staff, 300, 250, 56, touch ? '출근하기' : '출근하기 (Enter·1)', () => this.start('staff'), 0x2f8f4e);
-    makeButton(this, modeX.student, 300, 250, 56, touch ? '등교하기' : '등교하기 (2)', () => this.start('student'), 0xb4532a);
+    makeButton(this, modeX.staff, 322, 250, 56, touch ? '출근하기' : '출근하기 (Enter·1)', () => this.start('staff'), 0x2f8f4e);
+    makeButton(this, modeX.student, 322, 250, 56, touch ? '등교하기' : '등교하기 (2)', () => this.start('student'), 0xb4532a);
     const caption = (x: number, title: string, sub: string) => {
-      this.add.text(x, 342, title, { fontFamily: FONT, fontSize: '15px', fontStyle: 'bold', color: '#ffffff' }).setOrigin(0.5);
-      this.add.text(x, 363, sub, { fontFamily: FONT, fontSize: '13px', color: '#c9d3e6' }).setOrigin(0.5);
+      this.add.text(x, 364, title, { fontFamily: FONT, fontSize: '15px', fontStyle: 'bold', color: '#ffffff' }).setOrigin(0.5);
+      this.add.text(x, 384, sub, { fontFamily: FONT, fontSize: '13px', color: '#c9d3e6' }).setOrigin(0.5);
     };
     caption(modeX.staff, '교직원 모드', '민원 처리하고 정시 퇴근');
     caption(modeX.student, '학생 모드', '반려된 서류 승인받기');
-    makeButton(this, cx, 418, 220, 42, touch ? '기록판' : '기록판 (B)', () => this.go('board'), 0x2f6fd1);
+    makeButton(this, cx, 434, 220, 42, touch ? '기록판' : '기록판 (B)', () => this.go('board'), 0x2f6fd1);
 
     this.add
       .text(cx, GAME_H - 14, '게임이 끝나면 결과(스테이지·시각)가 익명으로 기록됩니다. 닉네임은 원할 때만 남깁니다.', {
