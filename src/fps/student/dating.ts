@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { STUDENT_HEROES } from '../../data/students';
+import { FPS_STUDENT_HEROES } from '../../data/students';
 import type { SfxName } from '../audio';
 import type { Rect } from '../blocks';
 import { vocative } from '../helpers';
@@ -257,8 +257,8 @@ export class Dating {
     this.obj.visible = false;
     this.booth.visible = false;
     h.scene.add(this.obj, this.booth);
-    // 대사 그림 (학생 주인공 넷 이름마다)
-    prepareSpeech([...STUDENT_HEROES.map((s) => winLine(s.name)), T.fail]);
+    // 대사 그림 (1인칭 학생 주인공 여섯 이름마다)
+    prepareSpeech([...FPS_STUDENT_HEROES.map((s) => winLine(s.name)), T.fail]);
     this.el = ensureDom((d) => this.press(d));
     const btn = this.el.btn;
     if (btn) {

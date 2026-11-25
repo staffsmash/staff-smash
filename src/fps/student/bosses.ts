@@ -11,7 +11,7 @@ import { staffHero } from './people';
 // 학생 모드의 사람 (모두 가상 인물, 프레지던트 캉만 실존 — 비서실 확인. 총장 대사는 본편 2D에 있는 것과
 // 비서실 확인을 받은 문구 검토 11-2절 추가안 4줄, 11차 새 기술 대사만 쓴다).
 // 사람은 다치지 않는다: 막대는 "설득"(총장은 "결재 진행")이고, 서류는 들고 있는 결재판에 "설득" 도장으로 찍힌다.
-// 다 차면 창구 직원은 "퇴근합니다…" 하고 걸어 나가고, 학과장·교수·학장은 승인·서명 대사를 하고 걸어 나가고, 총장은 선 채로 승인한다.
+// 다 차면 창구 직원은 "처리해드리겠습니다.." 하고 걸어 나가고 (2026-11-25 사용자 문구), 학과장·교수·학장은 승인·서명 대사를 하고 걸어 나가고, 총장은 선 채로 승인한다.
 // 2026-11-21 (11차) 사용자가 학생 모드 보스를 다시 정했다 (처장·부총장은 학생 모드에 나오지 않는다):
 // - 창구 직원 (구역마다 한 명, 작은 중간 보스): 권학생(총학 집행부 면담) · 김국제(여권·서류 부채꼴) · 나진취(빨간 첨삭 선)
 //   · 최도서관(책수레) · 김학종지(대기번호표, 가까우면 규정집 내려치기). 대사는 data/heroes.ts의 desk
@@ -77,7 +77,7 @@ export abstract class StudentBoss extends PersonBoss {
   private quietUntil = 0;
 
   constructor(c: Ctx, s: StuCtx, person: Person, at: THREE.Vector3, exit: THREE.Vector3, approveLine: string, name: string, hp: number, doneText: string) {
-    // 결재 대사에 "퇴근합니다…"가 이미 들어 있어 나갈 때는 말없이 (leaveLine = '')
+    // 결재 대사(창구 직원 "처리해드리겠습니다..", 학과장·교수·학장 승인·서명)로 끝나므로 나갈 때는 말없이 (leaveLine = '')
     super(c, person, at, exit, approveLine, '', name, hp);
     this.s = s;
     this.doneText = doneText;
@@ -217,7 +217,7 @@ export class WindowStaff extends StudentBoss {
   private blockedAt: THREE.Vector3 | null = null;
 
   constructor(c: Ctx, s: StuCtx, person: Person, staff: StaffKind, name: string, line: string, at: THREE.Vector3, spot: THREE.Vector3, exit: THREE.Vector3) {
-    super(c, s, person, at, exit, '퇴근합니다…', `${name} · 창구`, STAFF[staff].hp, '설득 완료!');
+    super(c, s, person, at, exit, '처리해드리겠습니다..', `${name} · 창구`, STAFF[staff].hp, '설득 완료!');
     this.staff = staff;
     this.line = line;
     this.hintText = STAFF[staff].hint;
@@ -917,7 +917,7 @@ export class Bujae extends StudentBoss {
     this.blocks++;
     if (this.t - this.blockSaid > 1.6) {
       this.blockSaid = this.t;
-      this.say(this.blocks < 4 ? '결재판 보이시죠?' : pick(['정면은 안 됩니다~', BANSA_BLOCK]), 1.1);
+      this.say(this.blocks < 4 ? '결재판 보이시죠?' : pick(['정면은 통하지 않습니다 후후', BANSA_BLOCK]), 1.1);
     }
   }
 
