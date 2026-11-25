@@ -643,13 +643,16 @@ function wrap(a: number): number {
 }
 
 /**
- * 돌발 방문 상대: PersonBoss라서 도장(결재판)·전체 공지·필살기·빗자루·폭탄이 사람 보스와 같은 규칙으로 맞는다.
+ * 돌발 방문 상대: PersonBoss라서 도장(결재판)·전체 공지·필살기·빗자루·폭탄이 맞는다. 칸 수는 2D와 같게(2026-11-25):
+ * 필살기 한 번 4칸, 그 밖의 한 번 1칸 (Game.damage).
  * 결재 양 = 도장 몸통 VISIT_NEED발 (난이도와 상관없이 10발). 움직임·공격은 Visit.drive가 정한다.
  * Game.onProcessed는 이것을 보스 결재로 치지 않는다 (구역이 넘어가지 않는다).
  */
 export class VisitPerson extends PersonBoss {
   /** 이번 단계 자세 (Visit.drive가 정한다) */
   readonly pose: PoseIn = { walking: false, raise: 0, reach: 0, wave: false };
+  /** 마지막으로 필살기가 닿은 때 (this.t) — Game.damage가 한 번 쓴 필살기를 한 번만 치게 한다 */
+  specialAt = -99;
 
   constructor(
     c: Ctx,

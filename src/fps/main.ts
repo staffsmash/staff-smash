@@ -96,6 +96,14 @@ const PERKS: FoodKind[] = ['shield', 'shuttle', 'capture', 'seal'];
 /** 조력자: 맞아서 체력이 이 비율 이하로 떨어지면 그 구역에서 한 번 굴린다 (구한 사람이 있으면 50%, 없으면 5% — helpers.ts) */
 const RESCUE_HP = 0.3;
 /** 보스(사람) 근접 (사용자 2026-11-18, 2026-11-20 1.5→2.5배): 보스가 이 거리(m) 안에서 보스 공격에 맞으면 피해 CLOSE_MUL배 (중급 1칸→2.5칸). 멀리서·잡몹은 그대로 */
+/** 돌발 방문 결재판: 필살기 한 번에 찰 칸 (2D와 같다), 같은 필살기가 여러 번 닿을 때 무시하는 시간 (초) */
+const VISIT_SPECIAL_FILL = 4;
+const VISIT_SPECIAL_GAP = 2;
+/** 중간보스·보스(사람) 몸에 부딪힘: 피해 1칸 (난이도와 상관없이 그대로), 다시 닿아도 다치지 않는 시간 (초), 밀려나는 거리 (m)
+ *  사용자 2026-11-25: "부딪혀도 아무렇지 않다 — 거미줄로 끌려가도 아무 이상이 없음" */
+const CONTACT_DMG = 1;
+const CONTACT_CD = 1.2;
+const CONTACT_PUSH = 0.5;
 const CLOSE_R = 4;
 const CLOSE_MUL = 2.5;
 /** 보스 공격 (잡몹이 아닌 것). 그 밖의 까닭은 맞은 물건이 보스 몸 가까이서 왔을 때만 */
@@ -200,7 +208,8 @@ const HURT_NOTE: Partial<Record<HurtKind, string>> = {
 };
 
 type Phase = 'title' | 'play' | 'paused' | 'clear' | 'over';
-type DamageSrc = 'stamp' | 'blast' | 'fuse' | 'special';
+/** special = 필살기(전체 공지·업무 스킬), item = 빗자루·폭탄·돌발 방문 보상 */
+type DamageSrc = 'stamp' | 'blast' | 'fuse' | 'special' | 'item';
 
 /** 시계 아래 작은 글씨 (지금 있는 곳) */
 const PLACES: Record<Stage, string> = {
@@ -408,6 +417,8 @@ class Game implements Ctx {
   pickups: Pickup[] = [];
   /** 지금 구역의 사람 보스 (중간보스 포함) */
   boss: PersonBoss | null = null;
+  /** 보스 몸 부딪힘 뒤 다시 닳지 않는 남은 시간 (bossContact) */
+  private contactT = 0;
   /** 보스 넷의 모형 (처음에 한 번 만든다) */
   people!: Record<Who, Person>;
   /** 새 구역 보스 둘(박학과장·최내놔 처장)의 모형 */
@@ -2008,6 +2019,16 @@ class Game implements Ctx {
       this.detonate(e, src !== 'fuse');
       return 'kill';
     }
+    // 돌발 방문 상대(visit.ts): 2D처럼 필살기(전체 공지·업무 스킬)는 한 번에 4칸, 그 밖의 한 번(도장·무기·폭발·아이템)은 1칸
+    // (사용자 2026-11-25 "1인칭이 너무 쉬움" — 예전에는 사람 보스 규칙이라 전체 공지 한 번이면 다 찼다).
+    // 규정집 낙하처럼 한 번 쓴 필살기가 여러 번 닿아도 2초 안에는 한 번만 친다.
+    if (e instanceof VisitPerson) {
+      if (src === 'special') {
+        if (e.t - e.specialAt < VISIT_SPECIAL_GAP) return 'none';
+        e.specialAt = e.t;
+        dmg = BODY_DMG * VISIT_SPECIAL_FILL;
+      } else dmg = BODY_DMG;
+    }
     e.hp -= dmg;
     e.pop = 0.12;
     const dir = _dir.set(e.center.x - this.pos.x, 0, e.center.z - this.pos.z).normalize();
@@ -2434,13 +2455,14 @@ class Game implements Ctx {
    */
   private itemHit(e: Enemy, stamps: number): void {
     if (!e.targetable) return;
-    if (isBoss(e)) this.damage(e, BODY_DMG * stamps, 'special');
+    if (isBoss(e)) this.damage(e, BODY_DMG * stamps, 'item');
     else this.noticeHit(e);
   }
 
   // ---------- 플레이어 ----------
 
-  hurt(dmg: number, from: THREE.Vector3, kind: HurtKind = 'mail', close = true): void {
+  /** exact: 난이도 배율 없이 그 칸 그대로 (보스 몸 부딪힘) */
+  hurt(dmg: number, from: THREE.Vector3, kind: HurtKind = 'mail', close = true, exact = false): void {
     if (this.invuln > 0 || this.phase !== 'play' || this.stage === 'done') return;
     // 실사 통과 현판(visit.ts): 둘레 5m 안은 피해 없는 안전지대
     if (this.visit.guard(this.pos)) return;
@@ -2454,7 +2476,7 @@ class Game implements Ctx {
       this.buzz(20);
       return;
     }
-    dmg *= this.diff.damage;
+    if (!exact) dmg *= this.diff.damage;
     // 보스(사람) 가까이에서 보스 공격에 맞으면 더 아프다 (달려오기 부딪힘은 따로 4 — bossmove.ts RUSH_DMG, 이 배율은 안 곱한다)
     if (close && this.closeBossHit(from, kind)) dmg *= CLOSE_MUL;
     // 한 방에 쓰러질 피해면 이 구역 조력자를 그때 굴린다: 오면 체력 1로 버티고 조력자가 먼저 온다
@@ -2487,6 +2509,29 @@ class Game implements Ctx {
       this.rescueDue = true;
       this.tryRescue();
     }
+  }
+
+  /**
+   * 중간보스·보스(사람·창구 직원) 몸에 닿으면 1칸 닳고 살짝 밀려난다. 최내놔 처장 거미줄에 끌려가 처장 곁(1.5m)에 서도 닿는다.
+   * 달려오기 부딪힘(bossmove.ts, 4칸)은 따로이고, 맞은 뒤 무적(0.6초) 동안은 겹쳐 닳지 않는다.
+   */
+  private bossContact(dt: number): void {
+    if (this.contactT > 0) {
+      this.contactT -= dt;
+      return;
+    }
+    const b = this.boss;
+    if (!b || !b.targetable || this.phase !== 'play' || this.boo.carrying) return;
+    const o = b.obj.position;
+    const dx = this.pos.x - o.x;
+    const dz = this.pos.z - o.z;
+    const d = Math.hypot(dx, dz);
+    const reach = b.radius + RADIUS;
+    if (d >= reach) return;
+    this.contactT = CONTACT_CD;
+    this.hurt(CONTACT_DMG, _v.set(o.x, 1.2, o.z), 'boss', false, true);
+    const k = d > 0.01 ? (reach - d + CONTACT_PUSH) / d : 0;
+    if (k > 0) this.shove(dx * k, dz * k, 0);
   }
 
   /** 보스(사람·창구 직원)가 CLOSE_R 안에 있고, 맞은 것이 보스 공격이면 true */
@@ -3346,6 +3391,7 @@ class Game implements Ctx {
     }
     this.enemies.length = n;
     if (this.boss && this.boss.gone) this.boss = null;
+    this.bossContact(dt);
     this.bossHints();
 
     this.hz.update(edt, this);

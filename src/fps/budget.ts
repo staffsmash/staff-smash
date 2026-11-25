@@ -45,8 +45,8 @@ const STUN_TEXT = '예산 절감 중… (멈춤)';
 const STUN_SEC: Partial<Record<DiffKey, number>> = { easy: 1, normal: 1.5, hard: 2 };
 /** 예고 (초) */
 const WARN = 2;
-/** 파동이 닿는 반지름 (m) = 바닥 빨간 원 */
-const REACH = 9;
+/** 파동이 닿는 반지름 (m) = 바닥 빨간 원. 9 → 16 (사용자 2026-11-25 "너무 무효해" — 2초 예고 동안 몇 걸음이면 원 밖으로 나갔다) */
+const REACH = 16;
 /** 플레이어 앞 몇 m에 서는지 (말풍선이 위쪽 HUD에 가리지 않을 만큼) */
 const SPOT_D = 6.5;
 /** 옆에서 몇 m를 걸어 들어오는지 */
