@@ -40,6 +40,9 @@ import { Crate } from '../entities/Crate';
 import { Helper, type HelperLook } from '../entities/Helper';
 import { ReportTrap } from '../entities/ReportTrap';
 import { Supervisor, type SupervisorKind } from '../entities/Supervisor';
+import { Visitor } from '../entities/Visitor';
+import { CheerMember } from '../entities/CheerMember';
+import { CHEER_LOOKS, createPlaque } from '../entities/visitRigs';
 import { WEAPONS, isWeaponId, weaponName, type WeaponId } from '../entities/weapons';
 import {
   createDemandPaper,
@@ -66,6 +69,23 @@ import { STUDENT_HEROES, studentHeroById } from '../data/students';
 import { helperBanner, helperLines } from '../data/helpers';
 import { skillById } from '../data/skills';
 import { spellById, spellLabel } from '../data/spells';
+import {
+  CHEER_N,
+  CHEER_SEC,
+  CLICKER_MUL,
+  CLICKER_SEC,
+  GLOVE_STAMPS,
+  GRAPH_STAMPS,
+  HUSH_MUL,
+  HUSH_SEC,
+  PLAQUE_SEC,
+  REWARD_DESC_2D,
+  REWARD_NAME,
+  VISIT_SEC,
+  VISIT_STAMPS,
+  visitFor,
+  type VisitReward,
+} from '../data/visits';
 import { gradeStage, type StageStats } from '../grade';
 import { newRun, runClock, type RunState } from '../run';
 import { drawBackground } from './background';
@@ -104,6 +124,14 @@ const SHIELD_SEC = 30;
 const SHUTTLE_SEC = 10;
 const CAPTURE_SEC = 2.5;
 const SEAL_SEC = 8;
+/** 돌발 방문 (교직원 모드, data/visits.ts): 고른 구역의 싸움이 시작된 뒤 이만큼(초, 무작위) 지나고
+ *  안내 띠(구역 소개 등)·조력자·필살기가 없을 때 나온다 */
+const VISIT_DELAY: [number, number] = [3, 7];
+/** 방문 중 잡몹 보충: 보낼 웨이브가 다 나왔으면 VISIT_TRICKLE_T초마다, 잡몹이 VISIT_TRICKLE_MAX개 아래일 때 하나씩 (1인칭 돕기 이벤트 TRICKLE과 같은 값) */
+const VISIT_TRICKLE_T = 3.5;
+const VISIT_TRICKLE_MAX = 3;
+/** 실사 통과 현판 안전지대 반지름 (x 방향 px, 깊이 방향은 0.45배) — 1인칭 5m에 맞춘 2D 거리 */
+const PLAQUE_R = 140;
 
 export interface StageData {
   run?: RunState;
@@ -180,6 +208,17 @@ export class StageScene extends Phaser.Scene {
   /** 잠깐 멈췄을 때 위쪽 안내 (성적표 F·거미줄) */
   private freezeNote = '';
   private storm: ServerStorm | null = null;
+  /** 돌발 방문 (교직원 모드, 한 판에 한 번): 이번 스테이지에서 나올 구역(-1 = 없음), 그 구역 싸움이 시작된 뒤 남은 대기,
+   *  지금 와 있는 상대, 방문 중 잡몹 보충 */
+  private visitZone = -1;
+  private visitWait = 0;
+  private visitor: Visitor | null = null;
+  private trickleT = 0;
+  /** 돌발 방문 보상: 응원단(남은 시간), 실사 통과 현판(안전지대), 쉿! 정숙 표지판(잡몹 느려짐 남은 시간) */
+  private cheer: CheerMember[] = [];
+  private cheerT = 0;
+  private plaque: { x: number; y: number; t: number; obj: Phaser.GameObjects.Container; ring: Phaser.GameObjects.Ellipse } | null = null;
+  private hushT = 0;
   private ticketNo = 86;
   private boss: BossLike | null = null;
   private bossDefeated = false;
@@ -250,6 +289,14 @@ export class StageScene extends Phaser.Scene {
     this.signs = [];
     this.freezeNote = '';
     this.storm = null;
+    this.visitor = null;
+    this.visitWait = 0;
+    this.trickleT = 0;
+    this.cheer = [];
+    this.cheerT = 0;
+    this.plaque = null;
+    this.hushT = 0;
+    this.visitZone = this.pickVisitZone();
     this.ticketNo = 86;
     this.boss = null;
     this.bossDefeated = false;
@@ -406,6 +453,7 @@ export class StageScene extends Phaser.Scene {
       fps: this.game.loop.actualFps,
       clockMin: runClock(this.run, this.elapsed),
       notice: this.noticeLine(),
+      perks: this.visitPerks(),
       boss: b
         ? { name: b.bossName, type: b.bossType, hp: b.bossHp, maxHp: b.bossMaxHp, extra: b.bossExtra() }
         : null,
@@ -425,6 +473,8 @@ export class StageScene extends Phaser.Scene {
     if (this.approval === 'called') return '김부재중 교수가 오는 중…';
     if (this.player.clingBy) return '매달렸다! J(처리) 연타로 떼어 내기';
     if (this.player.state === 'meeting') return '회의 중… 회의록 작성 중';
+    const v = this.visitor;
+    if (v?.active) return `돌발 방문 · ${v.def.name} — 결재판 ${v.stamps}/${VISIT_STAMPS} · 남은 시간 ${Math.ceil(v.timeLeft)}초`;
     if (this.storm) {
       const n = Math.max(1, Math.round((this.storm.queue * this.storm.t) / this.storm.sec));
       return `수강신청 서버 폭주! 대기 인원 ${n.toLocaleString('ko-KR')}명 — 빨간 표시를 피하세요`;
@@ -447,8 +497,11 @@ export class StageScene extends Phaser.Scene {
     const prevX = this.player.x;
     this.player.update(dt, this.controls);
     this.updatePull(dt);
-    for (const e of this.enemies) e.update(dt, this.player);
+    // 쉿! 정숙 표지판: 잡몹만 이동·발사(공격) 속도 절반
+    for (const e of this.enemies) e.update(this.hushT > 0 && ORDINARY.has(e.kind) ? dt * HUSH_MUL : dt, this.player);
     this.enemies = this.enemies.filter((e) => !e.removed);
+    if (this.visitor?.removed) this.visitor = null;
+    this.updateVisitRewards(dt);
     this.updateProjectiles(dt);
     this.updateHazards(dt);
     this.updatePickups(dt);
@@ -492,7 +545,8 @@ export class StageScene extends Phaser.Scene {
     if (this.zoneState !== 'fight') return;
 
     this.spawnT -= dt;
-    const alive = this.enemies.filter((e) => !e.dead).length;
+    // 돌발 방문 상대는 웨이브 머릿수에 넣지 않는다
+    const alive = this.enemies.filter((e) => !e.dead && !(e instanceof Visitor)).length;
     if (this.queue.length > 0 && this.spawnT <= 0 && alive < z.maxAlive) {
       this.spawnType(this.queue.shift() as string);
       this.spawnT = 0.8;
@@ -507,9 +561,10 @@ export class StageScene extends Phaser.Scene {
       }
     }
     this.supplyItems(dt, z);
+    this.updateVisit(dt);
 
-    // 김부재중 교수 서명: 웨이브를 다 정리한 뒤 버텨야 한다
-    if (z.approval && this.approval === 'none' && this.queue.length === 0 && this.enemies.length === 0) {
+    // 김부재중 교수 서명: 웨이브를 다 정리한 뒤 버텨야 한다 (돌발 방문이 남았으면 그 뒤에)
+    if (z.approval && this.approval === 'none' && this.queue.length === 0 && this.enemies.length === 0 && !this.visitHolds) {
       this.approval = 'waiting';
       this.approvalT = 9;
       this.approvalAddT = 1.2;
@@ -533,7 +588,7 @@ export class StageScene extends Phaser.Scene {
       }
     }
     const approved = !z.approval || this.approval === 'done';
-    if (approved && this.queue.length === 0 && !this.enemiesLeft) this.clearZone();
+    if (approved && this.queue.length === 0 && !this.enemiesLeft && !this.visitHolds) this.clearZone();
   }
 
   /** 기믹에 필요한 물건을 떨어지지 않게 공급한다 (안내문 롤, 규정집, 김부재중 교수전의 던질 것) */
@@ -621,6 +676,7 @@ export class StageScene extends Phaser.Scene {
     this.addsT = z.adds?.every ?? 0;
     this.approval = 'none';
     this.goText.setVisible(false);
+    if (this.zoneIndex === this.visitZone) this.visitWait = Phaser.Math.FloatBetween(VISIT_DELAY[0], VISIT_DELAY[1]);
     const bossZone = z.waves.some((w) => w.endsWith('Boss') || w === 'chonghak');
     if (!bossZone) fx.banner(this, z.label, this.studentMode ? '서류 들고 돌파!' : '민원 접수 중', 1200);
     // 학생 3스테이지는 관문(한학고 학장) 뒤 총장실이라 보스 구역마다 새로 센다
@@ -913,6 +969,7 @@ export class StageScene extends Phaser.Scene {
 
   /** 맞힌 자리에 찍히는 도장 글자. 학생 모드: 사람(창구 직원·보스)은 "설득", 행정 사물은 "통과" */
   private hitLabel(e: Enemy): string {
+    if (e.kind === 'visit') return '결재';
     if (!this.studentMode) return '처리';
     return e.persuadable ? '설득' : '통과';
   }
@@ -979,6 +1036,8 @@ export class StageScene extends Phaser.Scene {
     const hits = (x: number, y: number, halfW: number, height: number) =>
       Math.abs(pr.y - y) <= DEPTH_RANGE && Math.abs(pr.x - x) <= pr.halfW + halfW && pr.z <= height + 10;
     const stop = (): boolean => {
+      // 돌발 방문 보상(장갑·그래프)은 상자도 부수고 그대로 지나간다
+      if (pr.pierce) return false;
       if (pr.explodes) {
         this.explode(pr.x, pr.y, 90, { player: 0, enemies: 3 }, this.studentMode ? '따르릉!' : '펑!');
         pr.destroy();
@@ -1040,6 +1099,12 @@ export class StageScene extends Phaser.Scene {
       if (pr.returnTo && pr.owner === 'player') {
         const caught = pr.returning && Math.abs(pr.x - p.x) < 28;
         if (caught || pr.expired) {
+          // 취업률 상승 그래프: 한 번 던지면 돌아와서 사라진다
+          if (pr.weaponId === 'graph') {
+            fx.dust(this, pr.x, pr.y);
+            pr.destroy();
+            continue;
+          }
           // 날아가 있는 동안 다른 물건으로 바꿔 들었으면 사원증은 발밑에 떨어진다
           if (p.weapon?.def.boomerang) p.catchCard();
           else this.dropCard(pr.x, p.y);
@@ -1079,7 +1144,7 @@ export class StageScene extends Phaser.Scene {
         continue;
       }
       // 권학생이 부른 총학 집행부가 던진 물건을 막는다 (사원증·학생증은 지나간다)
-      if (!pr.returnTo) {
+      if (!pr.returnTo && !pr.pierce) {
         const aide = this.aides.find((a) => a.stops(pr.x, pr.y, pr.z, pr.halfW));
         if (aide) {
           aide.blockedText();
@@ -1093,6 +1158,11 @@ export class StageScene extends Phaser.Scene {
         if (Math.abs(pr.y - e.y) > DEPTH_RANGE || Math.abs(pr.x - e.x) > pr.halfW + e.halfW) continue;
         if (pr.z < e.z - 10 || pr.z > e.z + e.height + 10) continue;
         pr.hitSet.add(e);
+        // 돌발 방문 보상(장갑·그래프): 잡몹은 꿰뚫으며 처리, 사람은 도장 4발만큼 결재 진행
+        if (pr.pierce) {
+          this.rewardHit(pr, e);
+          continue;
+        }
         // 김부재중 교수: 정면으로 날아온 것은 결재판으로 되받아친다
         if (e instanceof BujaeBoss && e.canReflect(Math.sign(pr.vx) || 1)) {
           this.reflect(pr, e);
@@ -1107,7 +1177,7 @@ export class StageScene extends Phaser.Scene {
           thrown: true,
         });
         if (hit) {
-          const label = this.studentMode ? this.hitLabel(e) : pr.tag === 'notice' ? '부착' : '처리';
+          const label = this.studentMode || e.kind === 'visit' ? this.hitLabel(e) : pr.tag === 'notice' ? '부착' : '처리';
           fx.stampMark(this, e.x, e.y - e.z - Math.min(e.height, 70) * 0.6, label);
           this.addCombo(1, true);
         }
@@ -1170,7 +1240,7 @@ export class StageScene extends Phaser.Scene {
         const label = this.studentMode ? spellById(this.run.skill).stamp : '규정';
         for (const e of this.enemies) {
           if (!e.hittable || Math.abs(e.x - h.x) > h.radius + e.halfW || Math.abs(e.y - h.y) > h.radius * 0.45) continue;
-          if (e.takeHit({ dmg: h.dmg, dir: e.x >= h.x ? 1 : -1, kb: 0, knockdown: true })) {
+          if (e.takeHit({ dmg: h.dmg, dir: e.x >= h.x ? 1 : -1, kb: 0, knockdown: true, stamps: h.dmg })) {
             hits++;
             fx.stampMark(this, e.x, e.y - e.z - Math.min(e.height, 70) * 0.6, label);
           }
@@ -1265,6 +1335,9 @@ export class StageScene extends Phaser.Scene {
         case 'gradeF':
           if (!p.freeze(1.4, 'F 학점…')) continue;
           this.freezeNote = 'F 학점… 정정 기간이 아닙니다 (잠깐 멈춤)';
+          break;
+        case 'visitBox':
+          if (it.reward) this.openVisitBox(it.reward, it.x, it.y);
           break;
       }
       sound.play('pickup');
@@ -1510,6 +1583,8 @@ export class StageScene extends Phaser.Scene {
     let processed = 0;
     for (const e of [...this.enemies]) {
       if (e.dead || e.removed || e.x < left - 10 || e.x > left + GAME_W + 10) continue;
+      // 돌발 방문 상대(사람)는 조력자가 건드리지 않는다
+      if (e instanceof Visitor) continue;
       const top = e.y - e.z - Math.min(e.height, 70) * 0.6;
       if (ORDINARY.has(e.kind)) {
         fx.stampMark(this, e.x, top, st ? '통과' : '처리');
@@ -1563,6 +1638,11 @@ export class StageScene extends Phaser.Scene {
   throwWeapon(p: Player): void {
     const w = p.takeWeaponForThrow();
     if (!w) return;
+    if (w.id === 'glove' || w.id === 'graph') {
+      this.throwReward(p, w.id);
+      if (w.id === 'glove' && !p.weapon) fx.floatText(this, p.x, p.y - 124, `${weaponName(w.def, this.studentMode)} 다 씀`, '#cfd6e3', 16);
+      return;
+    }
     const card = w.def.boomerang;
     this.projectiles.push(
       new Projectile(this, {
@@ -2100,7 +2180,7 @@ export class StageScene extends Phaser.Scene {
     sound.play('clear');
     fx.banner(this, title, sub, 2400);
     for (const o of this.enemies) {
-      if (o.dead || o.kind === 'chonghak' || o.kind === 'noticeBoss' || o.kind === 'deadlineBoss') continue;
+      if (o.dead || o.kind === 'chonghak' || o.kind === 'noticeBoss' || o.kind === 'deadlineBoss' || o instanceof Visitor) continue;
       if (STUDENT_BOSSES.includes(o.kind)) continue;
       o.takeHit({ dmg: 99, dir: o.x >= this.player.x ? 1 : -1, kb: 0, knockdown: true, force: true });
       if (o instanceof DocBomb) o.destroy();
@@ -2262,7 +2342,7 @@ export class StageScene extends Phaser.Scene {
 
   private skillHit(e: Enemy, label: string): void {
     const dir = e.x >= this.player.x ? 1 : -1;
-    if (e.takeHit({ dmg: 4, dir, kb: 0, knockdown: true, force: true, thrown: true })) {
+    if (e.takeHit({ dmg: 4, dir, kb: 0, knockdown: true, force: true, thrown: true, stamps: 4 })) {
       fx.stampMark(this, e.x, e.y - e.z - Math.min(e.height, 70) * 0.6, label);
     }
   }
@@ -2379,6 +2459,308 @@ export class StageScene extends Phaser.Scene {
         onComplete: () => t.destroy(),
       });
     }
+  }
+
+  // ---------- 돌발 방문 (교직원 모드, data/visits.ts) ----------
+
+  /** 돌발 방문이 나올 구역: 교직원 모드에서 이 판에 고른 스테이지(처음 부를 때 1~3 중 무작위로 정해 둔다)의 잡몹 구간 하나.
+   *  보스전 구역은 빼고, 이미 나왔거나 다른 스테이지면 -1 */
+  private pickVisitZone(): number {
+    const r = this.run;
+    if (r.mode !== 'staff' || r.visitDone || !visitFor(r.hero)) return -1;
+    if (r.visitStage === undefined) r.visitStage = Math.floor(Math.random() * this.stages.length);
+    if (r.visitStage !== this.stageIndex) return -1;
+    const mobZones: number[] = [];
+    this.zones.forEach((z, i) => {
+      if (!z.waves.some((w) => w.endsWith('Boss') || w === 'chonghak')) mobZones.push(i);
+    });
+    return mobZones.length > 0 ? mobZones[Math.floor(Math.random() * mobZones.length)] : -1;
+  }
+
+  /** 돌발 방문이 나올 차례이거나 진행 중이면 구역이 끝나지 않는다 (교수 서명 대기도 그 뒤) */
+  private get visitHolds(): boolean {
+    return (this.zoneIndex === this.visitZone && !this.run.visitDone) || this.visitor !== null;
+  }
+
+  /** 지금 방문 상대가 들어와도 되는지: 안내 띠(구역 소개 등)·조력자·필살기·연출이 없을 때 */
+  private visitFree(): boolean {
+    return (
+      fx.bannerFree(this) &&
+      this.helperT < 0 &&
+      this.helpers.length === 0 &&
+      this.specialT < 0 &&
+      !this.over &&
+      !this.finishing &&
+      this.approval !== 'called' &&
+      this.player.targetable
+    );
+  }
+
+  /** 싸우는 중 매 프레임: 나올 차례면 기다렸다가 부르고, 와 있는 동안은 잡몹을 조금씩 보충한다 */
+  private updateVisit(dt: number): void {
+    const v = this.visitor;
+    if (!v) {
+      if (this.zoneIndex !== this.visitZone || this.run.visitDone) return;
+      this.visitWait -= dt;
+      if (this.visitWait <= 0 && this.visitFree()) this.startVisit(this.run.hero);
+      return;
+    }
+    if (!v.active) return;
+    this.trickleT -= dt;
+    if (this.trickleT > 0) return;
+    this.trickleT = VISIT_TRICKLE_T;
+    const mobs = this.enemies.filter((e) => !e.dead && ORDINARY.has(e.kind)).length;
+    if (this.queue.length === 0 && mobs < VISIT_TRICKLE_MAX) {
+      const r = Math.random();
+      this.spawnType(r < 0.5 ? 'mail' : r < 0.75 ? 'phone' : 'bubble');
+    }
+  }
+
+  /** 방문 상대가 플레이어에게서 먼 쪽 화면 끝에서 빠르게 들어온다 */
+  private startVisit(hero: string): boolean {
+    const def = visitFor(hero);
+    if (!def) return false;
+    this.run.visitDone = true;
+    const left = this.cameras.main.scrollX;
+    const p = this.player;
+    const fromRight = p.x - left < GAME_W / 2;
+    const x = fromRight ? left + GAME_W + 60 : left - 60;
+    const tx = Phaser.Math.Clamp(p.x + (fromRight ? 230 : -230), left + 80, left + GAME_W - 80);
+    const y = Phaser.Math.Clamp(p.y + Phaser.Math.Between(-40, 40), FLOOR_TOP + 10, FLOOR_BOTTOM - 10);
+    const v = new Visitor(this, def, x, y, tx);
+    this.visitor = v;
+    this.enemies.push(v);
+    this.trickleT = VISIT_TRICKLE_T;
+    // 화면 띠 (사용자 확정 문구 "돌발 방문! ○○ — 도장으로 결재판을 채우세요 (20초)"를 띠의 두 줄로 나눠 쓴다)
+    fx.banner(this, `돌발 방문! ${def.name}`, `도장으로 결재판을 채우세요 (${VISIT_SEC}초)`, 2600);
+    sound.play('open');
+    return true;
+  }
+
+  /**
+   * 시험 지름길 (?debug — 콘솔에서 __game.scene.getScene('stage').callVisit('parkhaksa')):
+   * 지금 자리에서 바로 돌발 방문을 시작한다. heroId를 비우면 고른 교직원. 와 있던 상대는 물린다.
+   * 부르면 이 판의 돌발 방문은 나온 것으로 친다 (저절로는 다시 나오지 않는다).
+   */
+  callVisit(heroId?: string): string {
+    if (!DEBUG_DEFAULT) return 'debug only (?debug)';
+    const id = heroId ?? this.run.hero;
+    if (!visitFor(id)) return `no visit for "${id}"`;
+    const old = this.visitor;
+    if (old && !old.removed) {
+      old.destroy();
+      this.enemies = this.enemies.filter((e) => e !== old);
+    }
+    this.visitor = null;
+    this.startVisit(id);
+    return `visit ${id}`;
+  }
+
+  /** 방문이 끝났다 (Visitor가 부른다): 성공·실패 글자 */
+  onVisitEnd(v: Visitor, win: boolean): void {
+    if (win) {
+      sound.play('clear');
+      fx.floatText(this, v.x, v.y - 200, '결재 완료!', '#7CFC9A', 24);
+    } else {
+      fx.floatText(this, v.x, v.y - 200, '시간 초과…', '#ff8a8a', 20);
+    }
+  }
+
+  /** 성공한 방문 상대가 떠나며 보상 상자를 떨어뜨린다 (상자 위 이름표와 띠에 보상 이름) */
+  dropVisitBox(x: number, y: number, reward: VisitReward): void {
+    const left = this.cameras.main.scrollX;
+    const tx = Phaser.Math.Clamp(x + (x - left < GAME_W / 2 ? 46 : -46), left + 50, left + GAME_W - 50);
+    const ty = Phaser.Math.Clamp(y + 12, FLOOR_TOP + 8, FLOOR_BOTTOM - 8);
+    const name = REWARD_NAME[reward];
+    this.pickups.push(new Pickup(this, 'visitBox', tx, ty, 0, this.studentMode, reward, name).tossFrom(x, y, 60, 0.5, 60));
+    fx.banner(this, '보상 상자!', `${name} — 상자를 집으세요`, 1800);
+  }
+
+  /** 보상 상자를 집었다: 장갑·그래프는 손에 든다(손이 차 있으면 발밑에), 나머지는 바로 발동 */
+  private openVisitBox(reward: VisitReward, x: number, y: number): void {
+    const p = this.player;
+    const name = REWARD_NAME[reward];
+    fx.banner(this, name, REWARD_DESC_2D[reward], 2600);
+    switch (reward) {
+      case 'glove':
+      case 'graph':
+        if (!p.weapon) {
+          p.equip(reward);
+          fx.floatText(this, p.x, p.y - 124, `${name} 장착!`, '#9fd3ff', 18);
+        } else {
+          const left = this.cameras.main.scrollX;
+          const wx = Phaser.Math.Clamp(x + p.facing * 34, left + 40, left + GAME_W - 40);
+          this.pickups.push(new Pickup(this, reward, wx, y, 0, this.studentMode));
+          fx.floatText(this, p.x, p.y - 124, `${name}은 발밑에 — 손을 비우고 L로 집으세요`, '#9fd3ff', 16);
+        }
+        break;
+      case 'clicker':
+        p.clickT = CLICKER_SEC;
+        fx.floatText(this, p.x, p.y - 124, `도장 연사 ${CLICKER_MUL}배!`, '#ffd27f', 18);
+        break;
+      case 'cheer':
+        this.callCheer();
+        break;
+      case 'plaque':
+        this.placePlaque(x, y);
+        break;
+      case 'hush':
+        this.hushT = HUSH_SEC;
+        for (const e of this.enemies) {
+          if (!e.dead && ORDINARY.has(e.kind)) fx.floatText(this, e.x, e.y - e.z - e.height - 10, '쉿!', '#9fd3ff', 16);
+        }
+        break;
+    }
+  }
+
+  /** 응원단 호출권: 동아리원 둘이 양쪽 화면 끝에서 달려와 곁에 붙는다 */
+  private callCheer(): void {
+    for (const c of this.cheer) c.leave();
+    const left = this.cameras.main.scrollX;
+    for (let i = 0; i < CHEER_N; i++) {
+      const side = i % 2 === 0 ? -1 : 1;
+      this.cheer.push(new CheerMember(this, CHEER_LOOKS[i % CHEER_LOOKS.length], side, side < 0 ? left - 60 : left + GAME_W + 60, CHEER_SEC));
+    }
+    this.cheerT = CHEER_SEC;
+  }
+
+  /** 실사 통과 현판: 집은 자리에 서고 둘레가 안전지대가 된다 */
+  private placePlaque(x: number, y: number): void {
+    if (this.plaque) {
+      this.plaque.obj.destroy();
+      this.plaque.ring.destroy();
+    }
+    const ring = this.add
+      .ellipse(x, y, PLAQUE_R * 2, PLAQUE_R * 0.9, 0x5bd16b, 0.14)
+      .setStrokeStyle(3, 0x5bd16b, 0.85)
+      .setDepth(-4);
+    // 현판은 집은 자리 바로 옆 조금 뒤쪽(깊이)에 세워 플레이어 몸에 가리지 않게 한다
+    const px = x - this.player.facing * 50;
+    const py = Math.max(FLOOR_TOP, y - 16);
+    const obj = createPlaque(this).setPosition(px, py).setDepth(py);
+    this.plaque = { x, y, t: PLAQUE_SEC, obj, ring };
+    fx.dust(this, px, py);
+  }
+
+  /** (x, y)가 실사 통과 현판 안전지대 안인지 (Player.takeHit이 묻는다) */
+  safeAt(x: number, y: number): boolean {
+    const q = this.plaque;
+    if (!q) return false;
+    const dx = (x - q.x) / PLAQUE_R;
+    const dy = (y - q.y) / (PLAQUE_R * 0.45);
+    return dx * dx + dy * dy <= 1;
+  }
+
+  /** 응원단·현판·정숙 표지판 시간 */
+  private updateVisitRewards(dt: number): void {
+    for (const c of this.cheer) c.update(dt);
+    this.cheer = this.cheer.filter((c) => !c.removed);
+    if (this.cheerT > 0) this.cheerT -= dt;
+    if (this.hushT > 0) this.hushT -= dt;
+    const q = this.plaque;
+    if (q) {
+      q.t -= dt;
+      const blink = q.t < 2.5 && Math.floor(q.t * 8) % 2 === 0;
+      q.ring.setVisible(!blink);
+      if (q.t <= 0) {
+        q.obj.destroy();
+        q.ring.destroy();
+        this.plaque = null;
+      }
+    }
+  }
+
+  /** HUD 체력 상자 아래에 보일 돌발 방문 보상 효과 */
+  private visitPerks(): string[] {
+    const out: string[] = [];
+    const p = this.player;
+    if (p.clickT > 0) out.push(`매크로 클리커 · 연사 ${CLICKER_MUL}배 ${Math.ceil(p.clickT)}초`);
+    if (this.cheerT > 0) out.push(`응원단 · ${Math.ceil(this.cheerT)}초`);
+    if (this.plaque) out.push(`실사 통과 현판 · 안전지대 ${Math.ceil(this.plaque.t)}초`);
+    if (this.hushT > 0) out.push(`쉿! 정숙 · 잡몹 느려짐 ${Math.ceil(this.hushT)}초`);
+    return out;
+  }
+
+  /** 잡몹인지 (응원단이 처리할 대상) */
+  isMob(e: Enemy): boolean {
+    return ORDINARY.has(e.kind);
+  }
+
+  /** 잡몹 하나를 바로 처리한다 (서류 뭉치는 터뜨리지 않고 거둔다 — 조력자와 같다) */
+  private processMob(e: Enemy, dir: number): void {
+    fx.stampMark(this, e.x, e.y - e.z - Math.min(e.height, 70) * 0.6, '처리');
+    if (e instanceof DocBomb) e.destroy();
+    else e.takeHit({ dmg: 99, dir, kb: 0, knockdown: true, force: true });
+  }
+
+  /** 응원단 동아리원이 잡몹 하나를 처리했다 */
+  cheerProcess(e: Enemy, fromX: number): void {
+    this.processMob(e, e.x >= fromX ? 1 : -1);
+    this.combo++;
+    this.comboT = 1.2;
+    this.maxCombo = Math.max(this.maxCombo, this.combo);
+  }
+
+  /** 로켓 펀치 장갑·취업률 상승 그래프가 닿았다: 잡몹은 처리(개수 제한 없이 꿰뚫는다), 사람(보스·방문 상대)은 도장 4발만큼 */
+  private rewardHit(pr: Projectile, e: Enemy): void {
+    const dir = Math.sign(pr.vx) || 1;
+    if (ORDINARY.has(e.kind)) {
+      // 줄줄이 꿰뚫으므로 잡몹마다 멈칫(히트스톱)은 가볍게
+      this.processMob(e, dir);
+      this.addCombo(1, false);
+      return;
+    }
+    const n = pr.weaponId === 'graph' ? GRAPH_STAMPS : GLOVE_STAMPS;
+    if (e.takeHit({ dmg: n, stamps: n, dir, kb: 0, knockdown: false, thrown: true })) {
+      fx.stampMark(this, e.x, e.y - e.z - Math.min(e.height, 70) * 0.6, this.hitLabel(e));
+      this.addCombo(1, true);
+    }
+  }
+
+  /** 로켓 펀치 장갑(일직선, 꿰뚫기) · 취업률 상승 그래프(화면 폭의 절반까지 날아갔다 돌아오는 부메랑, 빙글빙글) */
+  private throwReward(p: Player, id: 'glove' | 'graph'): void {
+    const f = p.facing;
+    const obj = weaponIcon(this, id, this.studentMode);
+    if (id === 'glove') {
+      obj.setScale(f, 1);
+      this.projectiles.push(
+        new Projectile(this, {
+          x: p.x + f * 26,
+          y: p.y,
+          z: 52,
+          vx: f * 640,
+          owner: 'player',
+          dmg: GLOVE_STAMPS,
+          knockdown: false,
+          halfW: 26,
+          ttl: 2.2,
+          obj,
+          pierce: true,
+          weaponId: 'glove',
+        }),
+      );
+      sound.play('dash');
+      return;
+    }
+    this.projectiles.push(
+      new Projectile(this, {
+        x: p.x + f * 26,
+        y: p.y,
+        z: 52,
+        vx: f * 700,
+        owner: 'player',
+        dmg: GRAPH_STAMPS,
+        knockdown: false,
+        halfW: 26,
+        ttl: 4,
+        obj,
+        spin: 14 * f,
+        returnTo: p,
+        range: GAME_W / 2,
+        pierce: true,
+        weaponId: 'graph',
+      }),
+    );
   }
 
   // ---------- 디버그 ----------

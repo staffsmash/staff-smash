@@ -25,6 +25,8 @@ export interface HudInfo {
   clockMin: number;
   /** 화면 위 가운데 노란 안내 (결재 대기 등) */
   notice: string;
+  /** 체력 상자 아래 효과 줄에 더할 것 (돌발 방문 보상: 매크로 클리커·응원단·실사 통과 현판·정숙 표지판) */
+  perks?: string[];
   boss: BossInfo | null;
 }
 
@@ -241,6 +243,7 @@ export class Hud {
     if (p.shieldT > 0) perks.push(`${this.student ? '공결 확인서' : '연차 쿠폰'} · 한 번 막음 ${Math.ceil(p.shieldT)}초`);
     if (p.shuttleT > 0) perks.push(`셔틀버스 시간표 · 빨라짐 ${Math.ceil(p.shuttleT)}초`);
     if (p.sealT > 0) perks.push(`${this.student ? '출석 스티커' : '인감 도장'} · 넘어뜨림 ${Math.ceil(p.sealT)}초`);
+    if (info.perks) perks.push(...info.perks);
     const text = perks.length > 2 ? `${perks.slice(0, 2).join('   ')}\n${perks.slice(2).join('   ')}` : perks.join('   ');
     this.perkT.setText(text).setVisible(perks.length > 0);
 

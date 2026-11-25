@@ -34,6 +34,9 @@ export interface RunState {
   /** 도달한 스테이지 (1~3) */
   reached: number;
   cleared: boolean;
+  /** 교직원별 돌발 방문 (교직원 모드, 한 판에 한 번 반드시): 나올 스테이지(0부터, 첫 스테이지가 무작위로 정한다)와 이미 나왔는지 */
+  visitStage?: number;
+  visitDone?: boolean;
 }
 
 export function newRun(mode: GameMode, hero: string, skill: SkillId): RunState {

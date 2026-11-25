@@ -74,5 +74,31 @@
     "knockdown": true,
     "throwDmg": 3,
     "throwOnly": true
+  },
+  "glove": {
+    "name": "로켓 펀치 장갑",
+    "studentName": "로켓 펀치 장갑",
+    "durability": 3,
+    "total": 0.3,
+    "active": [0, 0],
+    "reach": 0,
+    "dmg": 0,
+    "kb": 0,
+    "knockdown": false,
+    "throwDmg": 4,
+    "throwOnly": true
+  },
+  "graph": {
+    "name": "취업률 상승 그래프",
+    "studentName": "취업률 상승 그래프",
+    "durability": 1,
+    "total": 0.3,
+    "active": [0, 0],
+    "reach": 0,
+    "dmg": 0,
+    "kb": 0,
+    "knockdown": false,
+    "throwDmg": 4,
+    "throwOnly": true
   }
 }
