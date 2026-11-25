@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { clockText, OFF_HOURS, START_CLOCK } from '../../config';
 import { SPELLS, spellById, type SpellDef } from '../../data/spells';
-import { STUDENT_HEROES, studentHeroById, type StudentHeroDef } from '../../data/students';
+import { FPS_STUDENT_HEROES, studentHeroById, type StudentHeroDef, type StudentHeroLook } from '../../data/students';
 import { gpa, gradeStage, type Grade } from '../../grade';
 import { lateMin, onTime, outcomeText } from '../../run';
 import type { Rect } from '../blocks';
@@ -9,6 +9,7 @@ import { attachRecordForm } from '../board';
 import type { PersonBoss } from '../bosses';
 import { DORM_DOOR, HUM_DOOR, PATH3, PATH3_GUIDE, type Stage } from '../campus';
 import type { Ctx, Enemy, HurtKind } from '../enemies';
+import { plaidTex } from '../looktex';
 import type { FoodKind } from '../models';
 import { peopleKit, type Person, type Who } from '../people';
 import { DIFF_KEYS, DIFFS, saveSettings, timeText, type Diff, type DiffKey, type Settings } from '../settings';
@@ -354,6 +355,29 @@ type Flow = 'wave' | 'staff' | 'staffOut' | 'boss' | 'clear' | 'walk' | 'card' |
 
 const _v = new THREE.Vector3();
 
+/** 색을 조금 어둡게 (야구잠바 소맷부리 — people.ts와 같은 0.72) */
+function darken(c: number): number {
+  const f = 0.72;
+  return (Math.round(((c >> 16) & 255) * f) << 16) | (Math.round(((c >> 8) & 255) * f) << 8) | Math.round((c & 255) * f);
+}
+
+/** 1인칭 팔의 체크 무늬 소매 덮개: 길쭉한 상자의 면마다 그 면의 두 축으로 무늬를 깐다 (한 칸 = tile m, 늘어나지 않게) */
+function plaidSleeveGeo(w: number, len: number, tile: number): THREE.BoxGeometry {
+  const geo = new THREE.BoxGeometry(w, w, len);
+  const pos = geo.getAttribute('position');
+  const nor = geo.getAttribute('normal');
+  const uv = geo.getAttribute('uv');
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i);
+    const y = pos.getY(i);
+    const z = pos.getZ(i);
+    const [a, b] = Math.abs(nor.getX(i)) > 0.5 ? [z, y] : Math.abs(nor.getY(i)) > 0.5 ? [x, z] : [x, y];
+    uv.setXY(i, a / tile, b / tile);
+  }
+  uv.needsUpdate = true;
+  return geo;
+}
+
 function loadBest(): Partial<Record<DiffKey, SBest>> {
   const out: Partial<Record<DiffKey, SBest>> = {};
   try {
@@ -399,12 +423,20 @@ export class StudentMode implements StuCtx {
   private readonly ppl: StudentPeople;
   private readonly towerModel: THREE.Group;
   private readonly office: THREE.Group;
-  private hero: StudentHeroDef = STUDENT_HEROES[0];
+  private hero: StudentHeroDef = FPS_STUDENT_HEROES[0];
   private spell: SpellDef = SPELLS[0];
   private portraits = new Map<string, string>();
   private applied = false;
   private held: THREE.Group;
   private sleeveColor = new THREE.Color();
+  /** 1인칭 팔 덧댐 (소매 자식): 야구잠바 소맷부리(백몽골) · 체크 무늬 덮개(오니혼). 다른 주인공·교직원 모드에서는 숨긴다 */
+  private armDeco: THREE.Group;
+  private readonly cuffMat = new THREE.MeshLambertMaterial({ color: 0x14294f });
+  private readonly plaidMat = new THREE.MeshLambertMaterial();
+  private cuff: THREE.Mesh;
+  private plaid: THREE.Mesh;
+  /** 체크 셔츠 주인공의 무늬 (바탕색별, 미리 만들어 kit.textures로 미리 올린다) */
+  private readonly plaids = new Map<number, THREE.Texture>();
   private markMap: THREE.Texture | null = null;
   private helpHtml = '';
   private nameText = '';
@@ -446,6 +478,22 @@ export class StudentMode implements StuCtx {
     this.held.visible = false;
     h.arm.stamp.add(this.held);
     this.sleeveColor.copy((h.arm.sleeve.material as THREE.MeshLambertMaterial).color);
+    // 1인칭 팔 덧댐: 소매는 0.16 × 0.16 × 0.6 (손 쪽 끝 = z -0.3, main.ts buildViewmodel). 교직원 소맷부리(staffpick.ts)와 같은 자리
+    this.armDeco = new THREE.Group();
+    this.cuff = new THREE.Mesh(new THREE.BoxGeometry(0.172, 0.172, 0.07), this.cuffMat);
+    this.cuff.position.set(0, 0, -0.262);
+    this.plaid = new THREE.Mesh(plaidSleeveGeo(0.166, 0.604, 0.17), this.plaidMat);
+    this.armDeco.add(this.cuff, this.plaid);
+    this.armDeco.visible = false;
+    h.arm.sleeve.add(this.armDeco);
+    for (const x of FPS_STUDENT_HEROES) {
+      if (!x.look.check || this.plaids.has(x.look.jacket)) continue;
+      const t = plaidTex(x.look.jacket);
+      this.plaids.set(x.look.jacket, t);
+      this.kit.textures.push(t);
+    }
+    // 처음부터 무늬를 달아 둔다 (판 시작 때 재질을 다시 만들지 않게)
+    this.plaidMat.map = this.plaids.values().next().value ?? null;
     try {
       const p = JSON.parse(localStorage.getItem(PICK_KEY) ?? '{}') as { hero?: string; spell?: string };
       if (p.hero) this.hero = studentHeroById(p.hero);
@@ -526,7 +574,7 @@ export class StudentMode implements StuCtx {
     });
     // 대사 그림 (speech.ts 공용 말풍선 · 자막)
     prepareSpeech([
-      '퇴근합니다…',
+      '처리해드리겠습니다..',
       '앗, 번호표 발행 중단…',
       '재수강!',
       '제 수강편람이…!',
@@ -537,7 +585,7 @@ export class StudentMode implements StuCtx {
       '…출석 인정하겠습니다.',
       '결재판 보이시죠?',
       '반사!',
-      '정면은 안 됩니다~',
+      '정면은 통하지 않습니다 후후',
       '졸업 서류요? 한번 검토해 봅시다.',
       '좋아요, 검토 끝났습니다.',
       ...ROUTE.map((a) => staffHero(a.staff).line),
@@ -616,9 +664,10 @@ export class StudentMode implements StuCtx {
     return s;
   }
 
+  /** 주인공 6명 (FPS_STUDENT_HEROES, 2026-11-25 — 교직원 선택 화면처럼 카드 3 × 2, staffpick.ts의 .heroes.six 모양) */
   showSelect(): void {
     const t = this.h.touch;
-    const heroes = STUDENT_HEROES.map(
+    const heroes = FPS_STUDENT_HEROES.map(
       (h) =>
         `<button type="button" data-hero="${h.id}" class="${h.id === this.hero.id ? 'on' : ''}" aria-pressed="${h.id === this.hero.id}"><img src="${this.portrait(h)}" alt=""><span><b>${esc(h.name)}</b>${esc(h.line)}</span></button>`,
     ).join('');
@@ -634,7 +683,7 @@ export class StudentMode implements StuCtx {
         <div class="tabs" role="tablist"><button type="button" id="stuTabStaff">${t ? '교직원 모드' : '교직원 모드 (1)'}</button><button type="button" class="on">${t ? '학생 모드' : '학생 모드 (2)'}</button></div>
         <h1>등교 준비</h1>
         <p class="lbl">1. 주인공 (능력은 같고 외형·대사만 달라요)</p>
-        <div class="heroes">${heroes}</div>
+        <div class="heroes six">${heroes}</div>
         <p class="lbl">2. 필살기 · 외국어 주문</p>
         <div class="spells">${spells}</div>
         <div class="srow center"><span class="slabel">난이도</span><div class="seg" role="group" aria-label="난이도">${seg}</div></div>
@@ -701,8 +750,9 @@ export class StudentMode implements StuCtx {
       return false;
     }
     if (!sel) return false;
-    const hi = STUDENT_HEROES.indexOf(this.hero);
+    const hi = FPS_STUDENT_HEROES.indexOf(this.hero);
     const si = SPELLS.indexOf(this.spell);
+    const nh = FPS_STUDENT_HEROES.length;
     switch (e.code) {
       case 'Enter':
       case 'NumpadEnter':
@@ -718,7 +768,7 @@ export class StudentMode implements StuCtx {
         return true;
       case 'ArrowLeft':
       case 'ArrowRight':
-        this.pick(STUDENT_HEROES[(hi + (e.code === 'ArrowLeft' ? 3 : 1)) % 4], this.spell);
+        this.pick(FPS_STUDENT_HEROES[(hi + (e.code === 'ArrowLeft' ? nh - 1 : 1)) % nh], this.spell);
         return true;
       case 'ArrowUp':
       case 'ArrowDown':
@@ -786,7 +836,7 @@ export class StudentMode implements StuCtx {
     if (!this.markMap) this.markMap = kit.markMat.map;
     kit.markMat.map = k.persuadeMark;
     g.models.setDocSkin(k.rejectSheet, k.approvalSheet);
-    (this.h.arm.sleeve.material as THREE.MeshLambertMaterial).color.setHex(this.hero.look.jacket);
+    this.dressArm(this.hero.look);
     for (const c of this.h.arm.stamp.children) c.visible = c === this.held;
     this.flipArrows(true);
     const fire = document.getElementById('fire');
@@ -812,6 +862,7 @@ export class StudentMode implements StuCtx {
     if (this.markMap) peopleKit().markMat.map = this.markMap;
     g.models.setDocSkin();
     (this.h.arm.sleeve.material as THREE.MeshLambertMaterial).color.copy(this.sleeveColor);
+    this.armDeco.visible = false;
     for (const c of this.h.arm.stamp.children) c.visible = c !== this.held;
     this.flipArrows(false);
     const fire = document.getElementById('fire');
@@ -820,6 +871,21 @@ export class StudentMode implements StuCtx {
     if (name && this.nameText) name.textContent = this.nameText;
     const help = document.getElementById('help');
     if (help && this.helpHtml) help.innerHTML = this.helpHtml;
+  }
+
+  /** 1인칭 팔을 고른 주인공 옷으로 (3인칭 모형 people.ts와 같다): 소매는 재킷 색, 야구잠바는 흰 소매 + 몸통 색 소맷부리,
+   *  체크 셔츠는 소매에 체크 무늬 덮개 */
+  private dressArm(L: StudentHeroLook): void {
+    (this.h.arm.sleeve.material as THREE.MeshLambertMaterial).color.setHex(L.varsity ? 0xf4f4f4 : L.jacket);
+    const plaid = L.check ? this.plaids.get(L.jacket) : undefined;
+    this.cuff.visible = !!L.varsity;
+    if (L.varsity) this.cuffMat.color.setHex(darken(L.jacket));
+    this.plaid.visible = !!plaid;
+    if (plaid && this.plaidMat.map !== plaid) {
+      this.plaidMat.map = plaid;
+      this.plaidMat.needsUpdate = true;
+    }
+    this.armDeco.visible = this.cuff.visible || this.plaid.visible;
   }
 
   /** 길 바닥 화살표를 거꾸로 (학생은 반대 방향으로 간다) */

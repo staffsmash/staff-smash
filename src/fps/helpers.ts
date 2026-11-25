@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { HEROES, heroById, type HeroId } from '../data/heroes';
-import { STUDENT_HEROES } from '../data/students';
+import { FPS_STUDENT_HEROES, studentHeroById } from '../data/students';
 import { staffLook, studentLook } from './looks';
 import { Person, type Look } from './people';
 import type { PerkHost } from './props';
@@ -12,7 +12,7 @@ import { prepareSpeech } from './speech';
 // 뛰어 들어온다 (구한 사람이 먼저). 한 방에 쓰러질 피해면 그때 굴려서, 맞으면 체력 1로 버티고 먼저 온다 (Game.hurt).
 // 플레이어가 보는 쪽 앞에서 달려와 화면 안에 선다.
 // - 교직원 모드: 주인공 6명 가운데 고른 사람을 뺀 다섯 명 가운데 (2026-11-17 교직원 고르기, staffpick.ts)
-// - 학생 모드: 고른 주인공을 뺀 학생 주인공들
+// - 학생 모드: 1인칭 학생 주인공 6명(students.ts FPS_STUDENT_HEROES) 가운데 고른 사람을 뺀 다섯 명 가운데
 // 도착하면 살아 있는 잡몹을 모두 처리하고, 체력 +35%, 2초 무적, 보스(사람·창구 직원)는 결재 진행·설득 +10%
 // (다 채우지는 않는다: 5%는 남긴다 — Game.rescueHit). 첫째가 대사 1, 둘째가 대사 2를 말하고 걸어 나간다.
 // 조력자는 다치지 않는다 (적 목록에 없고, 도장·폭발·민원이 노리지 않는다).
@@ -98,7 +98,7 @@ export class Rescue {
       this.staff.set(id, p);
       this.nameOf.set(p, heroById(id).name);
     }
-    for (const s of STUDENT_HEROES) {
+    for (const s of FPS_STUDENT_HEROES) {
       const p = new Person('meeting', s.name, '#7CFC9A', studentLook(s.look));
       // 학생은 결재판을 들지 않는다
       p.clip.visible = false;
@@ -106,10 +106,10 @@ export class Rescue {
       this.nameOf.set(p, s.name);
       this.helloOf.set(p, s.hello);
     }
-    // 대사 그림 (교직원 주인공 여섯·학생 주인공 넷 이름마다)
+    // 대사 그림 (교직원 주인공 여섯·학생 주인공 여섯 이름마다)
     const lines: string[] = [];
     for (const id of STAFF_IDS) lines.push(...rescueLines(false, heroById(id).name));
-    for (const s of STUDENT_HEROES) lines.push(...rescueLines(true, s.name), s.hello);
+    for (const s of FPS_STUDENT_HEROES) lines.push(...rescueLines(true, s.name), s.hello);
     prepareSpeech(lines);
   }
 
@@ -139,7 +139,7 @@ export class Rescue {
   /** 민원에 묻힐 사람 하나 (고른 주인공·이미 묻혔던 사람 빼고). 없으면 null (trapped.ts) */
   pickTrapped(): { id: string; person: Person; name: string } | null {
     const h = this.h;
-    const ids = (h.mode === 'student' ? STUDENT_HEROES.map((s) => s.id) : [...STAFF_IDS]).filter((id) => id !== h.heroId() && !this.trapped.has(id));
+    const ids = (h.mode === 'student' ? FPS_STUDENT_HEROES.map((s) => s.id) : [...STAFF_IDS]).filter((id) => id !== h.heroId() && !this.trapped.has(id));
     if (!ids.length) return null;
     const id = ids[Math.floor(Math.random() * ids.length)];
     const person = this.personOf(id) as Person;
@@ -165,7 +165,7 @@ export class Rescue {
     this.hitAt = -1;
     this.said2 = false;
     this.lines = rescueLines(student, h.playerName());
-    const all = (student ? STUDENT_HEROES.map((s) => s.id) : [...STAFF_IDS]).filter((id) => id !== h.heroId() && id !== this.onStage);
+    const all = (student ? FPS_STUDENT_HEROES.map((s) => s.id) : [...STAFF_IDS]).filter((id) => id !== h.heroId() && id !== this.onStage);
     const first = shuffle(all.filter((id) => this.saved.includes(id)));
     const rest = shuffle(all.filter((id) => !this.saved.includes(id)));
     const pool = [...first, ...rest].map((id) => this.personOf(id) as Person);
@@ -322,6 +322,6 @@ export class Rescue {
 
 /** 주인공 자신의 블록 외형 (조력자와 같은 모양 — Boo가 들고 나는 3인칭 장면, boo.ts) */
 export function heroLook(student: boolean, id: string): Look {
-  if (student) return studentLook((STUDENT_HEROES.find((s) => s.id === id) ?? STUDENT_HEROES[0]).look);
+  if (student) return studentLook(studentHeroById(id).look);
   return staffLook(heroById(id).look);
 }

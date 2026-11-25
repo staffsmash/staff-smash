@@ -3,7 +3,7 @@ import type { SfxName } from './audio';
 import type { Rect } from './blocks';
 import type { Enemy } from './enemies';
 import { HEROES } from '../data/heroes';
-import { STUDENT_HEROES } from '../data/students';
+import { FPS_STUDENT_HEROES } from '../data/students';
 import { heroLook } from './helpers';
 import { Person } from './people';
 import { HeadTag, prepareSpeech } from './speech';
@@ -393,7 +393,7 @@ export class Boo {
   private repicked = false;
   /** 몸이 향하는 쪽 (날아가는 쪽, 라디안 — 모형 +z 기준) */
   private heading = 0;
-  // 3인칭: 들려 가는 주인공 모형 (교직원 여섯·학생 넷, 미리 만든다)
+  // 3인칭: 들려 가는 주인공 모형 (교직원 여섯·학생 여섯, 미리 만든다)
   private readonly heroes = new Map<string, Person>();
   private readonly meG = new THREE.Group();
   private me: Person | null = null;
@@ -406,7 +406,7 @@ export class Boo {
     this.m.root.visible = false;
     h.scene.add(this.m.root);
     for (const x of HEROES) this.heroes.set(`t:${x.id}`, this.heroModel(heroLook(false, x.id)));
-    for (const x of STUDENT_HEROES) this.heroes.set(`s:${x.id}`, this.heroModel(heroLook(true, x.id)));
+    for (const x of FPS_STUDENT_HEROES) this.heroes.set(`s:${x.id}`, this.heroModel(heroLook(true, x.id)));
     this.meG.visible = false;
     h.scene.add(this.meG);
     this.feet.position.set(0, 0.5, -0.6);
