@@ -21,6 +21,9 @@ export interface RunState {
   skill: SkillId;
   names: Record<StudentType, string>;
   lives: number;
+  /** 지난 스테이지를 깼을 때 남은 체력. 다음 스테이지가 이 체력으로 시작한다 (회복하지 않는다, 2026-11-25).
+   *  없으면(새 판·디버그로 바로 연 스테이지) 최대 체력 */
+  hp?: number;
   /** 지난 스테이지까지의 실제 시간(초) */
   elapsed: number;
   /** 회의 소집, 마감 연장 등으로 늘어난 시간(분) */

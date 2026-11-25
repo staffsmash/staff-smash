@@ -155,6 +155,8 @@ export class StageScene extends Phaser.Scene {
   /** 조력자 이벤트: 이번 스테이지에 이미 왔는지, 온 뒤 지난 시간(-1 = 진행 중 아님) */
   private helperUsed = false;
   private helperT = -1;
+  /** 지난 스테이지에서 바닥 체력(HELPER_HP 이하)으로 이어받아 들어왔다: 첫 피격 때 조력자 확률을 굴린다 */
+  private helperPrimed = false;
   /** 경비원(대출기) 사용법 안내를 이번 스테이지에 보여 줬는지 */
   private giverHinted = false;
   /** 경비원이 기믹 무기를 던져 주러 오는 중 */
@@ -233,6 +235,7 @@ export class StageScene extends Phaser.Scene {
     this.helpers = [];
     this.helperUsed = false;
     this.helperT = -1;
+    this.helperPrimed = false;
     this.giverHinted = false;
     this.supplyPending = false;
     this.touched = new WeakMap();
@@ -317,6 +320,11 @@ export class StageScene extends Phaser.Scene {
       st ? { student: true, look: studentHeroById(this.run.hero).look } : { student: false, look: heroById(this.run.hero).look },
     );
     this.player.lives = this.run.lives;
+    // 지난 스테이지에서 깎인 체력을 그대로 이어받는다. 없으면 최대 체력 (새 판·디버그로 바로 연 스테이지)
+    const carried = this.run.hp;
+    if (carried !== undefined) this.player.hp = Phaser.Math.Clamp(carried, 1, this.player.maxHp);
+    // 이미 바닥 체력으로 들어왔으면 첫 피격에도 조력자 확률을 한 번 굴린다 (maybeCallHelpers)
+    this.helperPrimed = this.player.hp <= this.player.maxHp * HELPER_HP;
     this.hud = new Hud(this, this.pad !== null, hero.name, st);
     this.debugG = this.add.graphics().setDepth(1900);
 
@@ -802,6 +810,8 @@ export class StageScene extends Phaser.Scene {
     r.maxCombo = Math.max(r.maxCombo, this.maxCombo);
     r.lives = this.player.lives;
     if (cleared) {
+      // 남은 체력을 다음 스테이지로 넘긴다. 넘어져 KO 처리 전에 스테이지가 끝났으면(체력 0) 1로 버틴 것으로 본다
+      r.hp = Math.max(1, this.player.hp);
       r.stages.push({
         stage: this.stageIndex + 1,
         grade: gradeStage(stats).grade,
@@ -1432,11 +1442,14 @@ export class StageScene extends Phaser.Scene {
 
   // ---------- 조력자 이벤트 ----------
 
-  /** 맞고 체력이 바닥(최대의 25% 이하)으로 떨어지면 60% 확률로 조력자가 온다. 스테이지마다 한 번, 연출 중에는 안 온다 */
+  /** 맞고 체력이 바닥(최대의 25% 이하)으로 떨어지면 60% 확률로 조력자가 온다. 스테이지마다 한 번, 연출 중에는 안 온다.
+   *  체력이 이어지므로 이미 바닥 체력으로 스테이지를 시작했으면 그 스테이지 첫 피격을 "떨어진 것"으로 친다 */
   private maybeCallHelpers(dmg: number): void {
     const p = this.player;
     const lim = p.maxHp * HELPER_HP;
-    if (this.helperUsed || p.hp <= 0 || p.hp > lim || p.hp + dmg <= lim) return;
+    const primed = this.helperPrimed;
+    this.helperPrimed = false;
+    if (this.helperUsed || p.hp <= 0 || p.hp > lim || (p.hp + dmg <= lim && !primed)) return;
     if (this.over || this.finishing || this.bossDefeated || this.specialT >= 0 || this.zoneState === 'done') return;
     if (Math.random() >= HELPER_CHANCE) return;
     this.callHelpers();
