@@ -15,8 +15,26 @@ import { drawTimer } from './textures';
 
 /** note = 메신저 쪽지 알림(학생: 과제 마감 알림), fax = 팩스기, qr = 출석 QR 코드(학생) */
 export type Kind = 'mail' | 'bulk' | 'phone' | 'bubble' | 'bomb' | 'boss' | 'note' | 'fax' | 'qr';
-/** 다친 까닭 (잡몹 + 보스가 쓰는 것). sign = 총장 MOU 서명선, cap = 총장 학사모·상장, cart = 최도서관 책수레 (11차) */
-export type HurtKind = Kind | 'wave' | 'paper' | 'rental' | 'meeting' | 'packet' | 'bigstamp' | 'error' | 'sign' | 'cap' | 'cart';
+/** 다친 까닭 (잡몹 + 보스가 쓰는 것). sign = 총장 MOU 서명선, cap = 총장 학사모·상장, cart = 최도서관 책수레 (11차).
+ *  punch·cursor·resume·luggage·inspect·book = 돌발 방문 상대의 공격 (visit.ts) */
+export type HurtKind =
+  | Kind
+  | 'wave'
+  | 'paper'
+  | 'rental'
+  | 'meeting'
+  | 'packet'
+  | 'bigstamp'
+  | 'error'
+  | 'sign'
+  | 'cap'
+  | 'cart'
+  | 'punch'
+  | 'cursor'
+  | 'resume'
+  | 'luggage'
+  | 'inspect'
+  | 'book';
 /** 날아오는 종이·물건 (도장으로 맞혀 없앨 수 있다). fax = 팩스기가 쏘는 종이 */
 export type SheetKind = 'paper' | 'rental' | 'meeting' | 'packet' | 'fax';
 
