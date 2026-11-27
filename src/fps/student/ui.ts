@@ -183,7 +183,8 @@ export function hideSpell(): void {
 
 let comboShown = 0;
 
-export function showCombo(n: number): void {
+/** 연속 표시 (2연속부터). word: 학생 "통과", 교직원 "처리" (PRD 결정 60 — 1인칭 교직원 모드도 같은 표시) */
+export function showCombo(n: number, word = '통과'): void {
   const el = document.getElementById('stuCombo');
   if (!el) return;
   if (n < 2) {
@@ -193,7 +194,7 @@ export function showCombo(n: number): void {
   }
   if (n === comboShown) return;
   comboShown = n;
-  el.textContent = `${n} 연속 통과!`;
+  el.textContent = `${n} 연속 ${word}!`;
   el.classList.add('on');
   el.classList.remove('pop');
   void el.offsetWidth;

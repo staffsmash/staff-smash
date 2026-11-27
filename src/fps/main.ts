@@ -1,5 +1,11 @@
 import * as THREE from 'three';
 import { appHomeLink, titleLeft, titleShown } from '../pwa';
+import { noteCombo, noteRunEnd, noteSpecialKills, noteStageNoDamage, type RunEnd } from '../badges';
+import { hpBonus, perkMul, type PerkKind } from '../perks';
+import { staffPortraitCanvas } from '../portraits';
+import { onTime, outcomeText } from '../run';
+import type { ResultShare } from '../shareCard';
+import { tutorialSeen } from '../uiPrefs';
 import { armName, Arms, ARMS, BOOMERANG_TURN, type ArmDef, type ArmId } from './arms';
 import type { SfxName } from './audio';
 import { followFps, sfx as sharedSfx } from '../sound';
@@ -47,6 +53,9 @@ import { Budget } from './budget';
 import { dressFull, Vending } from './vending';
 import { Boo, type BooHost } from './boo';
 import { playDream } from './dream';
+import { attachShareButton } from './share';
+import { showCombo } from './student/ui';
+import { FpsTutorial, type TutHost } from './tutorial';
 
 // Staff Smash: HUFS 1인칭 시험판 (v4).
 // 본관 앞에서 세 차례 몰려오는 민원(메일·전화기·말풍선·서류 뭉치)을 도장으로 처리하고,
@@ -115,6 +124,11 @@ const START_CLOCK = 16 * 60 + 52;
 const OFF_HOURS = 17 * 60;
 /** 길 끝: 여기를 넘으면 사회과학관 앞 */
 const PLAZA_X = 72;
+/** 연속 처리가 이어지는 시간 (학생 모드 student/mode.ts와 같다) */
+const COMBO_T = 1.2;
+/** 이어하기: 다시 시작할 때 잠깐 맞지 않는 시간 (초), 시계 벌점 (분) */
+const CONT_GRACE = 1.5;
+const CONT_PENALTY = 2;
 const LOOK_MOUSE = 0.0022;
 const LOOK_TOUCH = 0.006;
 
@@ -250,6 +264,10 @@ interface Stamp {
   /** 부메랑이 돌아오는 중 */
   back: boolean;
   t: number;
+  /** 인물 장점 배율 (PRD 결정 60): 도장은 처리 위력, 무기는 던지기 위력 — 결재 진행·피해에 곱한다 */
+  pow: number;
+  /** 던지기 장점의 빠르기 배율 (무기만, 부메랑이 돌아올 때도) */
+  vmul: number;
 }
 
 interface Sheet {
@@ -314,6 +332,24 @@ interface AreaStat {
   damage: number;
   processed: number;
 }
+
+/** 구역을 시작할 때 들고 있던 것 (이어하기는 그 구역 시작 때로 되돌린다 — PRD 결정 60 · 9절) */
+interface Snap {
+  sp: number;
+  arm: ArmId | null;
+  armUses: number;
+  brooms: number;
+  bins: number;
+  bap: number;
+  tongdak: number;
+  visitItem: Visit['item'];
+  visitN: number;
+  tickets: number;
+  bell: boolean;
+  approved: number;
+}
+
+type MulPerk = Exclude<PerkKind, 'hp'>;
 
 /** 보스 대사 (미리 그려 둔다) */
 const BOSS_LINES = [
@@ -541,6 +577,27 @@ class Game implements Ctx {
   private duskShown = -1;
   private areaStart: AreaStat = { time: 0, damage: 0, processed: 0 };
   private hudCache = new Map<string, string>();
+  /** 첫 판 안내 (tutorial.ts): 연습하는 동안 게임 속 시계가 멈추고 적이 오지 않는다 */
+  tut!: FpsTutorial;
+  /** 연습 전 던진 수·맞힌 수·점프 수 (연습은 명중률·기록에 넣지 않는다) */
+  private tutBase = { thrown: 0, hits: 0, jumps: 0 };
+  /** 필살기 쓴 수 (첫 판 안내 다섯째 단계) */
+  specials = 0;
+  /** 이번 필살기(발동~효과 끝)에 처리한 잡몹 수 (배지 "일괄 처리") */
+  private spKills = 0;
+  /** 교직원 모드 연속 처리: 학생 모드(student/mode.ts)와 같은 규칙 — 1.2초 안에 다음 도장이 맞으면 이어지고, 맞으면 끊긴다 */
+  private combo = 0;
+  private comboT = 0;
+  /** 이번 판 최대 연속 처리 (교직원) */
+  maxCombo = 0;
+  private lastHits = 0;
+  private lastDmg = 0;
+  /** 이어하기를 썼다 (한 판에 한 번, PRD 결정 60 · 9절) */
+  continued = false;
+  /** 지금 구역을 시작할 때 들고 있던 것 (이어하기) */
+  private snap: Snap | null = null;
+  /** HUD 체력 막대 칸 수 (10, 장점이면 11) */
+  private hpCells = 0;
 
   constructor() {
     this.renderer = new THREE.WebGLRenderer({ antialias: !TOUCH });
@@ -568,6 +625,21 @@ class Game implements Ctx {
 
   get diff(): Diff {
     return DIFFS[this.runDiff];
+  }
+
+  /** 고른 주인공 id (교직원: staffpick.ts, 학생: student/mode.ts) — 인물 장점(src/perks.ts)을 정한다 */
+  get heroId(): string {
+    return this.mode === 'student' && this.stu ? this.stu.heroId : this.pick.hero.id;
+  }
+
+  /** 최대 체력: 10칸, 권학생·김러샤는 11칸 (PRD 결정 60 · 5절) */
+  get maxHp(): number {
+    return MAX_HP + hpBonus(this.heroId);
+  }
+
+  /** 인물 장점 배율 (해당 없으면 1) */
+  private perk(kind: MulPerk): number {
+    return perkMul(this.heroId, kind);
   }
 
   get feet(): number {
@@ -622,12 +694,13 @@ class Game implements Ctx {
     this.props = new Props(perk);
     this.rescue = new Rescue(perk);
     this.budget = new Budget(perk, this, () => areaOf(this.stage));
-    this.vend = new Vending(perk, this, MAX_HP);
+    this.vend = new Vending(perk, this, () => this.maxHp);
     this.dating = new Dating(this.datingHost());
     this.trap = new Trap(this.trapHost());
     this.side = new SideJob(this.sideHost());
     this.visit = new Visit(this.visitHost());
     this.boo = new Boo(this.booHost());
+    this.tut = new FpsTutorial(this.tutHost());
     this.bounds = [this.world.yard];
     this.world.setDusk(0);
     this.warmup();
@@ -789,6 +862,8 @@ class Game implements Ctx {
         this.showTitle();
       },
       showSettings: () => this.showSettings('title'),
+      endScreen: (o, share, end, over) => this.endScreen(o, share, end, over),
+      snapArea: () => this.snapArea(),
       placeBoss: (b) => this.placeBoss(b),
       showBossBar: (name) => this.showBossBar(name),
       lower: (g) => this.lower(g),
@@ -824,11 +899,12 @@ class Game implements Ctx {
       },
       solids: () => [...g.world.obstacles, ...g.props.solids, ...g.vend.solids],
       areaNo: () => g.stu.areaNo,
-      waveOk: () => g.stu.inWave,
+      // 첫 판 안내 중에는 나오지 않는다
+      waveOk: () => g.stu.inWave && !g.tut.on,
       // 조력자·친구 구조 장면·구역 카드·멈춤이 끝난 뒤에
       free: () => !g.rescue.busy && g.trap.state === 'idle' && g.freezeT <= 0 && !g.rescueHeld(),
       heroName: () => g.stu.heroName,
-      healFull: () => (g.hp = MAX_HP),
+      healFull: () => (g.hp = g.maxHp),
       resetInput: () => {
         g.keys.clear();
         g.firing = false;
@@ -863,7 +939,7 @@ class Game implements Ctx {
       solids: () => [...g.world.obstacles, ...g.props.solids, ...g.vend.solids],
       areaNo,
       // 민원 차례 중 (교직원 본관 앞은 2차 민원부터 — 1차는 처음 배우는 차례)
-      waveOk: () => (g.mode === 'student' ? g.stu.inWave : g.fight === 'wave' && (areaOf(g.stage) > 0 || g.wave >= 1)),
+      waveOk: () => !g.tut.on && (g.mode === 'student' ? g.stu.inWave : g.fight === 'wave' && (areaOf(g.stage) > 0 || g.wave >= 1)),
       // 예산팀 직원이 와 있거나 조력자가 뛰어오는 중이거나 멈춰 있으면 기다린다.
       // 교직원 모드는 예산팀 직원이 이 구역에 다녀간 뒤에 (줄이 다 나왔으면 바로)
       free: () =>
@@ -928,7 +1004,10 @@ class Game implements Ctx {
       get hp() {
         return g.hp;
       },
-      maxHp: MAX_HP,
+      get maxHp() {
+        return g.maxHp;
+      },
+      heroId: () => g.pick.hero.id,
       solids: () => [...g.world.obstacles, ...g.props.solids, ...g.vend.solids],
       areaNo: () => areaOf(g.stage),
       waveOk: () => g.mode === 'staff' && g.fight === 'wave',
@@ -946,7 +1025,7 @@ class Game implements Ctx {
       itemHit: (e, stamps) => g.itemHit(e, stamps),
       minions: () => g.minions(),
       spawnMob: () => g.spawnKind(Math.random() < 0.75 ? 'mail' : 'phone'),
-      heal: (n) => (g.hp = Math.min(MAX_HP, g.hp + n)),
+      heal: (n) => (g.hp = Math.min(g.maxHp, g.hp + n)),
       // F 칸: 돌발 방문 보상이 먼저 (visit.ts)
       useVisitItem: () => g.visit.useItem(),
       visitItem: () => g.visit.itemUi(),
@@ -1118,6 +1197,41 @@ class Game implements Ctx {
     };
   }
 
+  /** 첫 판 안내(tutorial.ts)가 빌려 쓰는 Game 안쪽 기능 */
+  private tutHost(): TutHost {
+    const g = this;
+    return {
+      touch: TOUCH,
+      get student() {
+        return g.mode === 'student';
+      },
+      get pos() {
+        return g.pos;
+      },
+      get yaw() {
+        return g.yaw;
+      },
+      get pitch() {
+        return g.pitch;
+      },
+      get thrown() {
+        return g.thrown;
+      },
+      get jumps() {
+        return g.jumps;
+      },
+      get specials() {
+        return g.specials;
+      },
+      fillSp: () => {
+        g.sp = SP_MAX;
+        g.spReadyShown = true;
+      },
+      sound: (name) => g.sound(name),
+      done: () => g.afterTutorial(),
+    };
+  }
+
   /** 교직원 선택 화면(staffpick.ts)이 빌려 쓰는 Game 안쪽 기능 */
   private pickHost(): PickHost {
     const g = this;
@@ -1176,6 +1290,8 @@ class Game implements Ctx {
       if (this.pick.key(e)) return;
       // 로테이션 소개팅 화살표 판: 방향키·WASD를 가져간다 (student/dating.ts)
       if (this.dating.key(e)) return;
+      // 첫 판 안내: Enter = 건너뛰기 (tutorial.ts)
+      if (this.tut.key(e, this.phase === 'play')) return;
       this.keys.add(e.code);
       if (e.code === 'Space' && this.phase === 'play') e.preventDefault();
       if (e.repeat) return;
@@ -1195,6 +1311,8 @@ class Game implements Ctx {
         e.preventDefault();
         this.restart();
       }
+      // C: 이어하기 (게임오버 화면에 "이 구역부터 다시" 단추가 있을 때)
+      if (e.code === 'KeyC' && this.phase === 'over' && !e.repeat && document.getElementById('contBtn')) this.continueRun();
     });
     window.addEventListener('keyup', (e) => this.keys.delete(e.code));
     window.addEventListener('blur', () => this.keys.clear());
@@ -1461,11 +1579,26 @@ class Game implements Ctx {
       // 고른 교직원의 팔·이름 (학생 모드면 덧댄 것만 감춘다), 지난 판 필살기 연출 정리
       this.pick.dress(this.mode === 'staff');
       this.skills.clear();
-      if (this.mode === 'student') this.stu.begin();
-      else {
+      // 인물 장점: 최대 체력 11칸 (PRD 결정 60)
+      this.hp = this.maxHp;
+      // 첫 판 안내: 이 기기에서 처음 하는 판 (교직원·학생 구분 없이 한 번). 연습이 끝나면 첫 차례가 시작된다 (afterTutorial)
+      const tut = !tutorialSeen('fps');
+      if (this.mode === 'student') {
+        this.stu.begin();
+        if (tut) {
+          $('banner').style.opacity = '0';
+          this.bannerTimer = 0;
+        }
+      } else {
         this.mids = buildMidPeople();
-        this.startWaves(0);
+        if (!tut) this.startWaves(0);
       }
+      // 첫 자리(학생은 대운동장)에 선 뒤에 연습을 시작한다 (이동 단계가 옮겨진 거리를 세지 않게)
+      if (tut) {
+        this.tutBase = { thrown: this.thrown, hits: this.hits, jumps: this.jumps };
+        this.tut.begin();
+      }
+      this.snapArea();
     }
     this.phase = 'play';
     this.last = performance.now();
@@ -1538,7 +1671,7 @@ class Game implements Ctx {
     this.pos.set(0, EYE, 11);
     this.yaw = 0;
     this.pitch = 0.12;
-    this.hp = MAX_HP;
+    this.hp = this.maxHp;
     this.elapsed = 0;
     this.thrown = 0;
     this.hits = 0;
@@ -1570,6 +1703,17 @@ class Game implements Ctx {
     this.shakeT = 0;
     this.spReadyShown = false;
     this.offShown = false;
+    this.tut.cancel();
+    this.specials = 0;
+    this.spKills = 0;
+    this.combo = 0;
+    this.comboT = 0;
+    this.maxCombo = 0;
+    this.lastHits = 0;
+    this.lastDmg = 0;
+    showCombo(0);
+    this.continued = false;
+    this.snap = null;
     for (const d of this.dirs) d.t = 0;
     $('bossbox').classList.remove('on');
     $('areacard').classList.remove('on');
@@ -1632,6 +1776,10 @@ class Game implements Ctx {
     };
     this.areaStats.push(s);
     this.areaStart = { time: this.elapsed, damage: this.damageTaken, processed: this.processed };
+    // 배지 "무사고 근무": 구역을 받은 피해 0으로 끝냈다
+    if (s.damage <= 0) noteStageNoDamage();
+    // 다음 구역(가는 길 포함)을 시작할 때 들고 있던 것 (이어하기)
+    this.snapArea();
     return s;
   }
 
@@ -2101,7 +2249,8 @@ class Game implements Ctx {
 
   private addSp(n: number): void {
     const was = this.sp;
-    this.sp = Math.min(SP_MAX, this.sp + n);
+    // 인물 장점: 필살기 충전 +15% (김학종지·이엘LT)
+    this.sp = Math.min(SP_MAX, this.sp + n * this.perk('special'));
     if (was < SP_MAX && this.sp >= SP_MAX && !this.spReadyShown) {
       this.spReadyShown = true;
       this.note(TOUCH ? '필살기 준비 완료 — 노란 버튼' : '필살기 준비 완료 — Q', 2);
@@ -2196,9 +2345,12 @@ class Game implements Ctx {
   }
 
   private collect(p: Pickup): void {
+    // 인물 장점: 아이템 시간 +30% (최도서관·오니혼) — 시간이 있는 것에 곱한다
+    const bm = this.perk('buff');
+    const secs = (t: number) => Math.round(t);
     if (p.full) {
       // 자판기 치킨돈가스 (vending.ts)
-      this.hp = MAX_HP;
+      this.hp = this.maxHp;
       this.note('학식 치킨돈가스! 체력 모두 회복');
     } else if (p.kind === 'boo') {
       // Boo 호출 벨: 보관했다가 G(터치: Boo 버튼)로 쓴다 (boo.ts)
@@ -2207,32 +2359,32 @@ class Game implements Ctx {
       // 교직원: 식권은 모아서 자판기에 넣는다 (vending.ts). 체력 회복 없음
       this.vend.addTicket();
     } else if (p.kind === 'donkatsu') {
-      this.hp = Math.min(MAX_HP, this.hp + 4);
+      this.hp = Math.min(this.maxHp, this.hp + 4);
       this.note('학식 돈가스! 체력 +4');
     } else if (p.kind === 'gimbap') {
-      this.hp = Math.min(MAX_HP, this.hp + 2);
+      this.hp = Math.min(this.maxHp, this.hp + 2);
       this.note('삼각김밥! 체력 +2');
     } else if (p.kind === 'ticket') {
-      this.hp = MAX_HP;
+      this.hp = this.maxHp;
       this.note('식권! 체력 모두 회복');
     } else if (p.kind === 'battery') {
       this.addSp(SP_MAX * 0.5);
       this.note('보조배터리! 필살기 게이지 +50');
     } else if (p.kind === 'shield') {
-      this.shieldT = SHIELD_T;
+      this.shieldT = SHIELD_T * bm;
       this.note(this.mode === 'student' ? '공결 확인서! 다음 한 번은 안 맞아요' : '연차 쿠폰! 다음 한 번은 안 맞아요', 2);
     } else if (p.kind === 'shuttle') {
-      this.shuttleT = SHUTTLE_T;
-      this.note('셔틀버스 시간표! 10초 동안 빨라져요', 2);
+      this.shuttleT = SHUTTLE_T * bm;
+      this.note(`셔틀버스 시간표! ${secs(this.shuttleT)}초 동안 빨라져요`, 2);
     } else if (p.kind === 'capture') {
-      this.freezeMobs(CAPTURE_T);
+      this.freezeMobs(CAPTURE_T * bm);
       this.note('단톡방 공지 캡처! 잡몹이 잠깐 멈춰요', 2);
     } else if (p.kind === 'seal') {
-      this.sealT = SEAL_T;
-      this.note(this.mode === 'student' ? '출석 스티커! 8초 동안 서류가 넘어뜨려요' : '인감 도장! 8초 동안 도장이 넘어뜨려요', 2);
+      this.sealT = SEAL_T * bm;
+      this.note(this.mode === 'student' ? `출석 스티커! ${secs(this.sealT)}초 동안 서류가 넘어뜨려요` : `인감 도장! ${secs(this.sealT)}초 동안 도장이 넘어뜨려요`, 2);
     } else {
-      this.buffT = BUFF_T;
-      this.note(this.mode === 'student' ? '아메리카노! 공격 속도 UP' : '아메리카노! 8초 동안 도장을 빨리 던집니다');
+      this.buffT = BUFF_T * bm;
+      this.note(this.mode === 'student' ? '아메리카노! 공격 속도 UP' : `아메리카노! ${secs(this.buffT)}초 동안 도장을 빨리 던집니다`);
     }
     this.sound('pickup');
     this.fx.confetti(_v.set(p.obj.position.x, 0.8, p.obj.position.z), 12, 3, 0xf5c542, 2, 0.7);
@@ -2397,6 +2549,9 @@ class Game implements Ctx {
     if (s !== 'yard' && s !== 'yardBoss' && s !== 'plaza' && s !== 'hum' && s !== 'dorm' && s !== 'field' && s !== 'final') return;
     this.sp = 0;
     this.spReadyShown = false;
+    this.specials++;
+    // 배지 "일괄 처리": 이번 필살기에 처리한 잡몹 수를 새로 센다 (noticeT로 맞는 것 — step)
+    this.spKills = 0;
     this.sound('special');
     // 학생 모드: 고른 외국어 주문 (효과는 같다). 교직원 모드: 고른 업무 스킬 (2D와 같은 띠)
     const skill = this.pick.skill;
@@ -2432,21 +2587,22 @@ class Game implements Ctx {
     }
   }
 
-  private noticeHit(e: Enemy): void {
-    if (!e.targetable) return;
+  /** 필살기(전체 공지·업무 스킬)·아이템이 맞았다. 잡몹을 처리했으면 true */
+  private noticeHit(e: Enemy): boolean {
+    if (!e.targetable) return false;
     if (e instanceof PersonBoss) {
       // 전체 공지도 결재판으로 (몸에 자국을 남기지 않는다)
       this.damage(e, 8, 'special');
-      return;
+      return false;
     }
     this.fx.mark(e.center, 1.3);
     if (e instanceof Bomb) {
       e.dead = true;
       e.die();
       this.onProcessed(e);
-    } else {
-      this.damage(e, 99, 'special');
+      return true;
     }
+    return this.damage(e, 99, 'special') === 'kill' && !isBoss(e);
   }
 
   /**
@@ -2505,7 +2661,7 @@ class Game implements Ctx {
       return;
     }
     if (save) this.beginRescue();
-    else if (this.hp <= MAX_HP * RESCUE_HP) {
+    else if (this.hp <= this.maxHp * RESCUE_HP) {
       this.rescueDue = true;
       this.tryRescue();
     }
@@ -2569,7 +2725,7 @@ class Game implements Ctx {
    * 카드·화면 전환 중이면 기다렸다가 끝나면 굴린다 (그 사이 체력이 30%를 넘으면 취소). Game.hurt·step이 부른다
    */
   private tryRescue(): void {
-    if (this.hp <= 0 || this.hp > MAX_HP * RESCUE_HP || !this.rescue.canStart(this.rescueKey())) {
+    if (this.hp <= 0 || this.hp > this.maxHp * RESCUE_HP || !this.rescue.canStart(this.rescueKey())) {
       this.rescueDue = false;
       return;
     }
@@ -2596,7 +2752,7 @@ class Game implements Ctx {
         this.onProcessed(e);
       } else this.damage(e, 99, 'special');
     }
-    this.hp = Math.min(MAX_HP, this.hp + MAX_HP * 0.35);
+    this.hp = Math.min(this.maxHp, this.hp + this.maxHp * 0.35);
     this.invuln = Math.max(this.invuln, 2);
     const b = this.boss;
     if (b && !b.dead && b.state !== 'sleep') {
@@ -2673,7 +2829,10 @@ class Game implements Ctx {
     _q.setFromEuler(_e.set(this.pitch, this.yaw, 0, 'YXZ'));
     const dir = _dir.set(0, 0, -1).applyQuaternion(_q);
     const start = _v.set(0.3, -0.25, -0.5).applyQuaternion(_q).add(_w.set(this.pos.x, EYE + this.jumpY, this.pos.z));
-    const speed = arm ? arm.speed : STAMP_SPEED;
+    // 인물 장점: 무기는 던지기 위력·거리 +20% (나진취·백몽골 — 빠르기를 키워 더 멀리), 도장·서류는 처리 위력 +10% (김전략·정헝가리)
+    const vmul = arm ? this.perk('throw') : 1;
+    const pow = arm ? this.perk('throw') : this.perk('power');
+    const speed = arm ? arm.speed * vmul : STAMP_SPEED;
     const grav = arm ? arm.grav : 5;
     const lift = arm ? arm.lift : 0.8;
     const cone = TOUCH && this.settings.assist ? Math.max(0.14, this.diff.assist) : this.diff.assist;
@@ -2683,7 +2842,7 @@ class Game implements Ctx {
     let s = this.stamps.find((x) => !x.on && x.key === key);
     if (!s) {
       const obj = arm ? this.arms.model(arm.id, student) : this.models.stamp();
-      s = { obj, vel: new THREE.Vector3(), life: 0, on: false, key, arm: null, seen: new Set(), scored: false, back: false, t: 0 };
+      s = { obj, vel: new THREE.Vector3(), life: 0, on: false, key, arm: null, seen: new Set(), scored: false, back: false, t: 0, pow: 1, vmul: 1 };
       this.scene.add(s.obj);
       this.stamps.push(s);
     }
@@ -2695,6 +2854,8 @@ class Game implements Ctx {
     s.scored = false;
     s.back = false;
     s.t = 0;
+    s.pow = pow;
+    s.vmul = vmul;
     s.obj.position.copy(start);
     s.obj.rotation.set(0, this.yaw, 0);
     s.vel.copy(dir).multiplyScalar(speed);
@@ -2712,7 +2873,7 @@ class Game implements Ctx {
     if (!cl || !cl.targetable) return false;
     this.hits++;
     this.sound('hit');
-    const r = this.damage(cl, 1, 'stamp');
+    const r = this.damage(cl, this.arms.def ? this.perk('throw') : this.perk('power'), 'stamp');
     if (this.sealT > 0) this.sealHit(cl, cl.center, r);
     this.hitMarker(r === 'kill');
     return true;
@@ -2765,7 +2926,7 @@ class Game implements Ctx {
           const to = _r.set(this.pos.x, EYE - 0.3 + this.jumpY, this.pos.z).sub(p);
           const d = to.length();
           if (d < 1.1) s.life = 0;
-          else s.vel.lerp(to.multiplyScalar(a.speed * 1.1 / d), Math.min(1, dt * 7));
+          else s.vel.lerp(to.multiplyScalar((a.speed * s.vmul * 1.1) / d), Math.min(1, dt * 7));
         } else s.vel.multiplyScalar(1 - dt * 0.8);
       } else s.vel.y -= (a ? a.grav : 5) * dt;
       // 빠르게 날아가므로 두 번 나눠 움직이며 맞았는지 본다
@@ -2860,7 +3021,8 @@ class Game implements Ctx {
       this.hits++;
       if (s) s.scored = true;
     }
-    const k = s?.arm ? s.arm.power : 1;
+    // 무기 배율 × 인물 장점 (도장: 처리 위력, 무기: 던지기 위력)
+    const k = (s?.arm ? s.arm.power : 1) * (s ? s.pow : this.perk('power'));
     let reflected = false;
     if (e instanceof PersonBoss) {
       // 사람은 다치지 않는다: 결재판에 도장 자국과 반짝임만
@@ -2972,7 +3134,9 @@ class Game implements Ctx {
     // 적이 없는 길에서는 조금 빨리 걷는다
     const onPath = this.stage === 'path' || this.stage === 'path2' || this.stage === 'path3' || this.stage === 'path4' || this.stage === 'path5';
     // 조리사 선생님 돕기: 상자를 든 동안 조금 느려진다 (sidejob.ts)
-    const speed = (running ? RUN : WALK) * (this.slow > 0 ? 0.55 : 1) * (onPath ? 1.35 : 1) * (this.shuttleT > 0 ? SHUTTLE_MUL : 1) * this.side.speedMul;
+    // 인물 장점: 이동 +10% (김국제·박불어)
+    const speed =
+      (running ? RUN : WALK) * (this.slow > 0 ? 0.55 : 1) * (onPath ? 1.35 : 1) * (this.shuttleT > 0 ? SHUTTLE_MUL : 1) * this.side.speedMul * this.perk('move');
     const sin = Math.sin(this.yaw);
     const cos = Math.cos(this.yaw);
     // 앞 = (-sin, -cos), 오른쪽 = (cos, -sin)
@@ -3059,14 +3223,17 @@ class Game implements Ctx {
     document.exitPointerLock?.();
     $('bossbox').classList.remove('on');
     $('areacard').classList.remove('on');
-    const where = AREA_NAMES[areaOf(this.stage)];
+    const where = AREA_NAMES[this.stage === 'toFinal' ? 5 : areaOf(this.stage)];
     this.freezeT = 0;
+    this.combo = 0;
+    showCombo(0);
     if (this.mode === 'student') return this.stu.gameOver();
     const o = this.overlay(`
       <div class="panel">
         <h1 style="color:#ff6b6b">야근 확정</h1>
         <p>${where}에서 민원에 묻혀 퇴근하지 못했습니다.</p>
         <p>처리 ${this.processed}건 · 명중률 ${this.accuracy()}% · 난이도 ${this.diff.label}</p>
+        <p class="combo">최대 연속 처리 ${this.maxCombo}회</p>
         <p class="counts">${this.countsHtml()}</p>
         <button id="againBtn" type="button">다시 하기</button>
         <button id="titleBtn" class="ghost" type="button">처음 화면</button>
@@ -3078,7 +3245,31 @@ class Game implements Ctx {
       this.showTitle();
     });
     // 닉네임 기록판 (src/fps/board.ts)
-    attachRecordForm(o, { mode: 'fps-staff', stage: this.areaStats.length, cleared: false, elapsed: this.elapsed, hero: this.pick.hero.name, diff: this.runDiff, clockMin: START_CLOCK + this.elapsed / 60 + this.penaltyMin });
+    const clock = START_CLOCK + this.elapsed / 60 + this.penaltyMin;
+    attachRecordForm(o, { mode: 'fps-staff', stage: this.areaStats.length, cleared: false, elapsed: this.elapsed, hero: this.pick.hero.name, diff: this.runDiff, clockMin: clock });
+    // 공유 그림·배지·이어하기 (PRD 결정 60)
+    this.endScreen(
+      o,
+      this.staffShare(`${where}에서 야근 확정 (${clockText(clock)})`, `${this.areaStats.length}구역 정리 · 처리 ${this.processed}건`),
+      { mode: 'staff', heroId: this.pick.hero.id, cleared: false, onTime: onTime(clock), grades: [], diff: this.runDiff, continued: this.continued },
+      true,
+    );
+  }
+
+  /** 교직원 결과 공유 그림 내용 (shareCard.ts) */
+  private staffShare(outcome: string, gradesLine: string): ResultShare {
+    const h = this.pick.hero;
+    return {
+      game: 'fps',
+      mode: 'staff',
+      diffLabel: this.diff.label,
+      heroName: h.name,
+      portrait: staffPortraitCanvas(h.look),
+      outcome,
+      gradesLine,
+      comboLine: `최대 연속 처리 ${this.maxCombo}회`,
+      continued: this.continued,
+    };
   }
 
   /** 근무평정: 처리 시간 40 + 받은 민원 피해 30 + 명중률 30 (본편 2D와 같은 S~D 구간) */
@@ -3121,6 +3312,8 @@ class Game implements Ctx {
     document.exitPointerLock?.();
     $('bossbox').classList.remove('on');
     for (const id of ['stamp1', 'stamp2']) $(id).classList.remove('on');
+    this.combo = 0;
+    showCombo(0);
     const clock = START_CLOCK + this.elapsed / 60 + this.penaltyMin;
     const g = this.gradeRun();
     const rec = recordBest(this.runDiff, { total: g.total, grade: g.grade, time: this.elapsed });
@@ -3140,6 +3333,7 @@ class Game implements Ctx {
           <table>${rows}<tr><td>합계</td><td></td><td class="pts">${g.total}/100</td></tr></table>
         </div>
         <p class="areas">${areas}</p>
+        <p class="combo">최대 연속 처리 ${this.maxCombo}회</p>
         <p class="counts">${this.countsHtml()}</p>
         <p class="best">난이도 ${this.diff.label} · ${bestTxt}</p>
         <button id="againBtn" type="button">다시 하기</button>
@@ -3153,6 +3347,239 @@ class Game implements Ctx {
     });
     // 닉네임 기록판 (src/fps/board.ts)
     attachRecordForm(o, { mode: 'fps-staff', stage: this.areaStats.length, cleared: true, elapsed: this.elapsed, hero: this.pick.hero.name, diff: this.runDiff, clockMin: clock });
+    // 공유 그림·배지 (PRD 결정 60) — 꿈 결말 뒤에도 여기로 온다
+    this.endScreen(
+      o,
+      this.staffShare(outcomeText('staff', true, AREA_NAMES.length, clock, true), `근무평정 ${g.grade} · ${g.total}점`),
+      { mode: 'staff', heroId: this.pick.hero.id, cleared: true, onTime: onTime(clock), grades: [g.grade], diff: this.runDiff, continued: this.continued },
+      false,
+    );
+  }
+
+  // ---------- 결과 화면 공통 · 첫 판 안내 · 이어하기 (PRD 결정 60) ----------
+
+  /**
+   * 결과 화면이 뜰 때 (두 모드, 클리어·게임오버·꿈 결말 모두 — 학생 모드는 studentHost.endScreen):
+   * 배지 판 끝(noteRunEnd) 한 번, "공유" 단추(그림을 미리 그린다), 게임오버면 "이 구역부터 다시 (+2분)" (한 판에 한 번).
+   * 기록판 칸(attachRecordForm)을 붙인 뒤에 부른다 — 이어하기 단추가 기록판 칸 아래, "다시 하기" 위에 온다.
+   */
+  private endScreen(o: HTMLElement, share: ResultShare, end: RunEnd, over: boolean): void {
+    noteRunEnd(end);
+    attachShareButton(o, share);
+    if (!over || this.continued) return;
+    const panel = (o.querySelector('.panel') as HTMLElement | null) ?? o;
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.id = 'contBtn';
+    b.textContent = '이 구역부터 다시 (+2분)';
+    b.title = TOUCH ? '' : 'C';
+    b.addEventListener('keydown', (e) => e.stopPropagation());
+    b.addEventListener('click', () => this.continueRun());
+    const again = panel.querySelector('#againBtn');
+    if (again) again.before(b);
+    else panel.appendChild(b);
+  }
+
+  /** 첫 판 안내가 끝났거나 건너뛰었다 (tutorial.ts): 연습한 것은 기록에서 빼고 첫 차례를 시작한다 */
+  private afterTutorial(): void {
+    this.thrown = this.tutBase.thrown;
+    this.hits = this.tutBase.hits;
+    this.jumps = this.tutBase.jumps;
+    this.sp = 0;
+    this.spReadyShown = false;
+    this.lastHits = this.hits;
+    this.lastDmg = this.damageTaken;
+    if (this.mode === 'student') this.stu.afterTutorial();
+    else if (this.fight === 'none' && this.stage === 'yard') this.startWaves(0);
+    this.snapArea();
+  }
+
+  /** 지금 들고 있는 것을 적어 둔다 (구역을 시작할 때 — 판 시작·구역 정리) */
+  private snapArea(): void {
+    this.snap = {
+      sp: this.sp,
+      arm: this.arms.id,
+      armUses: this.arms.uses,
+      brooms: this.side.brooms,
+      bins: this.side.bins,
+      bap: this.side.bap,
+      tongdak: this.side.tongdak,
+      visitItem: this.visit.item,
+      visitN: this.visit.itemN,
+      tickets: this.vend.tickets,
+      bell: this.boo.has,
+      approved: this.approved.length,
+    };
+  }
+
+  /** 이어하기: 들고 있던 것(무기·F/R 아이템·돌발 방문 보상·식권·Boo 호출 벨·필살기 게이지)을 그 구역 시작 때로 */
+  private restoreSnap(): void {
+    const n = this.snap;
+    if (!n) return;
+    this.sp = n.sp;
+    this.spReadyShown = this.sp >= SP_MAX;
+    if (n.arm) {
+      this.arms.equip(n.arm, this.mode === 'student');
+      this.arms.uses = n.armUses;
+    } else this.arms.clear();
+    this.side.brooms = n.brooms;
+    this.side.bins = n.bins;
+    this.side.bap = n.bap;
+    this.side.tongdak = n.tongdak;
+    this.visit.item = n.visitItem;
+    this.visit.itemN = n.visitN;
+    this.vend.tickets = n.tickets;
+    this.boo.has = n.bell;
+    this.approved.length = Math.min(this.approved.length, n.approved);
+  }
+
+  /**
+   * 이어하기 (PRD 결정 60 · 9절, 시험: __fps.cont()): 게임오버된 구역을 처음부터. 게임 속 시계는 되돌리지 않고 +2분,
+   * 체력 가득. 그 구역의 구조 장면·돌발 방문·돕기 이벤트·예산팀 직원·소개팅이 안 끝났으면 다시 나온다 (끝난 것은 그대로).
+   * 한 판에 한 번 (continued). 기록판에는 그대로 올라간다.
+   */
+  continueRun(): void {
+    if (this.phase !== 'over' || this.continued) return;
+    // 길은 가는 쪽 구역으로 센다 (areaOf). 부총장 결재 뒤 해 질 녘으로 가는 중이면 총장 구역
+    const target = this.stage === 'toFinal' ? 5 : areaOf(this.stage);
+    this.continued = true;
+    this.penaltyMin += CONT_PENALTY;
+    this.clearArena();
+    this.restoreSnap();
+    this.hp = this.maxHp;
+    this.calmT = 0;
+    if (this.mode === 'student') this.stu.retry();
+    else this.retryStaff(target);
+    // 다시 하는 구역은 조력자를 다시 굴릴 수 있다
+    this.rescue.retry(this.rescueKey());
+    this.invuln = CONT_GRACE;
+    this.lastHits = this.hits;
+    this.lastDmg = this.damageTaken;
+    this.start();
+    this.note('이어하기 · 시계 +2분 · 체력 가득', 2.6);
+  }
+
+  /** 이어하기: 판 위의 것을 모두 거둔다. 이벤트를 먼저 (상대·짝이 적 목록에서 빠지기 전에 안 끝났는지 본다) */
+  private clearArena(): void {
+    this.trap.retry();
+    this.side.retry();
+    this.visit.retry();
+    this.budget.retry(areaOf(this.stage));
+    this.dating.retry();
+    for (const e of this.enemies) this.removeEnemy(e);
+    this.enemies = [];
+    this.boss = null;
+    this.waiting = null;
+    for (const s of this.stamps) {
+      s.on = false;
+      s.obj.visible = false;
+    }
+    for (const s of this.sheets) {
+      s.on = false;
+      s.obj.visible = false;
+    }
+    for (const p of this.pickups) this.scene.remove(p.obj);
+    this.pickups = [];
+    for (const [e, f] of this.frozen) this.thaw(e, f);
+    this.downs.clear();
+    this.fx.clear();
+    this.hz.clear();
+    this.skills.clear();
+    this.freezeT = 0;
+    this.seqT = 0;
+    this.cardT = 0;
+    this.clearT = 0;
+    this.waveDelay = -1;
+    this.nextBossT = -1;
+    this.fight = 'none';
+    this.queue = [];
+    this.contactT = 0;
+    this.slow = 0;
+    this.jumpY = 0;
+    this.vy = 0;
+    this.jumpBuf = 0;
+    this.shakeT = 0;
+    this.firing = false;
+    this.keys.clear();
+    this.buffT = this.shieldT = this.shuttleT = this.sealT = 0;
+    this.rescueDue = false;
+    this.combo = 0;
+    this.comboT = 0;
+    showCombo(0);
+    for (const d of this.dirs) {
+      d.t = 0;
+      d.el.style.opacity = '0';
+    }
+    $('bossbox').classList.remove('on');
+    $('areacard').classList.remove('on');
+    $('fade').classList.remove('on');
+    for (const id of ['stamp1', 'stamp2']) $(id).classList.remove('on');
+    clearSubtitle();
+  }
+
+  /** 교직원 이어하기: 구역 a(0 본관 앞 … 5 해 질 녘 본관 앞)를 들어서는 때부터 다시 */
+  private retryStaff(a: number): void {
+    const w = this.world;
+    this.areaStats.length = Math.min(this.areaStats.length, a);
+    if (a >= 5) {
+      this.setupFinal();
+      return;
+    }
+    if (a === 0) {
+      this.stage = 'yard';
+      this.bounds = [w.yard];
+      this.pos.set(0, EYE, 11);
+      this.yaw = 0;
+      this.pitch = 0.12;
+      this.startWaves(0);
+      return;
+    }
+    // 앞 길에서 구역에 막 들어선 자리 (구역 가운데를 본다)
+    const rects = [w.yard, w.plaza, w.hum, w.dorm, w.field];
+    const entry: [number, number][] = [
+      [0, 11],
+      [PLAZA_X + 3, 1],
+      [HUM_ENTER_X + 3, PATH3_GUIDE[1][1]],
+      [165, DORM_ENTER_Z + 3],
+      [FIELD_GATE_X - 4, (GATE_Z0 + GATE_Z1) / 2],
+    ];
+    this.placeIn(rects[a], entry[a][0], entry[a][1]);
+    if (a === 1) this.enterPlaza();
+    else if (a === 2) this.enterHum();
+    else if (a === 3) this.enterDorm();
+    else {
+      // 대운동장: 단상의 부총장을 새로 세운다 (openField와 같다)
+      const m = new Meeting(this, this.people.meeting);
+      this.placeBoss(m);
+      this.waiting = m;
+      this.enterField();
+    }
+  }
+
+  /** r 안 (x, z) 가까이에 서서 r 가운데를 본다 (장애물 밖) */
+  private placeIn(r: Rect, x: number, z: number): void {
+    this.pos.set(Math.max(r.minX + 1.5, Math.min(r.maxX - 1.5, x)), EYE, Math.max(r.minZ + 1.5, Math.min(r.maxZ - 1.5, z)));
+    for (const o of this.world.obstacles) this.pushOut(o);
+    this.yaw = Math.atan2(-((r.minX + r.maxX) / 2 - this.pos.x), -((r.minZ + r.maxZ) / 2 - this.pos.z));
+    this.pitch = 0.08;
+  }
+
+  /** 교직원 연속 처리 (학생 모드 student/mode.ts step과 같은 규칙·같은 표시): 도장이 맞을 때마다 하나, 1.2초 안에 이어지고 맞으면 끊긴다 */
+  private stepCombo(dt: number): void {
+    if (this.hits > this.lastHits) {
+      this.combo += this.hits - this.lastHits;
+      this.comboT = COMBO_T;
+      if (this.combo > this.maxCombo) this.maxCombo = this.combo;
+      noteCombo(this.combo);
+    }
+    this.lastHits = this.hits;
+    if (this.damageTaken > this.lastDmg) this.combo = 0;
+    this.lastDmg = this.damageTaken;
+    if (this.comboT > 0) {
+      this.comboT -= dt;
+      if (this.comboT <= 0) this.combo = 0;
+    }
+    showCombo(this.combo, '처리');
   }
 
   // ---------- 매 프레임 ----------
@@ -3250,11 +3677,15 @@ class Game implements Ctx {
   }
 
   private step(dt: number): void {
-    if (this.stage !== 'done') this.elapsed += dt;
+    // 첫 판 안내 중에는 게임 속 시계가 멈춘다 (tutorial.ts)
+    const tut = this.tut.on;
+    if (this.stage !== 'done' && !tut) this.elapsed += dt;
+    this.tut.update(dt);
     if (this.invuln > 0) this.invuln -= dt;
     // 초보: 4초 동안 안 맞으면 체력이 조금씩 찬다
     this.calmT += dt;
-    if (this.diff.regen > 0 && this.calmT > 4 && this.hp > 0 && this.hp < MAX_HP) this.hp = Math.min(MAX_HP, this.hp + this.diff.regen * dt);
+    const mx = this.maxHp;
+    if (this.diff.regen > 0 && this.calmT > 4 && this.hp > 0 && this.hp < mx) this.hp = Math.min(mx, this.hp + this.diff.regen * dt);
     if (this.slow > 0) this.slow -= dt;
     if (this.cooldown > 0) this.cooldown -= dt;
     if (this.buffT > 0) this.buffT -= dt;
@@ -3276,8 +3707,8 @@ class Game implements Ctx {
     }
     this.eye.set(this.pos.x, EYE - 0.25 + this.jumpY, this.pos.z);
 
-    // 학생 모드는 구역 흐름이 따로 있다 (src/fps/student/mode.ts)
-    switch (this.mode === 'student' ? 'student' : this.stage) {
+    // 학생 모드는 구역 흐름이 따로 있다 (src/fps/student/mode.ts). 첫 판 안내 중에는 학생 구역 흐름(잡몹)을 멈춘다
+    switch (this.mode === 'student' ? (tut ? 'tutorial' : 'student') : this.stage) {
       case 'student':
         this.stu.step(dt);
         break;
@@ -3358,7 +3789,10 @@ class Game implements Ctx {
       default:
         break;
     }
-    if (this.mode === 'staff') this.stepFight(dt);
+    if (this.mode === 'staff') {
+      this.stepFight(dt);
+      if (!tut) this.stepCombo(dt);
+    }
     for (let i = 0; i < this.lowering.length; i++) {
       const l = this.lowering[i];
       l.t += dt;
@@ -3376,7 +3810,8 @@ class Game implements Ctx {
       const e = this.enemies[i];
       if (e.noticeT >= 0) {
         e.noticeT -= dt;
-        if (e.noticeT < 0) this.noticeHit(e);
+        // 필살기로 처리한 잡몹 (배지 "일괄 처리" — 필살기 한 번에 10명 이상)
+        if (e.noticeT < 0 && this.noticeHit(e)) noteSpecialKills(++this.spKills);
       }
       // 인감 도장으로 넘어진(구르는) 잡몹·단톡방 공지 캡처로 멈춘 잡몹은 움직이지도 공격하지도 않는다
       if (!e.gone && !this.rolls.hold(e, dt) && !this.holdDown(e, dt) && !this.holdFrozen(e)) e.update(isBoss(e) ? edt : mdt, this);
@@ -3471,6 +3906,22 @@ class Game implements Ctx {
     }
   }
 
+  /** 체력 막대 칸 눈금 (n칸 — 장점으로 11칸이면 한 칸 더 보인다). #hp 안에 얇은 줄을 덧댄다 */
+  private drawHpCells(n: number): void {
+    this.hpCells = n;
+    const hp = $('hp');
+    let el = document.getElementById('hpcells');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'hpcells';
+      el.style.cssText = 'position:absolute;inset:0;pointer-events:none;background-repeat:repeat-x;background-position:left top;';
+      hp.appendChild(el);
+    }
+    el.style.backgroundImage = 'linear-gradient(to right, transparent calc(100% - 1px), #11131899 calc(100% - 1px))';
+    el.style.backgroundSize = `calc(100% / ${n}) 100%`;
+    hp.dataset.cells = String(n);
+  }
+
   private setText(id: string, s: string, html = false): void {
     if (this.hudCache.get(id) === s) return;
     this.hudCache.set(id, s);
@@ -3500,7 +3951,10 @@ class Game implements Ctx {
     const clockLine = this.stage === 'done' && this.offShown ? `${clockText(clock)} · 퇴근 승인!` : `${clockText(clock)} · ${left > 0 ? `퇴근까지 ${left}분` : `초과근무 ${Math.max(1, Math.floor(clock - OFF_HOURS))}분`}`;
     const student = this.mode === 'student' && this.phase !== 'title';
     this.setText('clock', student ? this.stu.clockHtml(clock) : `${clockLine}<small>1인칭 시험판 · ${places[this.stage]}</small>`, true);
-    const r = Math.min(1, this.hp / MAX_HP);
+    // 체력 막대: 최대 체력(10, 장점이면 11칸) 기준, 칸 눈금
+    const mx = this.maxHp;
+    if (mx !== this.hpCells) this.drawHpCells(mx);
+    const r = Math.min(1, this.hp / mx);
     this.setStyle('hpbar', 'width', `${(r * 100).toFixed(1)}%`);
     this.setStyle('hpbar', 'background', r > 0.5 ? '#5bd16b' : r > 0.25 ? '#f5c542' : '#e5484d');
     this.setStyle('spbar', 'width', `${Math.round(this.sp)}%`);
@@ -3577,6 +4031,8 @@ class Game implements Ctx {
     }
     this.setClass('jumpcue', 'on', cue);
     this.setClass('jumpBtn', 'alert', cue);
+    // 첫 판 안내 띠 (일시정지·결과 화면에서는 숨긴다)
+    this.tut?.sync(this.phase === 'play');
     // 맞은 방향
     for (const d of this.dirs) {
       if (d.t <= 0) continue;
@@ -3628,3 +4084,5 @@ const game = new Game();
 void game.init();
 if (DEBUG) Object.assign(window as object, { __fps: game, __fpsLib: { Mail, Phone, Bubble, Bomb, PersonBoss, Chonggwal, Bogo, Meeting, President, StaffMid, Hakgwa, Naenwa, THREE, FC } });
 if (DEBUG) Object.assign((window as unknown as { __fpsLib: object }).__fpsLib, { ClingBubble, DodgeBubble, NoteBadge, Fax, DueBadge, AttendQR });
+// 시험용 지름길 (PRD 결정 60): __fps.cont() 이어하기, __fps.skipTut() 첫 판 안내 건너뛰기
+if (DEBUG) Object.assign(game, { cont: () => game.continueRun(), skipTut: () => game.tut.skip() });

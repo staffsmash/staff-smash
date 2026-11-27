@@ -1,8 +1,11 @@
 import * as THREE from 'three';
+import { noteCombo, noteStageNoDamage, type RunEnd } from '../../badges';
 import { clockText, OFF_HOURS, START_CLOCK } from '../../config';
 import { SPELLS, spellById, type SpellDef } from '../../data/spells';
 import { FPS_STUDENT_HEROES, studentHeroById, type StudentHeroDef, type StudentHeroLook } from '../../data/students';
-import { gpa, gradeStage, type Grade } from '../../grade';
+import { gpa, gpaText, gradeStage, type Grade } from '../../grade';
+import { studentPortraitCanvas } from '../../portraits';
+import type { ResultShare } from '../../shareCard';
 import { lateMin, onTime, outcomeText } from '../../run';
 import type { Rect } from '../blocks';
 import { attachRecordForm } from '../board';
@@ -55,7 +58,13 @@ export interface StudentGame extends Ctx {
   jumpY: number;
   vy: number;
   hp: number;
+  /** 최대 체력 (인물 장점으로 11칸일 수 있다) */
+  readonly maxHp: number;
   readonly elapsed: number;
+  /** 이어하기 벌점 등으로 늘어난 시계 (분) */
+  readonly penaltyMin: number;
+  /** 이어하기를 썼다 (한 판에 한 번) */
+  readonly continued: boolean;
   readonly damageTaken: number;
   readonly processed: number;
   readonly hits: number;
@@ -83,6 +92,10 @@ export interface StudentHost {
   /** 판을 처음으로 되돌리고 타이틀로 */
   toTitle(): void;
   showSettings(): void;
+  /** 결과 화면 공통 (PRD 결정 60): 배지 판 끝 · 공유 단추 · 게임오버면 이어하기 단추. 기록판 칸을 붙인 뒤에 부른다 */
+  endScreen(o: HTMLElement, share: ResultShare, end: RunEnd, over: boolean): void;
+  /** 구역을 시작할 때 들고 있던 것을 적어 둔다 (이어하기) */
+  snapArea(): void;
   placeBoss(b: PersonBoss): void;
   showBossBar(name: string): void;
   lower(g: THREE.Group): void;
@@ -292,6 +305,14 @@ const LINKS: LinkDef[] = [
   },
 ];
 
+/** 이어하기: LINKS[i]를 지나 ROUTE[i + 1]에 막 들어선 자리 (각 길의 도착 안내점) */
+const ENTRY: [number, number][] = [
+  [162, 66],
+  [165, 36],
+  [PATH3_X, 15],
+  [18, 1],
+];
+
 /** 성적표 줄 이름 (구역 다섯 곳 + 총장실) */
 const AREAS = [...ROUTE.map((a) => a.name), FINAL_NAME];
 const QUEUE_LEN = 4;
@@ -461,6 +482,8 @@ export class StudentMode implements StuCtx {
   private cardT = 0;
   private ending: { skip: () => void; cancel: () => void } | null = null;
   private arrowsFlipped = false;
+  /** 학사경고가 났을 때의 흐름 (이어하기가 다시 할 구역을 정한다) */
+  private overFlow: Flow = 'wave';
 
   constructor(
     private readonly g: StudentGame,
@@ -1140,6 +1163,10 @@ export class StudentMode implements StuCtx {
     this.recs.push(r);
     this.areaStart = { time: g.elapsed, damage: g.damageTaken };
     this.areaCombo = this.combo;
+    // 배지 "무사고 근무": 구역을 받은 피해 0으로 끝냈다
+    if (damage <= 0) noteStageNoDamage();
+    // 다음 구역(가는 길 포함)을 시작할 때 들고 있던 것 (이어하기)
+    this.h.snapArea();
     return r;
   }
 
@@ -1259,6 +1286,8 @@ export class StudentMode implements StuCtx {
       this.combo += g.hits - this.lastHits;
       this.comboT = 1.2;
       this.areaCombo = Math.max(this.areaCombo, this.combo);
+      // 배지 "민원 처리 달인" (연속 30회)
+      noteCombo(this.combo);
     }
     this.lastHits = g.hits;
     if (g.damageTaken > this.lastDamage) this.combo = 0;
@@ -1371,8 +1400,9 @@ export class StudentMode implements StuCtx {
 
   // ---------- HUD ----------
 
+  /** 게임 속 시각 (이어하기 벌점 포함 — Game.penaltyMin) */
   private get clock(): number {
-    return START_CLOCK + this.g.elapsed / 60;
+    return START_CLOCK + this.g.elapsed / 60 + this.g.penaltyMin;
   }
 
   /** 지금 걷는 길 (구역 사이) */
@@ -1492,7 +1522,7 @@ export class StudentMode implements StuCtx {
     const g = this.g;
     g.phase = 'clear';
     this.flow = 'result';
-    const clock = START_CLOCK + g.elapsed / 60;
+    const clock = this.clock;
     const grades = this.recs.map((r) => r.grade);
     const v = gpa(grades) ?? 0;
     const rec = recordBest(g.runDiff, { gpa: v, time: g.elapsed });
@@ -1527,7 +1557,43 @@ export class StudentMode implements StuCtx {
     document.getElementById('againBtn')?.addEventListener('click', () => g.restart());
     document.getElementById('titleBtn')?.addEventListener('click', () => this.h.toTitle());
     // 닉네임 기록판 (src/fps/board.ts)
-    attachRecordForm(o, { mode: 'fps-student', stage: this.recs.length, cleared: true, elapsed: g.elapsed, grades: grades.join(''), hero: this.hero.name, skill: this.spell.id, diff: g.runDiff });
+    attachRecordForm(o, { mode: 'fps-student', stage: this.recs.length, cleared: true, elapsed: g.elapsed, grades: grades.join(''), hero: this.hero.name, skill: this.spell.id, diff: g.runDiff, clockMin: clock });
+    // 공유 그림·배지 (PRD 결정 60)
+    this.h.endScreen(o, this.share(outcomeText('student', true, 3, clock, true)), this.runEnd(true, clock), false);
+  }
+
+  /** 가장 길었던 연속 공격 (구역마다 센 것과 지금 구역) */
+  private get bestCombo(): number {
+    return Math.max(this.areaCombo, ...this.recs.map((r) => r.combo));
+  }
+
+  /** 학생 결과 공유 그림 내용 (shareCard.ts) */
+  private share(outcome: string): ResultShare {
+    const grades = this.recs.map((r) => r.grade);
+    return {
+      game: 'fps',
+      mode: 'student',
+      diffLabel: this.g.diff.label,
+      heroName: this.hero.name,
+      portrait: studentPortraitCanvas(this.hero.look),
+      outcome,
+      gradesLine: grades.length ? `학점 ${grades.join(' · ')} · GPA ${gpaText(grades)}` : `통과 ${this.g.processed}건`,
+      comboLine: `최대 연속 공격 ${this.bestCombo}회`,
+      continued: this.g.continued,
+    };
+  }
+
+  /** 배지 판 끝 (badges.ts noteRunEnd) */
+  private runEnd(cleared: boolean, clock: number): RunEnd {
+    return {
+      mode: 'student',
+      heroId: this.hero.id,
+      cleared,
+      onTime: onTime(clock),
+      grades: this.recs.map((r) => r.grade),
+      diff: this.g.runDiff,
+      continued: this.g.continued,
+    };
   }
 
   /** 학사경고 (Game.gameOver가 부른다) */
@@ -1535,8 +1601,9 @@ export class StudentMode implements StuCtx {
     const g = this.g;
     this.haz.clear();
     showCombo(0);
-    this.flow = 'result';
     const where = this.place();
+    this.overFlow = this.flow;
+    this.flow = 'result';
     const acc = g.thrown ? Math.round((g.hits / g.thrown) * 100) : 0;
     const o = this.h.overlay(`
       <div class="panel">
@@ -1551,6 +1618,75 @@ export class StudentMode implements StuCtx {
     document.getElementById('againBtn')?.addEventListener('click', () => g.restart());
     document.getElementById('titleBtn')?.addEventListener('click', () => this.h.toTitle());
     // 닉네임 기록판 (src/fps/board.ts)
-    attachRecordForm(o, { mode: 'fps-student', stage: this.recs.length, cleared: false, elapsed: g.elapsed, grades: this.recs.map((r) => r.grade).join(''), hero: this.hero.name, skill: this.spell.id, diff: g.runDiff });
+    const clock = this.clock;
+    attachRecordForm(o, { mode: 'fps-student', stage: this.recs.length, cleared: false, elapsed: g.elapsed, grades: this.recs.map((r) => r.grade).join(''), hero: this.hero.name, skill: this.spell.id, diff: g.runDiff, clockMin: clock });
+    // 공유 그림·배지·이어하기 (PRD 결정 60)
+    this.h.endScreen(o, this.share(`${where}에서 학사경고 (${clockText(clock)})`), this.runEnd(false, clock), true);
+  }
+
+  // ---------- 첫 판 안내 · 이어하기 (PRD 결정 60, main.ts가 부른다) ----------
+
+  /** 첫 판 안내가 끝났다: 등교 띠를 다시 띄우고 첫 행정 차례를 시작한다 (연습 동안 step이 멈춰 있었다) */
+  afterTutorial(): void {
+    this.g.banner('오후 4시 52분 · 본관 마감 8분 전', '서류 들고 돌파!');
+    if (this.flow === 'wave' && this.area === 0) this.spawnT = Math.max(this.spawnT, 2.6);
+    this.lastHits = this.g.hits;
+    this.lastDamage = this.g.damageTaken;
+  }
+
+  /**
+   * 이어하기: Game.continueRun이 판(적·물건·이벤트)을 치우고 체력·시계를 정한 뒤 부른다. 학사경고가 난 구역을 처음부터 —
+   * 구역 안이면 그 구역, 다음 구역으로 가는 길이면 다음 구역, 총장실로 넘어가는 중·총장실이면 총장실.
+   * 성적표는 다시 하는 구역 앞까지만 남는다 (그 구역 걸린 시간·받은 피해는 처음 들어선 때부터 센다)
+   */
+  retry(): void {
+    const g = this.g;
+    const f = this.overFlow;
+    this.haz.clear();
+    this.towerModel.removeFromParent();
+    this.towerModel.visible = false;
+    this.cardT = 0;
+    if (this.spellT > 0) g.fx.setMarks(this.kit.passMark, this.kit.paperDecal);
+    this.spellT = 0;
+    hideSpell();
+    this.combo = 0;
+    this.comboT = 0;
+    showCombo(0);
+    this.lastHits = g.hits;
+    this.lastDamage = g.damageTaken;
+    this.flowT = 0;
+    this.waveDelay = -1;
+    let target = this.area;
+    if (f === 'walk') target = this.area + 1;
+    else if (f === 'card' || f === 'fade' || f === 'final' || this.area >= ROUTE.length) target = ROUTE.length;
+    this.recs.length = Math.min(this.recs.length, target);
+    if (target >= ROUTE.length) {
+      // 총장실: 어두워졌다가 옮겨지는 것과 같은 자리 (setupFinal이 판을 다시 차린다)
+      this.setupFinal();
+      this.flow = 'final';
+      this.flowT = 0;
+      return;
+    }
+    if (target === 0) {
+      this.area = 0;
+      g.stage = ROUTE[0].stage;
+      g.bounds = [ROUTE[0].rect(g.world)];
+      g.pos.set(95, EYE, 62.5);
+      g.yaw = Math.PI;
+      g.pitch = 0.08;
+      g.banner(ROUTE[0].name, '서류 들고 돌파!');
+      this.startWave(0, 2.6);
+      return;
+    }
+    // 앞 길 끝 = 이 구역 입구에 서서 구역 가운데를 본다
+    this.area = target;
+    g.stage = ROUTE[target].stage;
+    const [ex, ez] = ENTRY[target - 1];
+    const sp = this.freeSpot(ex, ez);
+    g.pos.set(sp.x, EYE, sp.z);
+    const r = ROUTE[target].rect(g.world);
+    g.yaw = Math.atan2(-((r.minX + r.maxX) / 2 - sp.x), -((r.minZ + r.maxZ) / 2 - sp.z));
+    g.pitch = 0.08;
+    this.enterArea(target);
   }
 }

@@ -455,6 +455,22 @@ export class Dating {
     o.rotation.y += d * Math.min(1, dt * 6);
   }
 
+  /**
+   * 이어하기 (PRD 결정 60, main.ts continueRun): 짝이 기다리는 중(참가 전)이었으면 치우고 그 구역에서 다시 나오게 한다.
+   * 이미 끝났으면(했거나 그냥 떠났으면) 결과는 그대로 두고 걸어 나가던 짝만 치운다
+   */
+  retry(): void {
+    if (this.state === 'idle') return;
+    if (this.state === 'wait' || this.state === 'game') {
+      this.closeGame();
+      this.done = false;
+      this.result = '';
+    }
+    this.finish();
+    this.waitT = -1;
+    this.near = false;
+  }
+
   /** 판을 처음으로 (재시작·타이틀) */
   clear(): void {
     this.closeGame();

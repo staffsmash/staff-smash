@@ -83,7 +83,8 @@ export class Vending {
   constructor(
     private readonly h: PerkHost,
     private readonly g: VendGame,
-    private readonly maxHp: number,
+    /** 최대 체력 (인물 장점으로 11칸일 수 있다 — src/perks.ts hpBonus) */
+    private readonly maxHp: () => number,
   ) {
     ensureDom();
     const proto = buildMachine(h.models);
@@ -136,7 +137,7 @@ export class Vending {
   }
 
   /** 뽑기: 체력이 낮을수록 음식, 가끔 치킨돈가스. 무기는 없다 (hpRatio: 시험용) */
-  draw(hpRatio = this.g.hp / this.maxHp): { kind: FoodKind; full: boolean } {
+  draw(hpRatio = this.g.hp / this.maxHp()): { kind: FoodKind; full: boolean } {
     const low = 1 - Math.max(0, Math.min(1, hpRatio));
     const r = Math.random();
     const big = 0.06 + 0.06 * low;

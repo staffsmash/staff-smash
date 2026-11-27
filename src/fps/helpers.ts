@@ -289,6 +289,14 @@ export class Rescue {
     this.h.scene.remove(x.obj);
   }
 
+  /** 이어하기 (PRD 결정 60, main.ts continueRun): 와 있는 조력자를 치우고, 다시 하는 구역(key)은 다시 굴릴 수 있게 한다 */
+  retry(key: string): void {
+    for (const x of this.active) this.remove(x);
+    this.active = [];
+    this.used.delete(key);
+    this.hitAt = -1;
+  }
+
   /** 판을 처음으로 */
   clear(): void {
     for (const x of this.active) this.remove(x);

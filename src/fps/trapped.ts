@@ -238,6 +238,20 @@ export class Trap {
     who.person.update(dt, pose);
   }
 
+  /**
+   * 이어하기 (PRD 결정 60, main.ts continueRun): 구조 장면이 아직 안 끝났으면(묻혀 있는 중) 치우고 그 구역에서 다시 나오게 한다.
+   * 이미 끝났으면(구했거나 놓쳤으면) 결과는 그대로 두고 걸어 나가던 사람만 치운다
+   */
+  retry(): void {
+    if (this.state === 'idle') return;
+    if (this.state === 'trapped') {
+      if (this.who) this.h.release(this.who.id, false);
+      this.done.delete(this.area);
+    }
+    this.finish();
+    this.waitT = -1;
+  }
+
   /** 판을 처음으로 (구역 넘어감·재시작) */
   clear(): void {
     if (this.who) this.h.release(this.who.id, false);
