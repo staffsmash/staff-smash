@@ -695,8 +695,8 @@ const CSS = `
 #dateHint b { display: inline-block; min-width: 18px; margin-right: 6px; padding: 0 4px; border-radius: 4px; background: #ff9fbf; color: #111318; text-align: center; }
 #dateHint.on { opacity: 1; }
 body.touch #dateHint { display: none; }
-#dateBtn { position: fixed; right: calc(150px + env(safe-area-inset-right)); bottom: calc(112px + env(safe-area-inset-bottom)); width: 66px; height: 66px;
-  border-radius: 50%; border: 3px solid #111318; background: #e5386d; color: #fff; font: 700 16px 'Malgun Gothic', sans-serif;
+#dateBtn { position: fixed; right: calc(150px * var(--bs) + var(--sa-r)); bottom: calc(112px * var(--bs) + var(--sa-b)); width: calc(66px * var(--bs)); height: calc(66px * var(--bs));
+  border-radius: 50%; border: 3px solid #111318; background: #e5386d; color: #fff; font: 700 calc(16px * var(--bs)) 'Malgun Gothic', sans-serif;
   display: none; box-shadow: 0 0 12px #ff9fbf; touch-action: none; }
 #dateBtn.on { display: block; }
 #datePanel { position: fixed; left: 50%; top: 46%; transform: translate(-50%, -50%); z-index: 4; display: none; box-sizing: border-box;
@@ -727,7 +727,7 @@ body.touch #datePanel .pad { display: grid; }
   #datePanel .row { margin: 8px 0 2px; }
   #datePanel .row i { width: 42px; height: 42px; font-size: 25px; line-height: 38px; }
   #datePanel .pad { margin-top: 6px; grid-template-columns: repeat(3, 50px); grid-template-rows: repeat(2, 50px); }
-  #dateBtn { right: calc(136px + env(safe-area-inset-right)); bottom: calc(96px + env(safe-area-inset-bottom)); width: 60px; height: 60px; font-size: 15px; }
+  #dateBtn { right: calc(136px * var(--bs) + var(--sa-r)); bottom: calc(96px * var(--bs) + var(--sa-b)); width: calc(60px * var(--bs)); height: calc(60px * var(--bs)); font-size: calc(15px * var(--bs)); }
 }
 `;
 

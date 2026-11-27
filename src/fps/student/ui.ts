@@ -8,7 +8,7 @@ const CSS = `
 #stuDark { position: fixed; inset: 0; pointer-events: none; display: none; opacity: 0;
   background: radial-gradient(circle at 50% 50%, rgba(4,6,12,0) 0, rgba(4,6,12,0) 15vmin, rgba(4,6,12,.62) 22vmin, rgba(4,6,12,.95) 31vmin); }
 #stuDark.on { display: block; }
-#stuCombo { position: fixed; right: calc(18px + env(safe-area-inset-right)); top: 34%; pointer-events: none; opacity: 0;
+#stuCombo { position: fixed; right: calc(18px + var(--sa-r)); top: 34%; pointer-events: none; opacity: 0;
   font-size: 22px; font-weight: 800; color: #ffe066; text-shadow: 0 2px 3px #111318, 0 0 2px #111318; transition: opacity .2s; }
 #stuCombo.on { opacity: 1; }
 #stuCombo.pop { animation: stuPop .18s ease-out; }
@@ -32,12 +32,15 @@ const CSS = `
 .panel.sel .tabs button.on { background: #b4532a; color: #fff; }
 .sel h1 { margin: 6px 0 2px; }
 .sel .lbl { margin: 6px 0 4px; font-size: 13px; color: #c9d3e6; text-align: left; }
-.sel .heroes, .sel .spells { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.sel .heroes, .sel .spells { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
 .panel.sel .heroes button, .panel.sel .spells button { margin: 0; padding: 6px; border-radius: 6px; border: 2px solid #111318; background: #253447;
   color: #dfe6f2; font-weight: 400; text-align: left; line-height: 1.3; }
 .panel.sel .heroes button { display: flex; gap: 6px; align-items: center; font-size: 11px; }
 .panel.sel .heroes button img { width: 40px; height: 47px; flex: none; image-rendering: pixelated; }
 .panel.sel .heroes button b { display: block; font-size: 15px; color: #fff; }
+.panel.sel .heroes button span { min-width: 0; word-break: keep-all; overflow-wrap: anywhere; }
+/* 이름 아래 장점 한 줄 (src/perks.ts perkLabel — 교직원 staffpick.ts와 같이 쓴다) */
+.panel.sel .heroes button em.perk { display: block; font-style: normal; font-weight: 700; color: #f5c542; }
 .panel.sel .spells button { font-size: 12px; text-align: center; }
 .panel.sel .spells button small { display: block; color: #9fb0c8; font-size: 11px; }
 .panel.sel .spells button bdi { font-family: Arial, 'Segoe UI', Tahoma, sans-serif; font-weight: 700; color: #fff; }
@@ -59,7 +62,7 @@ const CSS = `
 #stuEnd { position: fixed; inset: 0; z-index: 6; display: none; overflow: hidden; font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif; }
 #stuEnd.on { display: block; }
 #stuEnd .shade { position: absolute; inset: 0; background: linear-gradient(rgba(11,13,18,.72), rgba(11,13,18,.15) 30%, rgba(11,13,18,.15) 70%, rgba(11,13,18,.72)); }
-#stuEnd .line { position: absolute; left: 50%; top: 9%; transform: translateX(-50%); width: min(94vw, 900px); text-align: center; font-size: clamp(16px, 2.6vw, 24px);
+#stuEnd .line { position: absolute; left: 50%; top: 9%; transform: translateX(-50%); width: min(calc(100vw - var(--sa-l) - var(--sa-r) - 16px), 900px); text-align: center; font-size: clamp(16px, 2.6vw, 24px);
   font-weight: 800; color: #fff; text-shadow: 0 2px 3px #111318, 0 0 3px #111318; opacity: 0; transition: opacity .25s; }
 #stuEnd .line.on { opacity: 1; }
 #stuEnd .dip { position: absolute; left: 50%; top: 50%; width: min(84vw, 420px); aspect-ratio: 340 / 214; box-sizing: border-box; padding: 3.2% 4%;
@@ -109,16 +112,17 @@ const CSS = `
 #stuEnd .sub.on { opacity: 1; }
 #stuEnd .sub.a { bottom: 15%; font-size: clamp(18px, 3vw, 28px); color: #fff; }
 #stuEnd .sub.b { bottom: 6%; font-size: clamp(20px, 3.4vw, 32px); color: #ffe066; }
-#stuEnd .skip { position: absolute; right: calc(12px + env(safe-area-inset-right)); top: calc(12px + env(safe-area-inset-top)); z-index: 2;
+#stuEnd .skip { position: absolute; right: calc(12px + var(--sa-r)); top: calc(12px + var(--sa-t)); z-index: 2;
   padding: 6px 12px; border-radius: 6px; border: 2px solid rgba(255,255,255,.5); background: rgba(11,13,18,.6); color: #fff; font: 700 13px 'Malgun Gothic', sans-serif; }
 @media (max-height: 500px) {
-  /* 휴대폰 가로: 타이틀을 넓게 써서 모드 단추 옆에 설정·본편 단추가 한 줄로 서게 */
+  /* 휴대폰 가로: 모드 단추(출근하기·등교하기)를 한 줄로 (타이틀 모양은 staffpick.ts) */
   .panel:has(> .modes) { max-width: 840px; }
   .modes { margin-top: 6px; }
   .panel .modes button { min-width: 180px; padding: 6px 14px; }
   .panel .modes button small { font-size: 11px; }
   .panel.sel { padding: 6px 14px; }
-  .sel h1 { font-size: 20px; margin: 2px 0 0; }
+  /* 제목(출근 준비·등교 준비)은 모드 탭 옆 같은 줄에 — 카드의 장점 줄이 들어갈 높이를 번다 */
+  .sel h1 { display: inline-block; vertical-align: middle; font-size: 20px; margin: 0 0 0 14px; }
   .sel .lbl { margin: 3px 0 2px; font-size: 12px; }
   .panel.sel .heroes button { padding: 3px 5px; font-size: 10.5px; line-height: 1.25; }
   .panel.sel .heroes button img { width: 32px; height: 38px; }
@@ -135,6 +139,12 @@ const CSS = `
   .result.stu .who, .result.stu .counts, .result.stu .best { font-size: 12px; margin: 2px 0; line-height: 1.35; }
   .result.stu .foot { display: none; }
   #stuEnd .dip { width: min(84vw, 420px, 96vh); }
+}
+@media (max-height: 380px) {
+  /* 아이폰 mini 가로(높이 360) 등: 선택 화면 출근하기·등교하기 단추까지 한 화면에 */
+  .sel .lbl { margin: 2px 0 1px; }
+  .panel.sel .best { margin: 0; }
+  .panel.sel > button { margin-top: 4px; padding-top: 7px; padding-bottom: 7px; }
 }
 `;
 

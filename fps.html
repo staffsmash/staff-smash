@@ -14,6 +14,17 @@
     <meta name="description" content="Three Party Problem — 1인칭 시험판 (본관 앞 → 사회과학관 앞 → 대운동장 → 해 질 녘 본관 앞)" />
     <title>Three Party Problem 1인칭 시험판</title>
     <style>
+      /* 안전 영역(아이폰 노치·둥근 모서리·홈 막대, viewport-fit=cover)과 휴대폰 단추 크기.
+         화면 조각은 env()를 바로 쓰지 않고 이 변수를 쓴다 — 시험 때 --sa-l 등을 44px로 덮어 노치를 흉내 낸다.
+         --bs = 단추 크기 배율 (설정: 작게 0.85 · 보통 1 · 크게 1.2, src/uiPrefs.ts — settings.ts watchBtnSize가 넣는다).
+         터치 단추는 위치(모서리에서 떨어진 거리)·크기·글자에 같이 곱해 단추 사이 간격도 같은 비율로 바뀐다. */
+      :root {
+        --sa-t: env(safe-area-inset-top, 0px);
+        --sa-r: env(safe-area-inset-right, 0px);
+        --sa-b: env(safe-area-inset-bottom, 0px);
+        --sa-l: env(safe-area-inset-left, 0px);
+        --bs: 1;
+      }
       html,
       body {
         margin: 0;
@@ -40,9 +51,14 @@
         pointer-events: none;
         text-shadow: 0 2px 3px #111318, 0 0 2px #111318;
       }
+      /* 타이틀·선택 화면(Game.phase === 'title', main.ts overlay가 body.menu를 붙인다)에서는 뒤에 비치는 HUD와 터치 단추를 숨긴다 */
+      body.menu .hud,
+      body.menu #touch {
+        visibility: hidden;
+      }
       #topleft {
-        left: 14px;
-        top: 12px;
+        left: calc(14px + var(--sa-l));
+        top: calc(12px + var(--sa-t));
         background: rgba(11, 13, 18, 0.55);
         border-radius: 6px;
         padding: 8px 12px 10px;
@@ -180,7 +196,7 @@
         left: 50%;
         top: 104px;
         transform: translateX(-50%);
-        max-width: min(92vw, 860px);
+        max-width: min(calc(100vw - var(--sa-l) - var(--sa-r) - 24px), 860px);
         box-sizing: border-box;
         padding: 4px 16px 5px;
         border-radius: 8px;
@@ -506,12 +522,19 @@
       #help b {
         color: #f5c542;
       }
+      /* 타이틀·선택·설정·일시정지·결과 화면: 안전 영역 안에서만 그린다 (아이폰 XS 가로 = 좌우 44px가 노치·모서리).
+         safe center = 넘치면 가운데 맞춤 대신 처음(왼쪽·위)부터 그려 잘리지 않고 스크롤된다 */
       #overlay {
         position: fixed;
         inset: 0;
         display: flex;
+        /* safe를 모르는 옛 브라우저는 앞의 center를 쓴다 */
+        align-items: center;
         align-items: safe center;
         justify-content: center;
+        justify-content: safe center;
+        box-sizing: border-box;
+        padding: calc(4px + var(--sa-t)) calc(6px + var(--sa-r)) calc(4px + var(--sa-b)) calc(6px + var(--sa-l));
         background: rgba(11, 42, 74, 0.82);
         z-index: 5;
         overflow-y: auto;
@@ -523,6 +546,8 @@
         text-align: center;
         max-width: 600px;
         padding: 24px;
+        /* 화면이 좁으면 위의 최대 폭 대신 #overlay 안쪽 폭까지 줄어든다 (flex 항목) */
+        min-width: 0;
       }
       .panel img.emblem {
         width: 64px;
@@ -688,6 +713,14 @@
         background: #f5c542;
         color: #111318;
       }
+      .panel .srow button.sbtn {
+        margin: 0;
+        padding: 7px 14px;
+        font-size: 14px;
+      }
+      .srow .snote {
+        margin: 0;
+      }
       .result .areas span {
         display: inline-block;
         margin: 0 8px;
@@ -829,8 +862,7 @@
         align-items: center;
         justify-content: center;
         box-sizing: border-box;
-        padding: calc(8px + env(safe-area-inset-top)) calc(8px + env(safe-area-inset-right)) calc(8px + env(safe-area-inset-bottom))
-          calc(8px + env(safe-area-inset-left));
+        padding: calc(8px + var(--sa-t)) calc(8px + var(--sa-r)) calc(8px + var(--sa-b)) calc(8px + var(--sa-l));
         background: rgba(11, 13, 18, 0.7);
       }
       #fboard .fb-box {
@@ -958,6 +990,69 @@
         background: #4a5568;
         font-size: 15px;
       }
+      /* 기록판 "배지" 탭 (board.ts, 배지 12개 src/badges.ts): 딴 것은 금색, 못 딴 것은 흐리게 */
+      #fboard .fb-note b {
+        font-size: 15px;
+        color: #fff;
+      }
+      #fboard .fb-badges {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+        gap: 6px;
+        text-align: left;
+      }
+      #fboard .bdg {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 8px;
+        border: 2px solid rgba(255, 255, 255, 0.14);
+        border-radius: 8px;
+        background: #253447;
+        color: #9fb0c8;
+      }
+      #fboard .bdg i {
+        flex: none;
+        width: 30px;
+        height: 30px;
+        border-radius: 50%;
+        background: #3a4558;
+        box-shadow: inset 0 0 0 2px #56627a;
+        font: 800 13px/30px 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif;
+        font-style: normal;
+        text-align: center;
+        color: #8b95a8;
+      }
+      #fboard .bdg b {
+        display: block;
+        font-size: 13px;
+        color: #c9d3e3;
+      }
+      #fboard .bdg small {
+        display: block;
+        font-size: 11px;
+        line-height: 1.3;
+      }
+      #fboard .bdg.off {
+        opacity: 0.55;
+      }
+      #fboard .bdg.got {
+        border-color: #e0bb62;
+        background: #3a2f1c;
+        color: #f2dfae;
+      }
+      #fboard .bdg.got i {
+        background: radial-gradient(circle at 35% 35%, #ffe9a8, #e0bb62 60%, #b8913c);
+        box-shadow: inset 0 0 0 2px #fff3c4;
+        color: #5a3d0a;
+      }
+      #fboard .bdg.got b {
+        color: #ffe066;
+      }
+      /* 기록판 창이 떠 있는 동안 설치 안내 띠(src/pwa.ts)가 "닫기"를 가리지 않게 */
+      body:has(#fboard) #pwaHint {
+        display: none;
+      }
       @media (max-height: 500px) {
         .frec {
           margin-top: 6px;
@@ -1000,6 +1095,27 @@
           margin-top: 6px;
           padding: 6px 24px;
         }
+        /* 배지 12칸이 휴대폰 가로 한 화면에 들어오게 */
+        #fboard .fb-badges {
+          gap: 5px;
+        }
+        #fboard .bdg {
+          gap: 6px;
+          padding: 3px 6px;
+        }
+        #fboard .bdg i {
+          width: 24px;
+          height: 24px;
+          font-size: 11px;
+          line-height: 24px;
+        }
+        #fboard .bdg b {
+          font-size: 12.5px;
+        }
+        #fboard .bdg small {
+          font-size: 10.5px;
+          line-height: 1.25;
+        }
       }
       #touch {
         display: none;
@@ -1010,16 +1126,18 @@
       body.touch #help {
         display: none;
       }
+      /* 조이스틱은 손가락 자리로 옮겨 가므로(main.ts bindTouch: 가운데 = 손가락) 크기만 가운데를 기준으로 키운다 */
       #stick {
         position: fixed;
-        left: calc(40px + env(safe-area-inset-left));
-        bottom: calc(40px + env(safe-area-inset-bottom));
+        left: calc(40px + var(--sa-l));
+        bottom: calc(40px + var(--sa-b));
         width: 120px;
         height: 120px;
         border-radius: 50%;
         background: rgba(255, 255, 255, 0.12);
         border: 2px solid rgba(255, 255, 255, 0.35);
         pointer-events: none;
+        transform: scale(var(--bs));
       }
       #knob {
         position: absolute;
@@ -1035,29 +1153,30 @@
         -webkit-user-select: none;
         user-select: none;
       }
+      /* 오른쪽 단추들: 안전 영역 모서리에서 떨어진 거리·크기·글자에 --bs를 곱한다 (boo.ts·props.ts·sidejob.ts·vending.ts·student/dating.ts도 같다) */
       #fire {
         position: fixed;
-        right: calc(26px + env(safe-area-inset-right));
-        bottom: calc(30px + env(safe-area-inset-bottom));
-        width: 98px;
-        height: 98px;
+        right: calc(26px * var(--bs) + var(--sa-r));
+        bottom: calc(30px * var(--bs) + var(--sa-b));
+        width: calc(98px * var(--bs));
+        height: calc(98px * var(--bs));
         border-radius: 50%;
         border: 3px solid #111318;
         background: #d0202f;
         color: #fff;
-        font: 700 20px 'Malgun Gothic', sans-serif;
+        font: 700 calc(20px * var(--bs)) 'Malgun Gothic', sans-serif;
       }
       #jumpBtn {
         position: fixed;
-        right: calc(140px + env(safe-area-inset-right));
-        bottom: calc(22px + env(safe-area-inset-bottom));
-        width: 76px;
-        height: 76px;
+        right: calc(140px * var(--bs) + var(--sa-r));
+        bottom: calc(22px * var(--bs) + var(--sa-b));
+        width: calc(76px * var(--bs));
+        height: calc(76px * var(--bs));
         border-radius: 50%;
         border: 3px solid #111318;
         background: #2f6fd1;
         color: #fff;
-        font: 700 16px 'Malgun Gothic', sans-serif;
+        font: 700 calc(16px * var(--bs)) 'Malgun Gothic', sans-serif;
       }
       #jumpBtn.alert {
         background: #ffd84a;
@@ -1066,15 +1185,15 @@
       }
       #spBtn {
         position: fixed;
-        right: calc(42px + env(safe-area-inset-right));
-        bottom: calc(142px + env(safe-area-inset-bottom));
-        width: 66px;
-        height: 66px;
+        right: calc(42px * var(--bs) + var(--sa-r));
+        bottom: calc(142px * var(--bs) + var(--sa-b));
+        width: calc(66px * var(--bs));
+        height: calc(66px * var(--bs));
         border-radius: 50%;
         border: 3px solid #111318;
         background: #4a4f5a;
         color: #c9ced8;
-        font: 700 14px 'Malgun Gothic', sans-serif;
+        font: 700 calc(14px * var(--bs)) 'Malgun Gothic', sans-serif;
       }
       #spBtn.ready {
         background: #f5c542;
@@ -1083,22 +1202,22 @@
       }
       .mini {
         position: fixed;
-        top: calc(12px + env(safe-area-inset-top));
-        height: 38px;
-        min-width: 44px;
-        padding: 0 10px;
+        top: calc(12px + var(--sa-t));
+        height: calc(38px * var(--bs));
+        min-width: calc(44px * var(--bs));
+        padding: 0 calc(10px * var(--bs));
         border-radius: 6px;
         border: 2px solid rgba(255, 255, 255, 0.5);
         background: rgba(11, 13, 18, 0.6);
         color: #fff;
-        font: 700 13px 'Malgun Gothic', sans-serif;
+        font: 700 calc(13px * var(--bs)) 'Malgun Gothic', sans-serif;
       }
       #pauseBtn {
-        right: calc(12px + env(safe-area-inset-right));
-        min-width: 48px;
+        right: calc(12px * var(--bs) + var(--sa-r));
+        min-width: calc(48px * var(--bs));
       }
       #muteBtn {
-        right: calc(70px + env(safe-area-inset-right));
+        right: calc(70px * var(--bs) + var(--sa-r));
       }
       #rotate {
         display: none;
@@ -1186,6 +1305,30 @@
         .srow {
           margin: 5px 0;
         }
+        /* 휴대폰 가로: 설정 항목을 두 단으로 (넓으면) — 한 화면에 들어오게 */
+        .panel.setp {
+          max-width: 800px;
+        }
+        .panel.setp h1 {
+          margin: 0;
+          font-size: 20px;
+        }
+        .setp .settings {
+          max-width: none;
+          columns: 2 280px;
+          column-gap: 24px;
+        }
+        .setp .srow {
+          break-inside: avoid;
+        }
+        .setp .slabel {
+          min-width: 108px;
+          font-size: 14px;
+        }
+        .setp .srow input[type='range'] {
+          min-width: 90px;
+          height: 26px;
+        }
         .panel .seg button {
           padding: 7px 14px;
         }
@@ -1210,28 +1353,28 @@
           margin: 0 0 4px;
         }
         #fire {
-          width: 88px;
-          height: 88px;
-          bottom: calc(22px + env(safe-area-inset-bottom));
+          width: calc(88px * var(--bs));
+          height: calc(88px * var(--bs));
+          bottom: calc(22px * var(--bs) + var(--sa-b));
         }
         #jumpBtn {
-          right: calc(128px + env(safe-area-inset-right));
-          bottom: calc(14px + env(safe-area-inset-bottom));
-          width: 70px;
-          height: 70px;
+          right: calc(128px * var(--bs) + var(--sa-r));
+          bottom: calc(14px * var(--bs) + var(--sa-b));
+          width: calc(70px * var(--bs));
+          height: calc(70px * var(--bs));
         }
         #spBtn {
-          bottom: calc(124px + env(safe-area-inset-bottom));
-          width: 60px;
-          height: 60px;
+          bottom: calc(124px * var(--bs) + var(--sa-b));
+          width: calc(60px * var(--bs));
+          height: calc(60px * var(--bs));
         }
         #stick {
-          bottom: calc(26px + env(safe-area-inset-bottom));
+          bottom: calc(26px + var(--sa-b));
         }
       }
     </style>
   </head>
-  <body>
+  <body class="menu">
     <div id="app"></div>
     <div class="hud" id="topleft">
       <div class="name">김국제 · 1인칭 시험판</div>

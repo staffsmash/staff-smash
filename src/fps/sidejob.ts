@@ -1019,17 +1019,17 @@ const CSS = `
 #sideHint b { display: inline-block; min-width: 18px; margin-right: 6px; padding: 0 4px; border-radius: 4px; background: #9fe8c0; color: #111318; text-align: center; }
 #sideHint.on { opacity: 1; }
 body.touch #sideHint { display: none; }
-#sideBtn, #itemBtn, #lunchBtn { position: fixed; border-radius: 50%; border: 3px solid #111318; color: #fff; font: 700 13px 'Malgun Gothic', sans-serif;
+#sideBtn, #itemBtn, #lunchBtn { position: fixed; border-radius: 50%; border: 3px solid #111318; color: #fff; font: 700 calc(13px * var(--bs)) 'Malgun Gothic', sans-serif;
   display: none; touch-action: none; padding: 0; line-height: 1.15; }
-#sideBtn { right: calc(150px + env(safe-area-inset-right)); bottom: calc(112px + env(safe-area-inset-bottom)); width: 66px; height: 66px;
-  background: #1f7a4d; font-size: 16px; box-shadow: 0 0 12px #9fe8c0; }
-#itemBtn { right: calc(122px + env(safe-area-inset-right)); bottom: calc(190px + env(safe-area-inset-bottom)); width: 60px; height: 60px; background: #8a5a1c; }
-#lunchBtn { right: calc(192px + env(safe-area-inset-right)); bottom: calc(190px + env(safe-area-inset-bottom)); width: 60px; height: 60px; background: #b3262d; font-size: 12px; }
+#sideBtn { right: calc(150px * var(--bs) + var(--sa-r)); bottom: calc(112px * var(--bs) + var(--sa-b)); width: calc(66px * var(--bs)); height: calc(66px * var(--bs));
+  background: #1f7a4d; font-size: calc(16px * var(--bs)); box-shadow: 0 0 12px #9fe8c0; }
+#itemBtn { right: calc(122px * var(--bs) + var(--sa-r)); bottom: calc(190px * var(--bs) + var(--sa-b)); width: calc(60px * var(--bs)); height: calc(60px * var(--bs)); background: #8a5a1c; }
+#lunchBtn { right: calc(192px * var(--bs) + var(--sa-r)); bottom: calc(190px * var(--bs) + var(--sa-b)); width: calc(60px * var(--bs)); height: calc(60px * var(--bs)); background: #b3262d; font-size: calc(12px * var(--bs)); }
 #sideBtn.on, #itemBtn.on, #lunchBtn.on { display: block; }
 @media (max-height: 500px) {
-  #sideBtn { right: calc(136px + env(safe-area-inset-right)); bottom: calc(96px + env(safe-area-inset-bottom)); width: 60px; height: 60px; font-size: 15px; }
-  #itemBtn { right: calc(112px + env(safe-area-inset-right)); bottom: calc(166px + env(safe-area-inset-bottom)); width: 54px; height: 54px; font-size: 12px; }
-  #lunchBtn { right: calc(174px + env(safe-area-inset-right)); bottom: calc(166px + env(safe-area-inset-bottom)); width: 54px; height: 54px; font-size: 11px; }
+  #sideBtn { right: calc(136px * var(--bs) + var(--sa-r)); bottom: calc(96px * var(--bs) + var(--sa-b)); width: calc(60px * var(--bs)); height: calc(60px * var(--bs)); font-size: calc(15px * var(--bs)); }
+  #itemBtn { right: calc(112px * var(--bs) + var(--sa-r)); bottom: calc(166px * var(--bs) + var(--sa-b)); width: calc(54px * var(--bs)); height: calc(54px * var(--bs)); font-size: calc(12px * var(--bs)); }
+  #lunchBtn { right: calc(174px * var(--bs) + var(--sa-r)); bottom: calc(166px * var(--bs) + var(--sa-b)); width: calc(54px * var(--bs)); height: calc(54px * var(--bs)); font-size: calc(11px * var(--bs)); }
 }
 `;
 

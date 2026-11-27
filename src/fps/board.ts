@@ -1,3 +1,4 @@
+import { badgeCount, badgeList, BADGES } from '../badges';
 import { clockText, START_CLOCK } from '../config';
 import server from '../data/server.json';
 import { gpaText, parseStudentGrades } from '../grade';
@@ -11,8 +12,11 @@ import { DIFFS, timeText, type DiffKey } from './settings';
 // - 온라인을 못 쓰면 이 기기(localStorage)에만 저장하고 이 기기 기록으로 순위를 보여 준다.
 // - 순위: 깬 구역(다 깨면 맨 위) → 난이도(고급 > 중급 > 초보) → 완료 시각 → 걸린 시간 (apps-script/Code.gs와 같다).
 // - 실명·학번은 받지 않는다. 닉네임이 비면 익명(순위에는 안 나오고 온라인 플레이 수에만 잡힌다).
+// - 2026-11-27 (결정 60): 창 안 세 번째 "배지" 탭 — 도전 과제 배지 12개(src/badges.ts, 2D와 같이 모인다). 딴 것은 금색, 못 딴 것은 흐리게.
 
 export type FpsMode = 'fps-staff' | 'fps-student';
+/** 기록판 창의 탭: 교직원 · 학생 · 배지 */
+export type BoardTab = FpsMode | 'badges';
 
 export interface FpsRecord {
   mode: FpsMode;
@@ -85,13 +89,14 @@ const NICK_KEY = 'staffsmash.nickname';
 const TIMEOUT_MS = 8000;
 const DIFF_RANK: Record<string, number> = { hard: 3, normal: 2, easy: 1 };
 const MODES: FpsMode[] = ['fps-staff', 'fps-student'];
-const TAB_LABEL: Record<FpsMode, string> = { 'fps-staff': '교직원', 'fps-student': '학생' };
+const TABS: BoardTab[] = [...MODES, 'badges'];
+const TAB_LABEL: Record<BoardTab, string> = { 'fps-staff': '교직원', 'fps-student': '학생', badges: '배지' };
 
 /** GET으로 새 서버임을 확인한 모드 (이 모드만 POST한다) */
 const confirmed = new Set<FpsMode>();
 /** 이번 창에서 마지막으로 남긴 기록 (기록판에서 강조) */
 let lastMine: FpsRecord | null = null;
-let lastTab: FpsMode = 'fps-staff';
+let lastTab: BoardTab = 'fps-staff';
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] as string);
 
@@ -264,7 +269,7 @@ async function submit(rec: FpsRecord, pre: Promise<FpsBoard>): Promise<FpsBoard 
 // ---------- 기록판 창 ----------
 
 let boardEl: HTMLElement | null = null;
-let shown: FpsMode = 'fps-staff';
+let shown: BoardTab = 'fps-staff';
 /** 창을 연 동안 받아 둔 탭 (탭을 오가도 다시 받지 않는다) */
 const cache = new Map<FpsMode, FpsBoard>();
 let loadSeq = 0;
@@ -310,15 +315,21 @@ function tableHtml(b: FpsBoard, mode: FpsMode): string {
   return `<table><thead><tr>${heads.map((h) => `<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table>`;
 }
 
-function render(b: FpsBoard | null): void {
-  if (!boardEl) return;
+/** 탭 단추 표시를 맞추고 알림 줄·본문을 돌려준다 */
+function tabParts(): { note: HTMLElement; body: HTMLElement } | null {
+  if (!boardEl) return null;
   boardEl.querySelectorAll<HTMLButtonElement>('[data-fbtab]').forEach((t) => {
     const on = t.dataset.fbtab === shown;
     t.classList.toggle('on', on);
     t.setAttribute('aria-selected', String(on));
   });
-  const note = boardEl.querySelector('.fb-note') as HTMLElement;
-  const body = boardEl.querySelector('.fb-body') as HTMLElement;
+  return { note: boardEl.querySelector('.fb-note') as HTMLElement, body: boardEl.querySelector('.fb-body') as HTMLElement };
+}
+
+function render(b: FpsBoard | null, mode: FpsMode): void {
+  const p = tabParts();
+  if (!p) return;
+  const { note, body } = p;
   if (!b) {
     note.textContent = '';
     body.innerHTML = '<p class="fb-empty">기록을 불러오는 중…</p>';
@@ -326,21 +337,37 @@ function render(b: FpsBoard | null): void {
   }
   note.innerHTML = noteText(b);
   note.classList.toggle('warn', b.why !== 'online');
-  body.innerHTML = tableHtml(b, shown);
+  body.innerHTML = tableHtml(b, mode);
   body.querySelector('tr.me')?.scrollIntoView({ block: 'nearest' });
 }
 
-function showTab(mode: FpsMode): void {
-  shown = mode;
-  lastTab = mode;
+/** 배지 탭: "배지 N / 12"와 12칸 (딴 것 금색·이름·조건, 못 딴 것 흐리게 이름·조건) */
+function renderBadges(): void {
+  const p = tabParts();
+  if (!p) return;
+  const { note, body } = p;
+  note.classList.remove('warn');
+  note.innerHTML = `<b>배지 ${badgeCount()} / ${BADGES.length}</b>`;
+  const cells = badgeList().map(({ def, got }, i) => {
+    const when = got !== null ? ` title="${new Date(got).toLocaleDateString('ko-KR')} 획득"` : '';
+    return `<div class="bdg ${got !== null ? 'got' : 'off'}"${when}><i>${got !== null ? '★' : i + 1}</i><span><b>${esc(def.name)}</b><small>${esc(def.desc)}</small></span></div>`;
+  });
+  body.innerHTML = `<div class="fb-badges">${cells.join('')}</div>`;
+}
+
+function showTab(tab: BoardTab): void {
+  shown = tab;
+  lastTab = tab;
+  if (tab === 'badges') return renderBadges();
+  const mode = tab;
   const cached = cache.get(mode);
-  if (cached) return render(cached);
-  render(null);
+  if (cached) return render(cached, mode);
+  render(null, mode);
   const seq = ++loadSeq;
   void loadBoard(mode).then((b) => {
     cache.set(mode, b);
     // 불러오는 사이에 창을 닫았거나 탭을 바꿨으면 그리지 않는다
-    if (seq === loadSeq && boardEl && shown === mode) render(b);
+    if (seq === loadSeq && boardEl && shown === mode) render(b, mode);
   });
 }
 
@@ -365,7 +392,7 @@ function onKey(e: KeyboardEvent): void {
     case 'ArrowLeft':
     case 'ArrowRight':
       e.preventDefault();
-      showTab(MODES[(MODES.indexOf(shown) + 1) % MODES.length]);
+      showTab(TABS[(TABS.indexOf(shown) + (e.code === 'ArrowLeft' ? TABS.length - 1 : 1)) % TABS.length]);
       break;
     case 'Digit1':
     case 'Numpad1':
@@ -374,6 +401,10 @@ function onKey(e: KeyboardEvent): void {
     case 'Digit2':
     case 'Numpad2':
       showTab('fps-student');
+      break;
+    case 'Digit3':
+    case 'Numpad3':
+      showTab('badges');
       break;
     case 'Tab': {
       // 초점이 창 뒤(다시 하기 단추 등)로 빠지지 않게 창 안에서만 돈다
@@ -392,11 +423,11 @@ const stopKey = (e: KeyboardEvent) => {
   if (boardEl) e.stopPropagation();
 };
 
-/** 기록판 창을 연다 (given = 방금 남긴 기록으로 받아 둔 순위) */
-export function openBoard(tab: FpsMode = lastTab, given?: FpsBoard): void {
+/** 기록판 창을 연다 (given = 방금 남긴 기록으로 받아 둔 순위, tab = 교직원·학생·배지) */
+export function openBoard(tab: BoardTab = lastTab, given?: FpsBoard): void {
   closeBoard();
   cache.clear();
-  if (given) cache.set(tab, given);
+  if (given && tab !== 'badges') cache.set(tab, given);
   const el = document.createElement('div');
   el.id = 'fboard';
   el.setAttribute('role', 'dialog');
@@ -406,7 +437,7 @@ export function openBoard(tab: FpsMode = lastTab, given?: FpsBoard): void {
     <div class="fb-box">
       <div class="fb-head">
         <h2 id="fbTitle">1인칭 기록판</h2>
-        <div class="fb-tabs" role="tablist">${MODES.map((m) => `<button type="button" role="tab" data-fbtab="${m}">${TAB_LABEL[m]}</button>`).join('')}</div>
+        <div class="fb-tabs" role="tablist">${TABS.map((m) => `<button type="button" role="tab" data-fbtab="${m}">${TAB_LABEL[m]}</button>`).join('')}</div>
         <button type="button" class="fb-x" aria-label="닫기">✕</button>
       </div>
       <p class="fb-note"></p>
@@ -415,7 +446,7 @@ export function openBoard(tab: FpsMode = lastTab, given?: FpsBoard): void {
     </div>`;
   document.body.appendChild(el);
   boardEl = el;
-  el.querySelectorAll<HTMLButtonElement>('[data-fbtab]').forEach((t) => t.addEventListener('click', () => showTab(t.dataset.fbtab as FpsMode)));
+  el.querySelectorAll<HTMLButtonElement>('[data-fbtab]').forEach((t) => t.addEventListener('click', () => showTab(t.dataset.fbtab as BoardTab)));
   el.querySelector('.fb-x')?.addEventListener('click', closeBoard);
   el.querySelector('.fb-close')?.addEventListener('click', closeBoard);
   // 바깥 어두운 곳을 누르면 닫기
