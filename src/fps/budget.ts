@@ -489,6 +489,20 @@ export class Budget {
     this.t = 0;
   }
 
+  /**
+   * 이어하기 (PRD 결정 60, main.ts continueRun): 와 있던 예산팀 직원을 치운다. 떠나기 전이었으면(들어오는 중·파동 중)
+   * 그 구역(area)에서 다시 올 수 있게 한다
+   */
+  retry(area: number): void {
+    if (this.state === 'idle') return;
+    if (this.state !== 'leave') {
+      const i = this.shown.lastIndexOf(area);
+      if (i >= 0) this.shown.splice(i, 1);
+    }
+    this.hide();
+    this.waitT = -1;
+  }
+
   /** 판을 처음으로 */
   clear(): void {
     this.hide();

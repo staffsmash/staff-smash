@@ -73,6 +73,8 @@ interface Aide {
 export interface HazHost extends Ctx {
   readonly pos: THREE.Vector3;
   hp: number;
+  /** 최대 체력 (인물 장점으로 11칸일 수 있다). 없으면 10 */
+  readonly maxHp?: number;
   shove?(dx: number, dz: number, slow: number): void;
 }
 
@@ -404,7 +406,7 @@ export class StudentHazards {
       let took = false;
       if (near && w.grade === 'A+') {
         took = true;
-        c.hp = Math.min(10, c.hp + GRADE_A_HEAL);
+        c.hp = Math.min(c.maxHp ?? 10, c.hp + GRADE_A_HEAL);
         c.fx.text(_a.copy(w.obj.position).setY(1.6), 'A+ 성적표! 체력 회복', '#7CFC9A', 0.6);
         c.sound('pickup', w.obj.position, 0.9);
       } else if (near) {

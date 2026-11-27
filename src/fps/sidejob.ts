@@ -3,6 +3,7 @@ import type { SfxName } from './audio';
 import type { Rect } from './blocks';
 import type { Enemy } from './enemies';
 import type { Fx } from './fx';
+import { perkMul } from '../perks';
 import { Person, type Look, type PoseIn } from './people';
 import { prepareSpeech } from './speech';
 
@@ -104,6 +105,8 @@ export interface SideHost {
   readonly area: Rect;
   readonly hp: number;
   readonly maxHp: number;
+  /** 고른 교직원 (장점 — 나진취는 던지기 위력·거리 +20%, src/perks.ts) */
+  heroId(): string;
   /** 서지 말아야 할 곳 (장애물·상자·자판기) */
   solids(): readonly Rect[];
   areaNo(): number;
@@ -294,6 +297,8 @@ interface Shot {
   /** 이미 맞힌 것, 처리한 잡몹 수 (빗자루는 BROOM_MAX에서 멈춘다) */
   hits: Set<Enemy>;
   minions: number;
+  /** 던지기 장점 배율 (위력·거리, 던질 때 정한다) */
+  k: number;
 }
 
 /** 화면 조각 (ensureDom) */
@@ -758,6 +763,32 @@ export class SideJob {
     o.rotation.y += d * Math.min(1, dt * 6);
   }
 
+  /**
+   * 이어하기 (PRD 결정 60, main.ts continueRun): 선생님이 기다리거나 돕는 중(안 끝남)이었으면 치우고 그 구역에서 다시 나오게 한다.
+   * 이미 끝났으면(대사·걸어 나가는 중) 결과는 그대로 두고 선생님만 치운다. 날아가던 빗자루·폭탄도 거둔다. 들고 있는 아이템은 main.ts가 되돌린다
+   */
+  retry(): void {
+    for (const s of this.shots) {
+      s.on = false;
+      s.obj.visible = false;
+    }
+    if (this.state === 'idle') return;
+    if (this.state === 'wait' || this.state === 'work') {
+      this.done = false;
+      this.result = '';
+    }
+    this.carrying = false;
+    this.held.visible = false;
+    this.dropRing.visible = false;
+    for (const it of [...this.trash, ...this.crates]) {
+      it.on = false;
+      it.obj.visible = false;
+    }
+    this.finish();
+    this.waitT = -1;
+    this.near = false;
+  }
+
   /** 판을 처음으로 (쓰러짐·다시 하기·처음 화면): 아이템도 사라진다 */
   clear(): void {
     this.finish();
@@ -800,11 +831,12 @@ export class SideJob {
     else this.bins--;
     let s = this.shots.find((x) => !x.on && x.kind === kind);
     if (!s) {
-      s = { kind, obj: kind === 'broom' ? buildBroom() : buildBin(), vel: new THREE.Vector3(), on: false, dist: 0, hits: new Set(), minions: 0 };
+      s = { kind, obj: kind === 'broom' ? buildBroom() : buildBin(), vel: new THREE.Vector3(), on: false, dist: 0, hits: new Set(), minions: 0, k: 1 };
       h.scene.add(s.obj);
       this.shots.push(s);
     }
     s.minions = 0;
+    s.k = perkMul(h.heroId(), 'throw');
     // 조준점 방향 (Game.fire와 같은 yaw·pitch)
     const cp = Math.cos(h.pitch);
     const dir = _b.set(-Math.sin(h.yaw) * cp, Math.sin(h.pitch), -Math.cos(h.yaw) * cp);
@@ -819,8 +851,9 @@ export class SideJob {
       // 빗자루 머리가 날아가는 쪽으로 눕는다
       s.obj.quaternion.setFromUnitVectors(_a.set(0, -1, 0), dir);
     } else {
-      s.vel.copy(dir).multiplyScalar(15);
-      s.vel.y += 5;
+      // 던지기 장점: 앞으로 나가는 빠르기만 키워 같은 포물선으로 더 멀리
+      s.vel.copy(dir).multiplyScalar(15 * s.k);
+      s.vel.y = dir.y * 15 + 5;
       s.obj.rotation.set(0, 0, 0);
     }
     h.sound('throw', undefined, 0.9);
@@ -872,7 +905,7 @@ export class SideJob {
         for (const e of got) {
           const boss = h.isBoss(e);
           s.hits.add(e);
-          h.itemHit(e, BROOM_STAMPS);
+          h.itemHit(e, BROOM_STAMPS * s.k);
           h.fx.confetti(e.center, 8, 3, 0xd9b44a, 2, 0.6);
           if (boss) this.lastShot.bosses++;
           else {
@@ -884,7 +917,7 @@ export class SideJob {
             break;
           }
         }
-        if (stop || s.dist > BROOM_RANGE || p.y < 0.05) {
+        if (stop || s.dist > BROOM_RANGE * s.k || p.y < 0.05) {
           s.on = false;
           s.obj.visible = false;
           h.fx.confetti(p, 6, 2, 0xd9b44a, 1.5, 0.5);
@@ -914,7 +947,7 @@ export class SideJob {
       for (const e of inside) {
         if (h.isBoss(e)) this.lastShot.bosses++;
         else this.lastShot.minions++;
-        h.itemHit(e, BIN_STAMPS);
+        h.itemHit(e, BIN_STAMPS * s.k);
       }
       h.fx.blast(p, BIN_R, 0x9fd3ff);
       h.fx.confetti(p, 36, 7);

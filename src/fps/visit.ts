@@ -1,5 +1,7 @@
 import * as THREE from 'three';
+import { noteVisitSuccess } from '../badges';
 import type { HeroId } from '../data/heroes';
+import { perkMul } from '../perks';
 import type { SfxName } from './audio';
 import type { Rect } from './blocks';
 import { BODY_DMG, PersonBoss } from './bosses';
@@ -824,6 +826,8 @@ interface Shot {
   t: number;
   back: boolean;
   hits: Set<Enemy>;
+  /** 던지기 장점 배율 (위력·거리, 던질 때 정한다) */
+  k: number;
 }
 
 interface Cheerer {
@@ -1386,6 +1390,8 @@ export class Visit {
     const h = this.h;
     this.result = 'win';
     this.won = true;
+    // 배지: 돌발 방문 해결 · 손님맞이 완료 (고른 교직원 id, src/badges.ts)
+    noteVisitSuccess(h.heroId());
     this.clearShots();
     (this.boards.get(this.hero) as Board).draw(VISIT_NEED, true);
     vp.person.say(this.def.win, 3);
@@ -2175,8 +2181,8 @@ export class Visit {
         this.throwShot('graph');
         break;
       case 'clicker':
-        this.clickT = CLICK_T;
-        h.note(`매크로 클리커! ${CLICK_T}초 동안 도장 연사 ${CLICK_MUL}배`, 2);
+        this.clickT = CLICK_T * this.buffMul;
+        h.note(`매크로 클리커! ${Math.round(this.clickT)}초 동안 도장 연사 ${CLICK_MUL}배`, 2);
         h.sound('tick');
         break;
       case 'cheer':
@@ -2192,6 +2198,11 @@ export class Visit {
     this.useCd = 0.3;
     if (--this.itemN <= 0) this.item = null;
     return true;
+  }
+
+  /** 아이템 시간 장점 (최도서관 +30%, src/perks.ts): 보상 효과 시간에 곱한다 */
+  private get buffMul(): number {
+    return perkMul(this.h.heroId(), 'buff');
   }
 
   /** 시험용 (?debug): 보상을 바로 손에 (상자를 거치지 않는다) */
@@ -2211,7 +2222,7 @@ export class Visit {
     const h = this.h;
     let s = this.shots.find((x) => !x.on && x.kind === kind);
     if (!s) {
-      s = { kind, obj: kind === 'glove' ? buildGlove() : buildGraph(), vel: new THREE.Vector3(), on: false, dist: 0, t: 0, back: false, hits: new Set() };
+      s = { kind, obj: kind === 'glove' ? buildGlove() : buildGraph(), vel: new THREE.Vector3(), on: false, dist: 0, t: 0, back: false, hits: new Set(), k: 1 };
       h.scene.add(s.obj);
       this.shots.push(s);
     }
@@ -2223,6 +2234,8 @@ export class Visit {
     s.t = 0;
     s.back = false;
     s.hits.clear();
+    // 던지기 장점 (나진취 +20%): 결재 진행과 날아가는 거리
+    s.k = perkMul(h.heroId(), 'throw');
     s.obj.visible = true;
     if (kind === 'glove') s.obj.quaternion.setFromUnitVectors(FWD, dir);
     else s.obj.rotation.set(0, h.yaw, 0);
@@ -2245,8 +2258,8 @@ export class Visit {
         s.dist += GLOVE_V * dt;
         const fl = s.obj.getObjectByName('flame');
         if (fl) fl.scale.setScalar(1.1 + Math.random() * 0.5);
-        this.shotHits(s, GLOVE_STAMPS, 0.5);
-        if (s.dist > GLOVE_RANGE || p.y < 0.05) {
+        this.shotHits(s, GLOVE_STAMPS * s.k, 0.5);
+        if (s.dist > GLOVE_RANGE * s.k || p.y < 0.05) {
           s.on = false;
           s.obj.visible = false;
           h.fx.confetti(p, 8, 3, 0xff8a2a, 1.5, 0.6);
@@ -2258,7 +2271,7 @@ export class Visit {
       if (!s.back) {
         p.addScaledVector(s.vel, dt);
         s.dist += GRAPH_V * dt;
-        if (s.dist >= GRAPH_RANGE) {
+        if (s.dist >= GRAPH_RANGE * s.k) {
           s.back = true;
           s.hits.clear();
         }
@@ -2273,7 +2286,7 @@ export class Visit {
         p.addScaledVector(_w.divideScalar(d), Math.min(d, GRAPH_V * 1.15 * dt));
       }
       if (p.y < 0.5) p.y = 0.5;
-      this.shotHits(s, GRAPH_STAMPS, 0.85);
+      this.shotHits(s, GRAPH_STAMPS * s.k, 0.85);
     }
     this.stepCheer(dt);
     // 실사 통과 현판
@@ -2313,7 +2326,7 @@ export class Visit {
 
   private startCheer(): void {
     const h = this.h;
-    this.cheerT = CHEER_T;
+    this.cheerT = CHEER_T * this.buffMul;
     // 보는 쪽 앞 양옆(화면 안)에서 달려 들어온다
     const fwd = _v.set(-Math.sin(h.yaw), 0, -Math.cos(h.yaw));
     const right = _w.set(Math.cos(h.yaw), 0, -Math.sin(h.yaw));
@@ -2330,7 +2343,7 @@ export class Visit {
       m.cd = 0.25;
       m.reach = 0;
     }
-    h.banner('응원단 출동!', `${CHEER_T}초 동안 동아리원 2명이 잡몹을 처리해요`);
+    h.banner('응원단 출동!', `${Math.round(this.cheerT)}초 동안 동아리원 2명이 잡몹을 처리해요`);
     h.sound('open');
   }
 
@@ -2466,10 +2479,10 @@ export class Visit {
     this.plaque.position.copy(this.plaquePos);
     this.plaque.rotation.y = h.yaw;
     this.plaque.visible = true;
-    this.plaqueT = PLAQUE_T;
+    this.plaqueT = PLAQUE_T * this.buffMul;
     h.fx.ring(this.plaquePos.x, 0.08, this.plaquePos.z, 0.6, PLAQUE_R, 0.6, 0x7cfc9a);
     h.fx.confetti(_v.set(this.plaquePos.x, 1.4, this.plaquePos.z), 16, 3, 0xd9b44a, 2, 0.7);
-    h.note(`실사 통과 현판! ${PLAQUE_T}초 동안 둘레 ${PLAQUE_R}m 안전지대`, 2.2);
+    h.note(`실사 통과 현판! ${Math.round(this.plaqueT)}초 동안 둘레 ${PLAQUE_R}m 안전지대`, 2.2);
     h.sound('open');
   }
 
@@ -2480,13 +2493,55 @@ export class Visit {
     this.sign.position.set(h.pos.x + fx * 2.2, 0, h.pos.z + fz * 2.2);
     this.sign.rotation.set(0, h.yaw, 0);
     this.sign.visible = true;
-    this.quietT = QUIET_T;
+    this.quietT = QUIET_T * this.buffMul;
     h.fx.ring(h.pos.x, 0.08, h.pos.z, 1, 30, 0.8, 0x9fd3ff);
-    h.note(`쉿! 정숙 표지판! ${QUIET_T}초 동안 잡몹이 느려져요`, 2.2);
+    h.note(`쉿! 정숙 표지판! ${Math.round(this.quietT)}초 동안 잡몹이 느려져요`, 2.2);
     h.sound('tick');
   }
 
   // ---------- 판 정리·미리 그리기 ----------
+
+  /**
+   * 이어하기 (PRD 결정 60, main.ts continueRun): 구역을 처음부터 다시 한다.
+   * 상대가 와서 결재판을 채우는 중(안 끝남)이었으면 치우고 그 구역에서 다시 나오게 하고, 이미 끝났으면(대사·걸어 나가는 중)
+   * 결과는 그대로 두고 상대만 치운다. 켜져 있던 보상 효과(클리커·응원단·현판·표지판)와 날아가던 것도 거둔다.
+   * 들고 있는 보상(item)은 main.ts가 그 구역 시작 때로 되돌린다. 땅에 떨어진 보상 상자는 그대로 둔다
+   */
+  retry(): void {
+    const vp = this.vp;
+    if (vp) {
+      if (this.state === 'enter' || this.state === 'fight') {
+        this.done = false;
+        this.result = '';
+      }
+      vp.gone = true;
+      vp.obj.visible = false;
+      this.restorePerson(vp.person);
+      vp.person.tag.hide();
+    }
+    this.vp = null;
+    this.state = 'idle';
+    this.phase = 'move';
+    this.won = false;
+    this.waitT = -1;
+    this.clearShots();
+    for (const s of this.shots) {
+      s.on = false;
+      s.obj.visible = false;
+    }
+    for (const m of this.cheer) {
+      m.state = 'off';
+      m.obj.visible = false;
+      m.person.tag.hide();
+    }
+    for (const p of this.poms) {
+      p.on = false;
+      p.obj.visible = false;
+    }
+    this.plaque.visible = false;
+    this.sign.visible = false;
+    this.clickT = this.cheerT = this.plaqueT = this.quietT = 0;
+  }
 
   /** 판을 처음으로 (쓰러짐·다시 하기·처음 화면): 보상도 사라진다 */
   clear(): void {
