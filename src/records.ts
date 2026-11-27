@@ -1,4 +1,5 @@
 import server from './data/server.json';
+import type { Diff2dKey } from './difficulty';
 
 // 닉네임 기록판 (PRD 13절). 온라인 저장소는 staffsmash0 계정의 Apps Script 웹앱이다.
 // 주소(src/data/server.json의 recordsUrl)가 비어 있거나 응답이 없으면 이 기기에만 저장한다.
@@ -18,6 +19,8 @@ export interface RecordEntry {
   skill: string;
   version: string;
   ts: number;
+  /** 2D 난이도 (PRD 결정 60). 서버 12번째 칸. 예전 기록은 빈 칸('' 또는 없음) → 화면에는 '-' */
+  diff?: Diff2dKey | '';
 }
 
 export const VERSION = 'M3';
@@ -44,11 +47,17 @@ export function checkNickname(raw: string): { ok: true; name: string } | { ok: f
   return { ok: true, name };
 }
 
-/** 순위: 도달 스테이지(클리어가 가장 위) → 퇴근 시각 빠른 순 → 걸린 시간 짧은 순 */
+/** 난이도 순위 (서버 apps-script/Code.gs DIFF_RANK와 같다): 같은 단계면 어려운 난이도가 위, 예전 기록(빈 칸)은 맨 아래 */
+const DIFF_RANK: Record<string, number> = { hard: 3, normal: 2, easy: 1 };
+
+/** 순위: 도달 스테이지(클리어가 가장 위) → 난이도(고급 > 중급 > 초보 > 없음) → 퇴근 시각 빠른 순 → 걸린 시간 짧은 순 (서버와 같다) */
 export function compareRecords(a: RecordEntry, b: RecordEntry): number {
   const sa = a.cleared ? 4 : a.stage;
   const sb = b.cleared ? 4 : b.stage;
   if (sa !== sb) return sb - sa;
+  const da = DIFF_RANK[a.diff ?? ''] ?? 0;
+  const db = DIFF_RANK[b.diff ?? ''] ?? 0;
+  if (da !== db) return db - da;
   if (a.clockMin !== b.clockMin) return a.clockMin - b.clockMin;
   return a.elapsed - b.elapsed;
 }

@@ -1,18 +1,16 @@
 import Phaser from 'phaser';
 import { FONT, GAME_H, GAME_W } from '../config';
-import { STUDENT_HEROES } from '../data/students';
 import { Controls } from '../input/Controls';
-import { neutralPose } from '../entities/Rig';
-import type { Rig } from '../entities/Rig';
-import { createStaffRig, createStudentHeroRig } from '../entities/rigs';
 import type { GameMode } from '../records';
 import { fadeTo, makeButton } from '../ui/button';
+import { openSettings, type SettingsPanel } from '../ui/settingsPanel';
 import { HUFS_KEYS, HUFS_NAVY, hufsImage, loadHufsAssets } from '../hufs';
-import { goAppHome, isApp, titleLeft, titleShown } from '../pwa';
-import { addSoundControls } from '../ui/soundControls';
+import { goAppHome, titleLeft, titleShown } from '../pwa';
 
-// 타이틀: 교직원 모드(출근하기)와 학생 모드(등교하기) 중 하나를 고른다.
-// 키보드: Enter·1 = 교직원 모드, 2 = 학생 모드, B = 기록판.
+// 타이틀 (PRD 결정 60 3절 — app.html·1인칭 타이틀과 같은 모양):
+//   로고 배지 / Three Party Problem / [출근하기] [등교하기] / 작은 줄 "기록판 · 설정 · 처음으로"
+// 처음으로 = 두 게임 고르는 첫 화면(app.html). 브라우저에서도 간다.
+// 키보드: Enter·1 = 교직원 모드(출근하기), 2 = 학생 모드(등교하기), B = 기록판. 설정 창은 Esc로 닫는다.
 
 /** 로고 배지 (2026-11-25, public/logo/badge.png — assets/icons/make_icons.py가 굽는다) */
 const LOGO_KEY = 'logo-badge';
@@ -20,7 +18,7 @@ const LOGO_KEY = 'logo-badge';
 export class TitleScene extends Phaser.Scene {
   private controls!: Controls;
   private started = false;
-  private rigs: Rig[] = [];
+  private settings: SettingsPanel | null = null;
 
   constructor() {
     super('title');
@@ -33,6 +31,7 @@ export class TitleScene extends Phaser.Scene {
 
   create(): void {
     this.started = false;
+    this.settings = null;
     this.controls = new Controls();
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.controls.destroy());
     this.cameras.main.fadeIn(200, 0, 0, 0);
@@ -43,11 +42,13 @@ export class TitleScene extends Phaser.Scene {
     const touch = this.sys.game.device.input.touch;
 
     this.add.rectangle(cx, GAME_H / 2, GAME_W, GAME_H, HUFS_NAVY);
-    this.add.rectangle(cx, 470, GAME_W, 140, 0x163a63);
-    hufsImage(this, HUFS_KEYS.line, cx, 470, { h: 300, alpha: 0.07, tint: 0xffffff });
+    this.add.rectangle(cx, 488, GAME_W, 104, 0x163a63);
+    hufsImage(this, HUFS_KEYS.line, cx, 488, { h: 300, alpha: 0.07, tint: 0xffffff });
 
+    // 로고 배지: 제목 위 (학교 약명 시그니처는 뺐다 — 사용자 2026-11-25)
+    if (this.textures.exists(LOGO_KEY)) this.add.image(cx, 116, LOGO_KEY).setDisplaySize(176, 176);
     this.add
-      .text(cx, 204, 'Three Party Problem', {
+      .text(cx, 250, 'Three Party Problem', {
         fontFamily: FONT,
         fontSize: '54px',
         fontStyle: 'bold',
@@ -56,66 +57,73 @@ export class TitleScene extends Phaser.Scene {
         strokeThickness: 10,
       })
       .setOrigin(0.5);
-    // 로고 배지: 제목 위 (학교 약명 시그니처는 뺐다 — 사용자 2026-11-25)
-    if (this.textures.exists(LOGO_KEY)) this.add.image(cx, 88, LOGO_KEY).setDisplaySize(164, 164);
-    this.add
-      .text(cx, 246, '오후 4시 52분, 마감 8분 전 · 교직원은 정시 퇴근을, 학생은 서류 제출 승인을 노린다', {
-        fontFamily: FONT,
-        fontSize: '17px',
-        color: '#c9d3e6',
-      })
-      .setOrigin(0.5);
 
-    // 왼쪽: 교직원(김국제), 오른쪽: 학생(김러샤)이 서로 마주 본다
-    const staff = createStaffRig(this);
-    staff.root.setPosition(110, 450).setScale(1.7);
-    const student = createStudentHeroRig(this, STUDENT_HEROES[0].look);
-    student.root.setPosition(850, 450).setScale(1.7);
-    student.root.scaleX = -1.7;
-    this.rigs = [staff, student];
+    makeButton(this, cx - 140, 338, 256, 60, touch ? '출근하기' : '출근하기 (Enter·1)', () => this.start('staff'), 0x2f8f4e);
+    makeButton(this, cx + 140, 338, 256, 60, touch ? '등교하기' : '등교하기 (2)', () => this.start('student'), 0xb4532a);
 
-    // 홈 화면 앱으로 열었을 때만: 왼쪽 위 "처음으로" (두 게임 고르는 첫 화면 app.html)
-    if (isApp()) makeButton(this, 68, 30, 108, 32, '처음으로', goAppHome, 0x2a3346);
-    // 오른쪽 위: 배경음악 크기·소리 끄고 켜기
-    addSoundControls(this);
-
-    const help = touch
-      ? '왼쪽 화면 드래그: 이동   A: 처리·공격   B: 점프   줍기: 무기 줍기·던지기   SP: 필살기'
-      : '이동 방향키·WASD   대시 같은 방향 두 번   처리·공격 J   점프 K   줍기·던지기 L   필살기 I';
-    this.add.text(cx, 270, help, { fontFamily: FONT, fontSize: '14px', color: '#e6ebf3' }).setOrigin(0.5);
-
-    // 모드 고르기: 버튼 아래에 한 줄 소개
-    const modeX = { staff: cx - 135, student: cx + 135 };
-    makeButton(this, modeX.staff, 322, 250, 56, touch ? '출근하기' : '출근하기 (Enter·1)', () => this.start('staff'), 0x2f8f4e);
-    makeButton(this, modeX.student, 322, 250, 56, touch ? '등교하기' : '등교하기 (2)', () => this.start('student'), 0xb4532a);
-    const caption = (x: number, title: string, sub: string) => {
-      this.add.text(x, 364, title, { fontFamily: FONT, fontSize: '15px', fontStyle: 'bold', color: '#ffffff' }).setOrigin(0.5);
-      this.add.text(x, 384, sub, { fontFamily: FONT, fontSize: '13px', color: '#c9d3e6' }).setOrigin(0.5);
-    };
-    caption(modeX.staff, '교직원 모드', '민원 처리하고 정시 퇴근');
-    caption(modeX.student, '학생 모드', '반려된 서류 승인받기');
-    makeButton(this, cx, 434, 220, 42, touch ? '기록판' : '기록판 (B)', () => this.go('board'), 0x2f6fd1);
-
-    this.add
-      .text(cx, GAME_H - 14, '게임이 끝나면 결과(스테이지·시각)가 익명으로 기록됩니다. 닉네임은 원할 때만 남깁니다.', {
-        fontFamily: FONT,
-        fontSize: '12px',
-        color: '#6b7488',
-      })
-      .setOrigin(0.5);
+    // 작은 줄: 기록판 · 설정 · 처음으로
+    this.linkRow(cx, 404, [
+      { label: '기록판', onClick: () => this.go('board') },
+      { label: '설정', onClick: () => this.openSettings() },
+      { label: '처음으로', onClick: () => this.home() },
+    ]);
   }
 
-  update(_t: number, deltaMs: number): void {
-    const dt = Math.min(deltaMs, 50) / 1000;
-    const s = Math.sin(this.time.now / 300);
-    for (const r of this.rigs) {
-      const p = neutralPose();
-      p.armF = 0.1 + s * 0.06;
-      p.armB = -0.1 - s * 0.06;
-      p.bob = s * 1.5;
-      r.update(dt, p);
-    }
+  /** 가운데 맞춘 작은 글자 링크 한 줄 ("기록판 · 설정 · 처음으로"). 손가락으로도 누르기 쉽게 누르는 곳은 글자보다 넓다 */
+  private linkRow(cx: number, y: number, items: { label: string; onClick: () => void }[]): void {
+    const style = { fontFamily: FONT, fontSize: '18px', color: '#c9d3e6' };
+    const sep = ' · ';
+    const texts = items.map((it) => this.add.text(0, y, it.label, { ...style, fontStyle: 'bold' }).setOrigin(0, 0.5));
+    const dots = items.slice(1).map(() => this.add.text(0, y, sep, { ...style, color: '#6f86a8' }).setOrigin(0, 0.5));
+    const sepW = dots[0]?.width ?? 0;
+    const total = texts.reduce((w, t) => w + t.width, 0) + sepW * dots.length;
+    let x = cx - total / 2;
+    texts.forEach((t, i) => {
+      t.setX(x);
+      x += t.width;
+      if (i < dots.length) {
+        dots[i].setX(x);
+        x += sepW;
+      }
+      const padX = 14;
+      const padY = 14;
+      t.setInteractive({
+        hitArea: new Phaser.Geom.Rectangle(-padX, -padY, t.width + padX * 2, t.height + padY * 2),
+        hitAreaCallback: Phaser.Geom.Rectangle.Contains,
+        useHandCursor: true,
+      });
+      t.on('pointerover', () => t.setColor('#ffffff'));
+      t.on('pointerout', () => t.setColor('#c9d3e6'));
+      t.on('pointerup', () => items[i].onClick());
+    });
+  }
+
+  private openSettings(): void {
+    if (this.started || (this.settings && !this.settings.closed)) return;
+    // 휴대폰 설치 안내 띠가 창 아래(닫기 단추)를 가리지 않게 창이 열린 동안 숨긴다
+    titleLeft();
+    this.settings = openSettings(this, () => {
+      if (!this.started) titleShown();
+    });
+  }
+
+  private home(): void {
+    if (this.started) return;
+    this.started = true;
+    goAppHome();
+  }
+
+  update(): void {
     const c = this.controls;
+    if (this.settings && !this.settings.closed) {
+      // 설정 창이 열려 있는 동안은 Esc만 받는다 (Enter 등으로 게임이 시작되지 않게)
+      if (c.consume('pause')) this.settings.close();
+      c.consume('confirm');
+      c.consume('pick1');
+      c.consume('pick2');
+      c.consume('board');
+      return;
+    }
     if (c.consume('confirm') || c.consume('pick1')) this.start('staff');
     else if (c.consume('pick2')) this.start('student');
     else if (c.consume('board')) this.go('board');
@@ -126,7 +134,7 @@ export class TitleScene extends Phaser.Scene {
   }
 
   private go(key: 'select' | 'board', data?: object): void {
-    if (this.started) return;
+    if (this.started || (this.settings && !this.settings.closed)) return;
     this.started = true;
     if (key === 'select' && this.sys.game.device.input.touch) {
       try {
