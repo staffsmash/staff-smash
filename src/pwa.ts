@@ -1,6 +1,6 @@
 // 홈 화면에 추가한 "앱"(Three Party Problem)으로 열렸는지 판단하고, 휴대폰 브라우저에서는 설치 안내 한 줄을 띄운다.
 // 2D(src/main.ts → TitleScene)와 1인칭(src/fps/main.ts) 두 진입점이 같이 쓴다. 첫 화면은 app.html (manifest의 start_url).
-// - 앱(standalone·fullscreen, 아이폰 navigator.standalone)으로 열렸을 때만 타이틀에 "처음으로"(→ app.html)가 보인다.
+// - 두 타이틀의 작은 줄 "처음으로"는 앱·브라우저 모두 app.html로 간다 (2026-11-27 PRD 결정 60, 예전엔 앱일 때만 보였다).
 // - 설치 안내: 터치 기기 + 브라우저(앱 아님) + 타이틀 화면에서만. ×를 누르면 이 기기(localStorage)에 기억해 다시 안 띄운다.
 // - service worker·오프라인 캐시는 일부러 넣지 않는다 (늘 최신 판이 열리게).
 
@@ -48,11 +48,6 @@ function closedBefore(): boolean {
   } catch {
     return false;
   }
-}
-
-/** 1인칭 타이틀 링크 줄(.tlinks)에 넣을 "처음으로" (앱일 때만, 아니면 빈 글자) */
-export function appHomeLink(): string {
-  return isApp() ? `<a href="${APP_HOME}">처음으로</a>` : '';
 }
 
 /** 첫 화면으로 */
