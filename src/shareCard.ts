@@ -192,7 +192,9 @@ export function prepareShare(d: ResultShare): PreparedShare {
       if (!blob) return 'failed';
       const file = new File([blob], FILE, { type: 'image/png' });
       const nav = navigator;
-      if (typeof nav.share === 'function' && typeof nav.canShare === 'function' && nav.canShare({ files: [file] })) {
+      // 공유 창은 휴대폰(터치)에서만. PC는 파일 저장 — 윈도 Chrome은 canShare가 true라 그대로 두면 윈도 공유 창이 뜬다
+      const touch = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+      if (touch && typeof nav.share === 'function' && typeof nav.canShare === 'function' && nav.canShare({ files: [file] })) {
         try {
           await nav.share({ files: [file], title: 'Three Party Problem', text });
           return 'shared';

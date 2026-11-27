@@ -209,18 +209,24 @@ function ensureToast(): HTMLElement {
 function showToast(name: string): void {
   if (typeof document === 'undefined') return;
   queue.push(name);
-  if (!busy) next();
+  if (!busy) {
+    // 같은 순간에 딴 배지를 모아서 한 번에 보이도록 한 박자 늦춘다
+    busy = true;
+    window.setTimeout(next, 0);
+  }
 }
 
 function next(): void {
-  const name = queue.shift();
-  if (name === undefined) {
+  // 한꺼번에 딴 배지(판 끝 등)는 알림 한 번으로 묶는다: "정시 퇴근 · 근무평정 S", 셋 이상이면 "정시 퇴근 외 2개"
+  const names = queue.splice(0);
+  if (names.length === 0) {
     busy = false;
     return;
   }
   busy = true;
   const el = ensureToast();
-  el.innerHTML = `<i></i><span><small>배지 획득</small>${name.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c] as string)}</span>`;
+  const label = names.length === 1 ? names[0] : names.length === 2 ? `${names[0]} · ${names[1]}` : `${names[0]} 외 ${names.length - 1}개`;
+  el.innerHTML = `<i></i><span><small>배지 획득</small>${label.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c] as string)}</span>`;
   requestAnimationFrame(() => el.classList.add('on'));
   window.setTimeout(() => {
     el.classList.remove('on');
