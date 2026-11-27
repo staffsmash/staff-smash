@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { appHomeLink, titleLeft, titleShown } from '../pwa';
+import { APP_HOME, titleLeft, titleShown } from '../pwa';
 import { armName, Arms, ARMS, BOOMERANG_TURN, type ArmDef, type ArmId } from './arms';
 import type { SfxName } from './audio';
 import { followFps, sfx as sharedSfx } from '../sound';
@@ -30,6 +30,7 @@ import {
   recordBest,
   settingsHtml,
   timeText,
+  watchBtnSize,
   type Diff,
   type DiffKey,
   type Settings,
@@ -555,6 +556,8 @@ class Game implements Ctx {
     this.resize();
     window.addEventListener('resize', () => this.resize());
     if (TOUCH) document.body.classList.add('touch');
+    // 터치 단추 크기 (설정 작게·보통·크게 → fps.html --bs)
+    watchBtnSize();
     document.querySelectorAll<HTMLElement>('.dmg').forEach((el) => this.dirs.push({ el, from: new THREE.Vector3(), t: 0 }));
     this.sfx.setVolume(this.settings.volume);
     // 배경음악: 보스·중간보스가 나와 있으면 보스 곡 (src/sound.ts)
@@ -1384,9 +1387,12 @@ class Game implements Ctx {
   private overlay(html: string): HTMLElement {
     const o = $('overlay');
     titleLeft();
+    // 타이틀·선택 화면(과 거기서 연 설정)에서는 뒤의 HUD·터치 단추를 숨긴다 (fps.html body.menu). 일시정지·결과 화면은 그대로 비친다
+    document.body.classList.toggle('menu', this.phase === 'title');
     o.innerHTML = html;
     o.hidden = false;
     o.scrollTop = 0;
+    o.scrollLeft = 0;
     // 뒤에 남은 알림 글씨가 비쳐 보이지 않게
     $('banner').style.opacity = '0';
     $('note').style.opacity = '0';
@@ -1398,10 +1404,15 @@ class Game implements Ctx {
 
   private hideOverlay(): void {
     $('overlay').hidden = true;
+    // 판이 시작되면 HUD·터치 단추가 다시 보인다
+    document.body.classList.remove('menu');
     titleLeft();
   }
 
-  /** 시작 화면: 로고 · 제목 · 모드 단추 둘(교직원 → 교직원 선택 화면 staffpick.ts, 학생 → 학생 선택 화면) · 설정·기록판·2D 본편 */
+  /**
+   * 시작 화면 (2D 타이틀·app.html과 같은 모양, 결정 60): 로고 배지 · 제목 · [출근하기][등교하기] · 작은 줄 "기록판 · 설정 · 처음으로".
+   * 출근하기 → 교직원 선택 화면(staffpick.ts), 등교하기 → 학생 선택 화면. 처음으로 = 두 게임 고르는 첫 화면 app.html (브라우저에서도)
+   */
   private showTitle(): void {
     this.phase = 'title';
     const o = this.overlay(`
@@ -1409,19 +1420,18 @@ class Game implements Ctx {
         <img class="badge" src="logo/badge.png" alt="">
         <h1>Three Party Problem</h1>
         ${this.stu.modeButtons()}
-        <div class="tlinks">${appHomeLink()}<button id="setBtn" type="button">설정</button><a href="./">2D 본편</a></div>
+        <div class="tlinks"><button id="setBtn" type="button">설정</button><a id="homeLink" href="${APP_HOME}">처음으로</a></div>
       </div>`);
     this.stu.bindTitle();
     $('setBtn').addEventListener('click', () => this.showSettings('title'));
-    // 기록판 단추(board.ts)는 설정 다음 자리로
+    // 기록판 단추(board.ts)는 설정 앞자리에 들어간다 → 기록판 · 설정 · 처음으로
     addBoardButton(o);
-    $('setBtn').after($('boardBtn'));
     titleShown();
   }
 
   private showSettings(from: 'title' | 'pause'): void {
     const o = this.overlay(`
-      <div class="panel">
+      <div class="panel setp">
         <h1>설정</h1>
         ${settingsHtml(this.settings, { touch: TOUCH, inRun: from === 'pause' })}
         <button id="backBtn" type="button">돌아가기</button>

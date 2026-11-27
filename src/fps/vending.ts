@@ -413,12 +413,12 @@ const CSS = `
 #vendHint b { display: inline-block; min-width: 18px; margin-right: 6px; padding: 0 4px; border-radius: 4px; background: #e0bb62; color: #111318; text-align: center; }
 #vendHint.on { opacity: 1; }
 body.touch #vendHint { display: none; }
-#vendBtn { position: fixed; right: calc(150px + env(safe-area-inset-right)); bottom: calc(112px + env(safe-area-inset-bottom)); width: 66px; height: 66px;
-  border-radius: 50%; border: 3px solid #111318; background: #002c52; color: #fff; font: 700 16px 'Malgun Gothic', sans-serif;
+#vendBtn { position: fixed; right: calc(150px * var(--bs) + var(--sa-r)); bottom: calc(112px * var(--bs) + var(--sa-b)); width: calc(66px * var(--bs)); height: calc(66px * var(--bs));
+  border-radius: 50%; border: 3px solid #111318; background: #002c52; color: #fff; font: 700 calc(16px * var(--bs)) 'Malgun Gothic', sans-serif;
   display: none; box-shadow: 0 0 12px #e0bb62; touch-action: none; }
 #vendBtn.on { display: block; }
 @media (max-height: 500px) {
-  #vendBtn { right: calc(136px + env(safe-area-inset-right)); bottom: calc(96px + env(safe-area-inset-bottom)); width: 60px; height: 60px; font-size: 15px; }
+  #vendBtn { right: calc(136px * var(--bs) + var(--sa-r)); bottom: calc(96px * var(--bs) + var(--sa-b)); width: calc(60px * var(--bs)); height: calc(60px * var(--bs)); font-size: calc(15px * var(--bs)); }
 }
 `;
 

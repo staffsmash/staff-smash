@@ -1,9 +1,11 @@
-// 1인칭 시험판 설정(난이도·감도·소리·조준 보조·화면 효과)과 난이도별 최고 기록.
+// 1인칭 시험판 설정(난이도·감도·소리·조준 보조·화면 효과·단추 크기·첫 판 안내 다시 보기)과 난이도별 최고 기록.
+// 단추 크기·첫 판 안내는 2D와 같이 쓰는 src/uiPrefs.ts에 저장한다 (2026-11-27 결정 60).
 // 모두 이 브라우저의 localStorage에만 둔다 (온라인 기록판으로는 보내지 않는다).
 // 배경음악 크기만은 2D 본편과 같이 쓰므로 src/sound.ts(music)가 따로 저장한다.
 // 저장소를 못 쓰는 환경(사생활 보호 창, 막힌 저장소)에서도 기본값과 메모리 값으로 그대로 돈다.
 
 import { music } from '../sound';
+import { BTN_SIZE, BTN_SIZES, btnScale, loadBtnSize, onBtnSize, resetTutorials, saveBtnSize, type BtnSize } from '../uiPrefs';
 
 export type DiffKey = 'easy' | 'normal' | 'hard';
 
@@ -144,11 +146,32 @@ export function bestLine(highlight?: DiffKey): string {
   }).join('');
 }
 
+// ---------- 휴대폰 단추 크기 ----------
+
+let btnWatched = false;
+
+/**
+ * 터치 단추 크기(src/uiPrefs.ts)를 화면에 건다: fps.html :root의 --bs (단추 위치·크기·글자에 곱한다).
+ * 설정에서 바꾸면(일시정지 중에도) 바로 다시 건다. 처음 한 번만 부르면 된다 (Game 생성자).
+ */
+export function watchBtnSize(): void {
+  const put = (k: number) => document.documentElement.style.setProperty('--bs', String(k));
+  put(btnScale());
+  if (btnWatched) return;
+  btnWatched = true;
+  onBtnSize(put);
+}
+
 // ---------- 설정 화면 ----------
 
 export function settingsHtml(s: Settings, opts: { touch: boolean; inRun: boolean }): string {
   const seg = DIFF_KEYS.map(
     (k) => `<button type="button" data-diff="${k}" class="${s.diff === k ? 'on' : ''}" aria-pressed="${s.diff === k}">${DIFFS[k].label}</button>`,
+  ).join('');
+  // 단추 크기: 작게·보통·크게 (터치 화면에서만)
+  const bs = loadBtnSize();
+  const bseg = BTN_SIZES.map(
+    (k) => `<button type="button" data-bsize="${k}" class="${bs === k ? 'on' : ''}" aria-pressed="${bs === k}">${BTN_SIZE[k].label}</button>`,
   ).join('');
   return `
     <div class="settings">
@@ -166,6 +189,8 @@ export function settingsHtml(s: Settings, opts: { touch: boolean; inRun: boolean
           : ''
       }
       <div class="srow"><label class="slabel" for="setCalm">화면 흔들림·번쩍임 줄이기</label><input type="checkbox" id="setCalm" ${s.calm ? 'checked' : ''}><span class="shint">진동도 끕니다</span></div>
+      ${opts.touch ? `<div class="srow"><span class="slabel">단추 크기</span><div class="seg" role="group" aria-label="단추 크기">${bseg}</div></div>` : ''}
+      <div class="srow"><span class="slabel">첫 판 안내</span><button type="button" id="setTut" class="ghost sbtn">안내 다시 보기</button><span class="snote" id="setTutMsg" aria-live="polite"></span></div>
     </div>`;
 }
 
@@ -217,4 +242,22 @@ export function bindSettings(root: HTMLElement, s: Settings, onChange: (key: key
       onChange(key);
     });
   }
+  // 단추 크기: 저장하면 uiPrefs가 알려 주고 watchBtnSize가 --bs를 바로 바꾼다
+  root.querySelectorAll<HTMLButtonElement>('[data-bsize]').forEach((b) =>
+    b.addEventListener('click', () => {
+      const k = b.dataset.bsize as BtnSize;
+      if (!BTN_SIZES.includes(k)) return;
+      root.querySelectorAll<HTMLButtonElement>('[data-bsize]').forEach((x) => {
+        x.classList.toggle('on', x === b);
+        x.setAttribute('aria-pressed', String(x === b));
+      });
+      saveBtnSize(k);
+    }),
+  );
+  // 첫 판 안내 다시 보기 (2D·1인칭 모두 다음 판에 다시 나온다)
+  root.querySelector('#setTut')?.addEventListener('click', () => {
+    resetTutorials();
+    const msg = root.querySelector('#setTutMsg');
+    if (msg) msg.textContent = '다음 판에 안내가 다시 나와요';
+  });
 }

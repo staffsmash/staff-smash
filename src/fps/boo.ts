@@ -875,12 +875,12 @@ interface BooDom {
 const CSS = `
 #booItem { margin-top: 3px; font-size: 12px; font-weight: 700; color: #9fd6ee; }
 #booItem:empty { display: none; }
-#booBtn { position: fixed; right: calc(262px + env(safe-area-inset-right)); bottom: calc(190px + env(safe-area-inset-bottom)); width: 60px; height: 60px;
-  border-radius: 50%; border: 3px solid #111318; background: #14294f; color: #fff; font: 800 16px 'Malgun Gothic', sans-serif;
+#booBtn { position: fixed; right: calc(262px * var(--bs) + var(--sa-r)); bottom: calc(190px * var(--bs) + var(--sa-b)); width: calc(60px * var(--bs)); height: calc(60px * var(--bs));
+  border-radius: 50%; border: 3px solid #111318; background: #14294f; color: #fff; font: 800 calc(16px * var(--bs)) 'Malgun Gothic', sans-serif;
   box-shadow: 0 0 12px #9fd6ee; display: none; touch-action: none; padding: 0; }
 #booBtn.on { display: block; }
 @media (max-height: 500px) {
-  #booBtn { right: calc(236px + env(safe-area-inset-right)); bottom: calc(166px + env(safe-area-inset-bottom)); width: 54px; height: 54px; font-size: 15px; }
+  #booBtn { right: calc(236px * var(--bs) + var(--sa-r)); bottom: calc(166px * var(--bs) + var(--sa-b)); width: calc(54px * var(--bs)); height: calc(54px * var(--bs)); font-size: calc(15px * var(--bs)); }
 }
 `;
 

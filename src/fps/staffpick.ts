@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { HEROES, heroById, type HeroDef } from '../data/heroes';
 import { SKILLS, skillById, type SkillDef } from '../data/skills';
+import { perkLabel } from '../perks';
 import { staffPortrait } from '../portraits';
 import { bestLine, DIFF_KEYS, DIFFS, type DiffKey } from './settings';
 
@@ -34,8 +35,9 @@ export interface PickHost {
 const CSS = `
 .panel.title { max-width: 520px; }
 .panel.title h1 { margin: 10px 0 4px; font-size: 42px; letter-spacing: 3px; }
-.panel.title .modes { display: flex; flex-direction: column; align-items: stretch; gap: 12px; max-width: 320px; margin: 20px auto 0; }
-.panel.title .modes button { margin: 0; min-width: 0; padding: 18px 20px; font-size: 24px; border-radius: 8px; }
+/* [출근하기] [등교하기] 나란히 (2D 타이틀·app.html과 같은 모양, 결정 60) */
+.panel.title .modes { display: flex; flex-direction: row; justify-content: center; flex-wrap: wrap; gap: 12px 14px; max-width: none; margin: 20px auto 0; }
+.panel.title .modes button { margin: 0; min-width: 200px; padding: 18px 20px; font-size: 24px; border-radius: 8px; }
 .panel.title .tlinks { display: flex; justify-content: center; align-items: center; flex-wrap: wrap; margin: 18px 0 0; }
 .panel.title .tlinks button, .panel.title .tlinks a { position: relative; margin: 0 6px; padding: 6px 10px; border: 0; border-radius: 4px; background: none;
   color: #dfe6f2; font: 700 14px 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif; text-decoration: none; cursor: pointer; }
@@ -43,7 +45,7 @@ const CSS = `
 .panel.title .tlinks > * + *::before { content: '·'; position: absolute; left: -9px; color: #8b95a8; pointer-events: none; }
 .panel.title .foot { margin: 6px 0 0; color: #8b95a8; font-size: 12px; }
 .panel.sel .tabs button.on.staff { background: #2f8f4e; }
-.panel.sel .heroes.six { grid-template-columns: repeat(3, 1fr); }
+.panel.sel .heroes.six { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .panel.sel .skills button b { display: block; margin-bottom: 1px; font-size: 14px; color: #fff; }
 @media (max-height: 500px) {
   /* 휴대폰 가로: 교직원 여섯 명을 한 줄로, 키 안내 줄은 뺀다 (출근하기 단추가 화면 안에) */
@@ -51,7 +53,7 @@ const CSS = `
   .panel.title .modes { flex-direction: row; justify-content: center; max-width: none; margin-top: 10px; }
   .panel.title .modes button { min-width: 170px; padding: 12px 18px; font-size: 20px; }
   .panel.title .tlinks { margin-top: 8px; }
-  .panel.sel .heroes.six { grid-template-columns: repeat(6, 1fr); gap: 4px; }
+  .panel.sel .heroes.six { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px; }
   .panel.sel .heroes.six button { gap: 4px; padding: 3px 4px; font-size: 10px; }
   .panel.sel .heroes.six button img { width: 26px; height: 30px; }
   .panel.sel .heroes.six button b { font-size: 12px; }
@@ -61,7 +63,7 @@ const CSS = `
 @media (max-width: 560px) {
   .panel.title, .panel.sel { padding-left: 12px; padding-right: 12px; }
   .panel.title h1 { font-size: 34px; letter-spacing: 2px; }
-  .panel.sel .heroes, .panel.sel .heroes.six, .panel.sel .spells { grid-template-columns: repeat(2, 1fr); }
+  .panel.sel .heroes, .panel.sel .heroes.six, .panel.sel .spells { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .panel.sel .heroes button { font-size: 11px; }
   .panel.sel .tabs button { padding: 6px 10px; }
   .panel.sel .ctl { display: none; }
@@ -134,7 +136,8 @@ export class StaffPick {
     const d = this.h.diff;
     const heroes = HEROES.map((h) => {
       const on = h.id === this.heroDef.id;
-      return `<button type="button" data-hero="${h.id}" class="${on ? 'on' : ''}" aria-pressed="${on}"><img src="${this.portrait(h)}" alt=""><span><b>${esc(h.name)}</b>${esc(h.line)}</span></button>`;
+      // 이름 아래 장점 한 줄 (src/perks.ts)
+      return `<button type="button" data-hero="${h.id}" class="${on ? 'on' : ''}" aria-pressed="${on}"><img src="${this.portrait(h)}" alt=""><span><b>${esc(h.name)}</b><em class="perk">${esc(perkLabel(h.id))}</em>${esc(h.line)}</span></button>`;
     }).join('');
     const skills = SKILLS.map((s) => {
       const on = s.id === this.skillDef.id;
@@ -145,7 +148,7 @@ export class StaffPick {
       <div class="panel sel" id="staffSel">
         <div class="tabs" role="tablist"><button type="button" class="on staff">${t ? '교직원 모드' : '교직원 모드 (1)'}</button><button type="button" id="staffTabStu">${t ? '학생 모드' : '학생 모드 (2)'}</button></div>
         <h1>출근 준비</h1>
-        <p class="lbl">1. 주인공 (능력은 같고 외형·대사만 달라요)</p>
+        <p class="lbl">1. 주인공 (인물마다 장점이 하나씩 있어요)</p>
         <div class="heroes six">${heroes}</div>
         <p class="lbl">2. 필살기 · 업무 스킬</p>
         <div class="spells skills">${skills}</div>

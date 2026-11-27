@@ -24,6 +24,8 @@ import { StudentKit } from './models';
 import { buildStudentPeople, staffHero, type StudentPeople } from './people';
 import { heroPortrait } from './textures';
 import { ensureDom, esc, hideSpell, playEnding, showCombo, showSpell, spellHtml } from './ui';
+// 선택 카드의 장점 한 줄
+import { perkLabel } from '../../perks';
 
 // 1인칭 시험판 학생 모드 (본편 2D 학생 모드 내용, 2026-11-14 · 2026-11-15 구역 다섯 곳).
 // 교직원 모드를 거꾸로 올라간다: 대운동장 → 국제학사 앞 → 인문과학관 앞 → 사회과학관 앞 → 본관 앞
@@ -641,12 +643,12 @@ export class StudentMode implements StuCtx {
 
   // ---------- 타이틀 · 선택 화면 ----------
 
-  /** 타이틀의 모드 단추 둘 (교직원 모드 → 교직원 선택 화면, 학생 모드 → 이 선택 화면) */
+  /** 타이틀의 모드 단추 둘 (출근하기 → 교직원 선택 화면, 등교하기 → 이 선택 화면 — 2D 타이틀과 같은 글자, 결정 60) */
   modeButtons(): string {
     return `
       <div class="modes">
-        <button id="startBtn" type="button">교직원 모드</button>
-        <button id="studentBtn" class="stu" type="button">학생 모드</button>
+        <button id="startBtn" type="button">출근하기</button>
+        <button id="studentBtn" class="stu" type="button">등교하기</button>
       </div>`;
   }
 
@@ -669,7 +671,8 @@ export class StudentMode implements StuCtx {
     const t = this.h.touch;
     const heroes = FPS_STUDENT_HEROES.map(
       (h) =>
-        `<button type="button" data-hero="${h.id}" class="${h.id === this.hero.id ? 'on' : ''}" aria-pressed="${h.id === this.hero.id}"><img src="${this.portrait(h)}" alt=""><span><b>${esc(h.name)}</b>${esc(h.line)}</span></button>`,
+        // 이름 아래 장점 한 줄 (src/perks.ts)
+        `<button type="button" data-hero="${h.id}" class="${h.id === this.hero.id ? 'on' : ''}" aria-pressed="${h.id === this.hero.id}"><img src="${this.portrait(h)}" alt=""><span><b>${esc(h.name)}</b><em class="perk">${esc(perkLabel(h.id))}</em>${esc(h.line)}</span></button>`,
     ).join('');
     const spells = SPELLS.map(
       (s) =>
@@ -682,7 +685,7 @@ export class StudentMode implements StuCtx {
       <div class="panel sel" id="stuSel">
         <div class="tabs" role="tablist"><button type="button" id="stuTabStaff">${t ? '교직원 모드' : '교직원 모드 (1)'}</button><button type="button" class="on">${t ? '학생 모드' : '학생 모드 (2)'}</button></div>
         <h1>등교 준비</h1>
-        <p class="lbl">1. 주인공 (능력은 같고 외형·대사만 달라요)</p>
+        <p class="lbl">1. 주인공 (인물마다 장점이 하나씩 있어요)</p>
         <div class="heroes six">${heroes}</div>
         <p class="lbl">2. 필살기 · 외국어 주문</p>
         <div class="spells">${spells}</div>
