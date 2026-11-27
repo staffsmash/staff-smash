@@ -1,7 +1,7 @@
 // 학생 7명 (2026-11-21, 11차 사용자 확정): 이름·성별·외형·등장 인사가 이름에 묶여 있다.
-// - 앞의 4명(STUDENT_HEROES)은 학생 모드 주인공이다 (2D·1인칭). 능력은 같고 외형과 대사만 다르다.
-// - 1인칭 학생 모드는 교직원 모드처럼 6명 가운데 고른다 (2026-11-25 사용자 지정): 위 4명 + 오니혼·백몽골
-//   (FPS_STUDENT_HEROES, 남녀 3:3). 2D 학생 모드는 지금처럼 4명이다 (SelectScene은 STUDENT_HEROES를 쓴다).
+// - 학생 모드 주인공은 6명이다 (STUDENT_HEROES, 남녀 3:3). 2026-11-25 1인칭이 먼저 6명(오니혼·백몽골 추가)이 됐고,
+//   2026-11-27(PRD 결정 60) 사용자 지정으로 2D도 교직원 6명과 같게 6명으로 맞췄다. FPS_STUDENT_HEROES는 같은 목록의 옛 이름이다.
+// - 인물마다 장점이 하나씩 있다 (src/perks.ts, 결정 60).
 // - 7명 모두 교직원 모드에서는 민원 학생으로 나온다 (names.ts — 유형은 매 판 무작위, 외형은 이름을 따른다).
 // - hello = 각자 나라말 인사 (한글 표기). 교직원 모드에서 민원 학생이 처음 등장할 때 말풍선.
 // - line = 학생 모드 주인공 대사 (2D·1인칭 공통). 2026-11-25 사용자 지정: 각자 원어로 인사만 한다.
@@ -51,7 +51,8 @@ export interface StudentHeroDef extends StudentDef {
   line: string;
 }
 
-export const STUDENT_HEROES: StudentHeroDef[] = [
+/** 처음 넷 (2D가 4명이던 때의 주인공) */
+const FIRST_FOUR: StudentHeroDef[] = [
   {
     id: 'kimrussia',
     name: '김러샤',
@@ -82,7 +83,7 @@ export const STUDENT_HEROES: StudentHeroDef[] = [
   },
 ];
 
-/** 1인칭 학생 모드에서만 주인공으로 고를 수 있는 두 명 (2026-11-25 사용자 지정). 교직원 모드에서는 민원 학생으로도 나온다 */
+/** 2026-11-25에 더한 두 명 (사용자 지정, 처음엔 1인칭에만). 교직원 모드에서는 민원 학생으로도 나온다 */
 export const FPS_EXTRA_HEROES: StudentHeroDef[] = [
   {
     id: 'onihon',
@@ -100,8 +101,11 @@ export const FPS_EXTRA_HEROES: StudentHeroDef[] = [
   },
 ];
 
-/** 1인칭 학생 모드 주인공 6명 (2D 4명 + 오니혼·백몽골, 남녀 3:3) — 선택 화면·조력자·갇힌 친구·Boo 3인칭 모형 */
-export const FPS_STUDENT_HEROES: StudentHeroDef[] = [...STUDENT_HEROES, ...FPS_EXTRA_HEROES];
+/** 학생 모드 주인공 6명 (2D·1인칭 공통, 남녀 3:3) — 선택 화면·조력자·갇힌 친구·Boo 3인칭 모형 */
+export const STUDENT_HEROES: StudentHeroDef[] = [...FIRST_FOUR, ...FPS_EXTRA_HEROES];
+
+/** STUDENT_HEROES의 옛 이름 (1인칭 코드가 쓴다) */
+export const FPS_STUDENT_HEROES = STUDENT_HEROES;
 
 /** 민원 학생으로만 나오는 한 명 */
 export const STUDENT_EXTRAS: StudentDef[] = [

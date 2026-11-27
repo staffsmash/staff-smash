@@ -1,5 +1,6 @@
 import { OFF_HOURS, START_CLOCK, clockText } from './config';
 import { assignStudentNames, type StudentType } from './data/names';
+import { loadDiff2d, type Diff2dKey } from './difficulty';
 import type { SkillId } from './data/skills';
 import { gpa, type Grade } from './grade';
 import type { GameMode } from './records';
@@ -37,13 +38,19 @@ export interface RunState {
   /** 교직원별 돌발 방문 (교직원 모드, 한 판에 한 번 반드시): 나올 스테이지(0부터, 첫 스테이지가 무작위로 정한다)와 이미 나왔는지 */
   visitStage?: number;
   visitDone?: boolean;
+  /** 2D 난이도 (PRD 결정 60). 기록판 diff 칸으로 보낸다 */
+  diff: Diff2dKey;
+  /** 이어하기를 썼는지 (한 판에 한 번, 시계 +2분 벌점, 기록판에는 그대로 올라간다 — 결정 60) */
+  continued: boolean;
 }
 
-export function newRun(mode: GameMode, hero: string, skill: SkillId): RunState {
+export function newRun(mode: GameMode, hero: string, skill: SkillId, diff: Diff2dKey = loadDiff2d()): RunState {
   return {
     mode,
     hero,
     skill,
+    diff,
+    continued: false,
     names: assignStudentNames(),
     lives: 3,
     elapsed: 0,

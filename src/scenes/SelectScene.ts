@@ -22,10 +22,10 @@ const ROWS = [176, 346];
 const SKILL_X = 760;
 const SKILL_Y = [138, 218, 298, 378];
 
-/** 모드별 주인공 카드 배치: 교직원 3열 × 2줄, 학생 2열 × 2줄 */
+/** 모드별 주인공 카드 배치: 두 모드 모두 3열 × 2줄 (학생도 6명, PRD 결정 60) */
 const GRID: Record<GameMode, { cols: number[]; w: number }> = {
   staff: { cols: [110, 290, 470], w: 164 },
-  student: { cols: [168, 412], w: 228 },
+  student: { cols: [110, 290, 470], w: 164 },
 };
 
 /** 게임오버 뒤 R(처음부터)처럼 모드 없이 들어오면 마지막으로 고른 모드를 쓴다 */
