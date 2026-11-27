@@ -206,6 +206,15 @@ export class Hud {
     g.fillRect(22, 33, 222, 12);
     g.fillStyle(hpRatio > 0.5 ? 0x5bd16b : hpRatio > 0.25 ? 0xf5c542 : 0xe5484d, 1);
     g.fillRect(22, 33, 222 * hpRatio, 12);
+    // 칸 나눔 (기본 12칸, 장점 "최대 체력 +1칸"이면 13칸 — src/perks.ts)
+    const cells = Math.round(p.maxHp);
+    if (cells > 1 && cells <= 30) {
+      g.lineStyle(1, 0x0b0d12, 0.55);
+      for (let i = 1; i < cells; i++) {
+        const x = Math.round(22 + (222 * i) / cells) + 0.5;
+        g.lineBetween(x, 34, x, 44);
+      }
+    }
     g.lineStyle(1, 0xffffff, 0.5);
     g.strokeRect(22, 33, 222, 12);
 
@@ -262,8 +271,9 @@ export class Hud {
     const stageNo = info.stageTitle.split(' · ')[0];
     this.zoneT.setText(`${stageNo}  ·  ${info.zoneLabel}  ·  ${Math.min(info.zone + 1, info.zones)}/${info.zones}`);
 
-    if (info.combo >= 2) {
-      this.comboT.setText(`${info.combo} 연속 ${this.student ? '통과' : '처리'}!`).setVisible(true);
+    // 연속 처리 (결정 60): 3연속부터 "N연속!", 숫자가 오를 때마다 톡 튀고, 끊기면 사라진다
+    if (info.combo >= 3) {
+      this.comboT.setText(`${info.combo}연속!`).setVisible(true);
       if (info.combo !== this.lastCombo) this.comboT.setScale(1.35);
       this.comboT.setScale(Math.max(1, this.comboT.scale - 0.04));
     } else {

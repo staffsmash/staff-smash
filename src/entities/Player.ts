@@ -135,6 +135,8 @@ export class Player extends Fighter {
   private safeNoteT = 0;
   /** 국물 위에 서 있다 (김학생식당). 스테이지가 매 프레임 채운다 */
   slipT = 0;
+  /** 인물 장점 "이동 +10%" (src/perks.ts, 결정 60): 걷기·대시 배율. 스테이지가 정한다 */
+  moveMul = 1;
   clingBy: Clinger | null = null;
   private clingPresses = 0;
   private reportT = 0;
@@ -219,7 +221,7 @@ export class Player extends Fighter {
   }
 
   private get speedMul(): number {
-    let m = 1;
+    let m = this.moveMul;
     if (this.slowT > 0) m *= SLOW_MUL;
     if (this.clingBy) m *= CLING_MUL;
     if (this.shuttleT > 0) m *= SHUTTLE_MUL;
@@ -650,7 +652,9 @@ export class Player extends Fighter {
       fx.floatText(this.scene, this.x, this.y - 128, text, '#9fd3ff', 18);
       return false;
     }
-    this.hp = Math.max(0, this.hp - h.dmg);
+    // 2D 난이도: 받는 피해 배율 (초보 0.6 · 중급 1 · 고급 1.3, src/difficulty.ts)
+    const dmg = h.dmg * this.scene.hurtMul;
+    this.hp = Math.max(0, this.hp - dmg);
     play('hurt');
     this.rig.flash();
     this.jumpAttacking = false;
@@ -666,7 +670,7 @@ export class Player extends Fighter {
       this.vx = h.dir * h.kb;
       this.vy = 0;
     }
-    this.scene.onPlayerHit(h.dmg);
+    this.scene.onPlayerHit(dmg);
     return true;
   }
 

@@ -104,7 +104,8 @@ export class JeonpilBoss extends Enemy implements BossLike {
   private exposedT = 0;
   private hitDone = false;
   private walkPhase = 0;
-  private thresholds = [S.hp * (2 / 3), S.hp / 3];
+  /** 물러나는 체력 비율 (최대 체력 기준 — 2D 난이도로 체력이 바뀌어도 같은 자리에서 물러난다) */
+  private thresholds = [2 / 3, 1 / 3];
   private spotX = 0;
   private slammed = false;
   /** 'build'에 들어오면 한 번 탑을 세운다 */
@@ -204,7 +205,7 @@ export class JeonpilBoss extends Enemy implements BossLike {
         break;
       case 'approach': {
         this.exposedT -= dt;
-        const crossed = this.thresholds.length > 0 && this.hp <= this.thresholds[0];
+        const crossed = this.thresholds.length > 0 && this.hp <= this.maxHp * this.thresholds[0];
         if (this.exposedT <= 0 || crossed) {
           if (crossed) this.thresholds.shift();
           this.startRetreat(player);
