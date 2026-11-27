@@ -1,7 +1,7 @@
 import * as THREE from 'three';
-import { HEROES, heroById, type HeroDef, type StaffLook } from '../data/heroes';
+import { HEROES, heroById, type HeroDef } from '../data/heroes';
 import { SKILLS, skillById, type SkillDef } from '../data/skills';
-import { drawPortraitHead } from './looktex';
+import { staffPortrait } from '../portraits';
 import { bestLine, DIFF_KEYS, DIFFS, type DiffKey } from './settings';
 
 // 1인칭 교직원 모드 고르기 (2026-11-17): 주인공 6명(heroes.ts 순서) · 필살기 4종(skills.ts) · 난이도.
@@ -79,80 +79,14 @@ function ensureCss(): void {
 }
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] as string);
-const hex = (n: number) => `#${n.toString(16).padStart(6, '0')}`;
 
 /** 색을 조금 어둡게 (소맷부리·옷깃) */
 function darken(c: number, k = 0.82): number {
   return (Math.round(((c >> 16) & 255) * k) << 16) | (Math.round(((c >> 8) & 255) * k) << 8) | Math.round((c & 255) * k);
 }
 
-/** 선택 화면 초상 (학생 모드 heroPortrait와 같은 크기·그림체): 셔츠·넥타이(앞치마)·사원증 줄·머리·안경.
- *  11차: 여성은 블라우스 깃·리본, 머리 모양·안경 모양·머리띠 글자·규정집 (looktex.ts drawPortraitHead) */
-export function staffPortrait(look: StaffLook): string {
-  const c = document.createElement('canvas');
-  c.width = 96;
-  c.height = 112;
-  const g = c.getContext('2d') as CanvasRenderingContext2D;
-  const ink = '#1d1d22';
-  // 몸통 (셔츠)
-  g.fillStyle = hex(look.shirt);
-  g.fillRect(16, 70, 64, 42);
-  // 옷깃 (여성 블라우스는 흰 둥근 깃)
-  g.fillStyle = look.female ? '#ffffff' : hex(darken(look.shirt));
-  g.fillRect(34, 70, 10, 6);
-  g.fillRect(52, 70, 10, 6);
-  if (look.apron) {
-    // 앞치마 (위끝에 넥타이 색 띠)
-    g.fillStyle = '#fff3d6';
-    g.fillRect(28, 80, 40, 32);
-    g.fillStyle = hex(look.tie);
-    g.fillRect(28, 80, 40, 5);
-    g.fillRect(31, 70, 4, 10);
-    g.fillRect(61, 70, 4, 10);
-  } else {
-    g.fillStyle = hex(look.tie);
-    if (look.female) {
-      // 리본: 양쪽 고리 + 매듭 + 늘어진 끈 (긴 머리 끝(y 80)보다 아래)
-      g.fillRect(35, 81, 11, 8);
-      g.fillRect(50, 81, 11, 8);
-      g.fillRect(42, 87, 3, 10);
-      g.fillRect(51, 87, 3, 10);
-      g.fillStyle = hex(darken(look.tie, 0.7));
-      g.fillRect(45, 82, 6, 6);
-    } else {
-      // 넥타이
-      g.fillRect(44, 72, 8, 6);
-      g.fillRect(45, 78, 6, 28);
-    }
-    // 사원증 줄과 카드
-    g.fillStyle = '#2f6fd1';
-    g.fillRect(60, 70, 3, 20);
-    g.fillStyle = '#ffffff';
-    g.fillRect(56, 90, 12, 14);
-    g.fillStyle = '#2f6fd1';
-    g.fillRect(56, 90, 12, 4);
-  }
-  // 규정집 (아래 왼쪽, 초록 표지·금색 띠)
-  if (look.prop === 'rulebook') {
-    g.fillStyle = '#1f5e45';
-    g.fillRect(6, 82, 26, 30);
-    g.fillStyle = '#d9b44a';
-    g.fillRect(6, 90, 26, 4);
-    g.strokeStyle = ink;
-    g.lineWidth = 2;
-    g.strokeRect(6, 82, 26, 30);
-  }
-  // 머리
-  drawPortraitHead(g, {
-    hair: hex(look.hair),
-    style: look.crew ? 'crew' : look.bob ? 'bob' : look.ponytail ? 'ponytail' : look.longHair ? 'long' : 'short',
-    female: look.female,
-    glasses: look.glasses,
-    glassesStyle: look.glassesStyle,
-    headband: look.headband,
-  });
-  return c.toDataURL();
-}
+/** 선택 화면 초상 — 2026-11-27 src/portraits.ts로 옮겼다 (2D 공유 그림도 쓴다) */
+export { staffPortrait };
 
 export class StaffPick {
   private heroDef: HeroDef = HEROES[0];

@@ -1,6 +1,4 @@
 import * as THREE from 'three';
-import type { StudentHeroLook } from '../../data/students';
-import { drawPortraitHead } from '../looktex';
 import { canvasTex, FONT, NAVY } from '../textures';
 
 // 학생 모드 그림 (모두 캔버스). 외형·색은 본편 2D studentRigs.ts 값을 옮겼다.
@@ -304,53 +302,5 @@ export function passportTex(): THREE.CanvasTexture {
   });
 }
 
-/** 선택 화면 주인공 얼굴 (블록형 앞모습, 2D createStudentHeroRig 색). 11차: 남녀 머리·야구잠바·체크 셔츠 */
-export function heroPortrait(look: StudentHeroLook): string {
-  const c = document.createElement('canvas');
-  c.width = 96;
-  c.height = 112;
-  const g = c.getContext('2d') as CanvasRenderingContext2D;
-  const hex = (n: number) => `#${n.toString(16).padStart(6, '0')}`;
-  // 몸통 (후드티 · 재킷 + 티셔츠 · 야구잠바 · 체크 셔츠)
-  g.fillStyle = hex(look.jacket);
-  g.fillRect(16, 70, 64, 42);
-  if (look.check) {
-    g.fillStyle = 'rgba(0,0,0,0.28)';
-    for (let x = 16; x < 80; x += 14) g.fillRect(x, 70, 5, 42);
-    for (let y = 74; y < 112; y += 14) g.fillRect(16, y, 64, 5);
-    g.fillStyle = 'rgba(255,255,255,0.4)';
-    for (let x = 25; x < 80; x += 14) g.fillRect(x, 70, 2, 42);
-  }
-  if (look.varsity) {
-    // 외대 야구잠바: 흰 소매, 줄무늬 목깃, 가슴 "H"
-    g.fillStyle = '#f4f4f4';
-    g.fillRect(16, 74, 10, 38);
-    g.fillRect(70, 74, 10, 38);
-    g.fillRect(36, 72, 24, 2);
-    g.fillRect(53, 84, 4, 16);
-    g.fillRect(63, 84, 4, 16);
-    g.fillRect(53, 90, 14, 4);
-  } else if (look.hoodie) {
-    g.fillStyle = 'rgba(0,0,0,0.18)';
-    g.fillRect(28, 92, 40, 14);
-    g.fillStyle = '#f4f4f4';
-    g.fillRect(40, 72, 3, 14);
-    g.fillRect(53, 72, 3, 14);
-  } else {
-    g.fillStyle = hex(look.tee ?? 0xf4f4f4);
-    g.fillRect(38, 70, 20, 42);
-  }
-  g.fillStyle = hex(look.bag);
-  g.fillRect(16, 72, 7, 40);
-  g.fillRect(73, 72, 7, 40);
-  // 머리
-  drawPortraitHead(g, {
-    hair: hex(look.hair),
-    style: look.bob ? 'bob' : look.ponytail ? 'ponytail' : look.longHair ? 'long' : 'short',
-    female: look.female,
-    glasses: look.glasses,
-    glassesStyle: look.glassesStyle,
-    earphones: look.earphones,
-  });
-  return c.toDataURL();
-}
+/** 선택 화면 주인공 얼굴 — 2026-11-27 src/portraits.ts로 옮겼다 (2D 공유 그림도 쓴다) */
+export { studentPortrait as heroPortrait } from '../../portraits';
