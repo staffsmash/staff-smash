@@ -5,14 +5,22 @@ import { skillById } from '../data/skills';
 import { spellById } from '../data/spells';
 import { studentHeroById } from '../data/students';
 import { Controls } from '../input/Controls';
+import { noteRunEnd } from '../badges';
+import { DIFF2D } from '../difficulty';
 import { gpaText } from '../grade';
 import { VERSION, checkNickname, lastNickname, onlineConfigured, submitRecord, type RecordEntry } from '../records';
-import { gradesText, outcomeText, runClock, type RunState } from '../run';
+import { gradesText, onTime, outcomeText, runClock, type RunState } from '../run';
 import { fadeTo, makeButton } from '../ui/button';
+import { addShareButton, runShareData } from '../ui/shareButton';
 import { addSpellLine } from '../ui/spellText';
 
 // 기록 남기기 (PRD 13절): 게임이 끝나면(클리어·게임오버 모두) 닉네임을 쓰고 기록판에 올린다.
 // 건너뛰면 익명으로 1건만 남는다(순위에는 안 나온다). 실명·학번은 받지 않는다.
+// 2D 판은 클리어·게임오버·그만하기 모두 이 화면으로 끝난다 → 여기서 판 끝 배지(noteRunEnd)를 판마다 한 번 부른다 (PRD 결정 60 8절).
+// "공유" 단추: 결과 그림 (닉네임은 아직 없다 — 이름을 남기면 다음 기록판 화면의 공유 단추에 닉네임이 들어간다).
+
+/** 판 끝 배지를 이미 센 판 (같은 판으로 이 화면이 다시 열려도 한 번만) */
+const ended = new WeakSet<RunState>();
 
 export class RecordScene extends Phaser.Scene {
   private controls!: Controls;
@@ -37,6 +45,19 @@ export class RecordScene extends Phaser.Scene {
     const cx = GAME_W / 2;
     const r = this.run;
     const clock = runClock(r);
+    if (!ended.has(r)) {
+      ended.add(r);
+      noteRunEnd({
+        mode: r.mode,
+        heroId: r.hero,
+        cleared: r.cleared,
+        onTime: onTime(clock),
+        grades: r.stages.map((s) => s.grade),
+        diff: r.diff ?? 'normal',
+        continued: !!r.continued,
+      });
+    }
+    const diffLabel = (DIFF2D[r.diff] ?? DIFF2D.normal).label;
 
     this.add.rectangle(cx, GAME_H / 2, GAME_W, GAME_H, 0x1d2433);
     const student = r.mode === 'student';
@@ -51,13 +72,13 @@ export class RecordScene extends Phaser.Scene {
           '', // 첫 줄(주인공 · 외국어 주문)은 아래에서 따로 그린다
           result,
           `학점 ${stageGrades}${r.stages.length ? ` · GPA ${gpaText(r.stages.map((s) => s.grade))}` : ''}`,
-          `받은 피해 ${r.damage} · 최대 연속 공격 ${r.maxCombo}회`,
+          `난이도 ${diffLabel} · 받은 피해 ${r.damage} · 최대 연속 공격 ${r.maxCombo}회`,
         ]
       : [
           `${heroById(r.hero).name} · 필살기 ${skillById(r.skill).name}`,
           result,
           `근무평정 ${stageGrades}`,
-          `받은 민원 피해 ${r.damage} · 최대 연속 처리 ${r.maxCombo}회`,
+          `난이도 ${diffLabel} · 받은 민원 피해 ${r.damage} · 최대 연속 처리 ${r.maxCombo}회`,
         ];
     lines.forEach((t, i) =>
       this.add
@@ -92,8 +113,9 @@ export class RecordScene extends Phaser.Scene {
         .setOrigin(0.5);
     }
 
-    makeButton(this, cx - 120, 440, 220, 50, '이름 남기기 (Enter)', () => this.submit(false), 0x2f8f4e);
-    makeButton(this, cx + 120, 440, 200, 50, '건너뛰기 (Esc)', () => this.submit(true), 0x6b7280);
+    makeButton(this, cx - 190, 440, 220, 50, '이름 남기기 (Enter)', () => this.submit(false), 0x2f8f4e);
+    makeButton(this, cx + 35, 440, 190, 50, '건너뛰기 (Esc)', () => this.submit(true), 0x6b7280);
+    addShareButton(this, cx + 225, 440, 150, 50, runShareData(r));
     this.add
       .text(cx, GAME_H - 16, '건너뛰어도 플레이 수 집계를 위해 닉네임 없이 결과만 익명으로 남습니다', {
         fontFamily: FONT,
@@ -183,10 +205,12 @@ export class RecordScene extends Phaser.Scene {
       skill: r.skill,
       version: VERSION,
       ts: Date.now(),
+      diff: r.diff ?? 'normal',
     };
     this.removeInput();
     this.errorT.setColor('#c9d3e6').setText('기록을 보내는 중…');
-    void submitRecord(entry).then(() => fadeTo(this, 'board', { from: 'record', mode: r.mode }));
+    // 기록판에서도 공유할 수 있게 판과 닉네임을 넘긴다
+    void submitRecord(entry).then(() => fadeTo(this, 'board', { from: 'record', mode: r.mode, run: r, nickname }));
   }
 
   update(): void {
