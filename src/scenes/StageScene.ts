@@ -12,7 +12,7 @@ import {
 import { Controls } from '../input/Controls';
 import { TouchPad } from '../ui/TouchPad';
 import { Hud } from '../ui/Hud';
-import { Player } from '../entities/Player';
+import { JUMP_ATTACK, Player } from '../entities/Player';
 import type { AttackDef, Fighter } from '../entities/Fighter';
 import type { BossLike, Enemy } from '../entities/Enemy';
 import { MailEnemy } from '../entities/MailEnemy';
@@ -88,6 +88,10 @@ import {
 } from '../data/visits';
 import { gradeStage, type StageStats } from '../grade';
 import { newRun, runClock, type RunState } from '../run';
+import { hpBonus, perkMul } from '../perks';
+import { DIFF2D, type Diff2d } from '../difficulty';
+import { BTN_SIZE, BTN_SIZES, loadBtnSize, markTutorialSeen, onBtnSize, saveBtnSize, tutorialSeen, type BtnSize } from '../uiPrefs';
+import { noteCombo, noteSpecialKills, noteStageNoDamage, noteVisitSuccess } from '../badges';
 import { drawBackground } from './background';
 import * as fx from '../fx';
 import * as sound from '../sound';
@@ -132,6 +136,39 @@ const VISIT_TRICKLE_T = 3.5;
 const VISIT_TRICKLE_MAX = 3;
 /** 실사 통과 현판 안전지대 반지름 (x 방향 px, 깊이 방향은 0.45배) — 1인칭 5m에 맞춘 2D 거리 */
 const PLAQUE_R = 140;
+/** 사원증(학생증)이 되돌아오기 시작하는 거리: 던지는 속도 560px/s, 감속 1500px/s² (Projectile 기본값) */
+const CARD_RANGE = (560 * 560) / (2 * 1500);
+/** 이어하기 벌점 (분, 결정 60 — 게임오버된 시각에서 이어가고 2분을 더한다) */
+const RETRY_PENALTY = 2;
+/** 첫 판 안내: 단계를 해냈을 때 ✓를 보여 주는 시간(초), 1단계(이동)에서 움직여야 하는 거리(px) */
+const TUT_OK_SEC = 0.7;
+const TUT_MOVE = 150;
+/** 첫 판 안내: 시작 안내 띠(1.6초 + 사라지는 0.3초)가 걷힌 뒤 1단계를 띄운다 (초) */
+const TUT_INTRO_SEC = 1.9;
+/** 첫 판 안내 "건너뛰기" 단추 (화면 좌표 — 터치 일시정지 단추 왼쪽) */
+const SKIP_BTN = { x: 826, y: 34, w: 92, h: 34 };
+
+/** 첫 판 안내(직접 해 보는 5단계 연습, 결정 60) 진행 상태 */
+interface Tutorial {
+  /** -1 = 시작 안내 띠가 사라지기를 기다리는 중, 0~4 = 단계 */
+  step: number;
+  /** 시작 안내 띠가 사라질 때까지 남은 시간 (초) */
+  wait: number;
+  /** ✓를 보여 주는 남은 시간 (0보다 크면 다음 단계로 넘어가는 중) */
+  okT: number;
+  /** 1단계: 지금까지 움직인 거리 */
+  moved: number;
+  lastX: number;
+  lastY: number;
+  /** 5단계: 필살기를 썼다 (연출이 끝나면 ✓) */
+  specialUsed: boolean;
+  /** 4단계에 놓아 준 사원증(학생증) — 연습이 끝나면 거둔다 */
+  card: Pickup | null;
+  box: Phaser.GameObjects.Container;
+  title: Phaser.GameObjects.Text;
+  sub: Phaser.GameObjects.Text;
+  skip: Phaser.GameObjects.Container;
+}
 
 export interface StageData {
   run?: RunState;
@@ -252,6 +289,18 @@ export class StageScene extends Phaser.Scene {
   private damageTaken = 0;
   private goText!: Phaser.GameObjects.Text;
   private pauseObjs: Phaser.GameObjects.GameObject[] = [];
+  /** 2D 난이도 수치 (run.diff → DIFF2D) */
+  private diff: Diff2d = DIFF2D.normal;
+  /** 인물 장점 배율 (해당 없으면 1, src/perks.ts) */
+  private perk = { move: 1, special: 1, throw: 1, power: 1, buff: 1 };
+  /** 이번 필살기(발동~효과 끝)로 처리한 잡몹 수 (배지 "일괄 처리") */
+  private specialKills = 0;
+  /** 첫 판 안내 (이 기기에서 처음 하는 2D 판의 1스테이지). 진행 중에는 시계가 멈추고 첫 구역 싸움이 시작되지 않는다 */
+  private tut: Tutorial | null = null;
+  /** 게임오버 화면의 "이 스테이지부터 다시" 단추 자리 (없으면 null) */
+  private retryRect: Phaser.Geom.Rectangle | null = null;
+  /** 일시정지 화면의 단추 크기 고르기 (터치 화면에서만) */
+  private sizeBtns: { size: BtnSize; rect: Phaser.Geom.Rectangle; bg: Phaser.GameObjects.Rectangle; text: Phaser.GameObjects.Text }[] = [];
 
   constructor() {
     super('stage');
@@ -328,6 +377,24 @@ export class StageScene extends Phaser.Scene {
     this.elapsed = 0;
     this.damageTaken = 0;
     this.pauseObjs = [];
+    this.diff = DIFF2D[this.run.diff] ?? DIFF2D.normal;
+    const id = this.run.hero;
+    this.perk = {
+      move: perkMul(id, 'move'),
+      special: perkMul(id, 'special'),
+      throw: perkMul(id, 'throw'),
+      power: perkMul(id, 'power'),
+      buff: perkMul(id, 'buff'),
+    };
+    this.specialKills = 0;
+    this.tut = null;
+    this.retryRect = null;
+    this.sizeBtns = [];
+  }
+
+  /** 플레이어가 받는 피해 배율 (2D 난이도, Player.takeHit이 묻는다) */
+  get hurtMul(): number {
+    return this.diff.damage;
   }
 
   /** 학생 모드인지 (적 외형·문구가 바뀐다) */
@@ -367,7 +434,11 @@ export class StageScene extends Phaser.Scene {
       st ? { student: true, look: studentHeroById(this.run.hero).look } : { student: false, look: heroById(this.run.hero).look },
     );
     this.player.lives = this.run.lives;
-    // 지난 스테이지에서 깎인 체력을 그대로 이어받는다. 없으면 최대 체력 (새 판·디버그로 바로 연 스테이지)
+    // 인물 장점 (결정 60): 최대 체력 +1칸 (12 → 13), 이동 +10%
+    this.player.maxHp += hpBonus(this.run.hero);
+    this.player.hp = this.player.maxHp;
+    this.player.moveMul = this.perk.move;
+    // 지난 스테이지에서 깎인 체력을 그대로 이어받는다. 없으면 최대 체력 (새 판·디버그로 바로 연 스테이지·이어하기)
     const carried = this.run.hp;
     if (carried !== undefined) this.player.hp = Phaser.Math.Clamp(carried, 1, this.player.maxHp);
     // 이미 바닥 체력으로 들어왔으면 첫 피격에도 조력자 확률을 한 번 굴린다 (maybeCallHelpers)
@@ -402,14 +473,32 @@ export class StageScene extends Phaser.Scene {
       .setOrigin(0.5);
     this.pauseObjs = [dim, pt];
     for (const o of [dim, pt]) o.setScrollFactor(0).setDepth(2500).setVisible(false);
+    if (this.pad) this.buildSizeRow();
 
-    this.input.on('pointerup', () => {
-      if (this.over && this.time.now - this.overAt > 1000) this.toRecord();
+    this.input.on('pointerdown', (p: Phaser.Input.Pointer) => {
+      if (this.paused) {
+        const b = this.sizeBtns.find((s) => s.rect.contains(p.x, p.y));
+        if (b) saveBtnSize(b.size);
+        return;
+      }
+      const s = SKIP_BTN;
+      if (this.tut && Math.abs(p.x - s.x) <= s.w / 2 && Math.abs(p.y - s.y) <= s.h / 2) this.endTutorial(true);
+    });
+    this.input.on('pointerup', (p: Phaser.Input.Pointer) => {
+      if (!this.over || this.time.now - this.overAt <= 1000) return;
+      if (this.retryRect?.contains(p.x, p.y)) this.continueStage();
+      else this.toRecord();
     });
 
     const first = st ? '오후 4시 52분 · 본관 마감 8분 전' : '오후 4시 52분 · 퇴근 8분 전';
     const intro = this.stageIndex === 0 ? first : this.stage.title;
-    fx.banner(this, intro, `${hero.name}: "${hero.line}" — 오른쪽으로 이동하세요`, 2400);
+    // 이 기기에서 처음 하는 2D 판: 1스테이지 첫 구역 싸움 전에 직접 해 보는 5단계 연습 (시작 안내 띠가 사라지면 나온다)
+    if (this.stageIndex === 0 && !tutorialSeen('2d')) {
+      fx.banner(this, intro, `${hero.name}: "${hero.line}"`, 1600);
+      this.startTutorial();
+    } else {
+      fx.banner(this, intro, `${hero.name}: "${hero.line}" — 오른쪽으로 이동하세요`, 2400);
+    }
   }
 
   update(_t: number, deltaMs: number): void {
@@ -423,6 +512,10 @@ export class StageScene extends Phaser.Scene {
       if (this.time.now - this.overAt < 1000) {
         c.consume('confirm');
         c.consume('restart');
+        c.consume('retry');
+      } else if (this.retryRect && c.consume('retry')) {
+        this.continueStage();
+        return;
       } else if (c.consume('confirm')) {
         this.toRecord();
         return;
@@ -484,7 +577,9 @@ export class StageScene extends Phaser.Scene {
   }
 
   private step(dt: number): void {
-    this.elapsed += dt;
+    // 첫 판 안내(연습) 중에는 게임 속 시계가 멈춘다 (기록에 영향 없음)
+    if (this.tut) this.updateTutorial(dt);
+    else this.elapsed += dt;
     if (this.specialT >= 0) {
       this.updateSpecial(dt);
       return;
@@ -497,8 +592,13 @@ export class StageScene extends Phaser.Scene {
     const prevX = this.player.x;
     this.player.update(dt, this.controls);
     this.updatePull(dt);
+    // 2D 난이도: 적 이동·공격 빠르기 (돌발 방문 상대는 제한 시간 20초가 그대로 흐르게 뺀다)
     // 쉿! 정숙 표지판: 잡몹만 이동·발사(공격) 속도 절반
-    for (const e of this.enemies) e.update(this.hushT > 0 && ORDINARY.has(e.kind) ? dt * HUSH_MUL : dt, this.player);
+    for (const e of this.enemies) {
+      let edt = e instanceof Visitor ? dt : dt * this.diff.speed;
+      if (this.hushT > 0 && ORDINARY.has(e.kind)) edt *= HUSH_MUL;
+      e.update(edt, this.player);
+    }
     this.enemies = this.enemies.filter((e) => !e.removed);
     if (this.visitor?.removed) this.visitor = null;
     this.updateVisitRewards(dt);
@@ -526,6 +626,38 @@ export class StageScene extends Phaser.Scene {
     for (const o of this.pauseObjs) (o as Phaser.GameObjects.Text).setVisible(v);
     if (v) this.tweens.pauseAll();
     else this.tweens.resumeAll();
+    if (v) this.drawSizeRow();
+  }
+
+  /** 일시정지 화면 아래쪽: 단추 크기 작게·보통·크게 (터치 화면에서만, 누르면 바로 바뀐다 — 결정 60) */
+  private buildSizeRow(): void {
+    const y = GAME_H / 2 + 132;
+    const label = this.add
+      .text(GAME_W / 2, y - 42, '단추 크기', { fontFamily: FONT, fontSize: '18px', fontStyle: 'bold', color: '#dfe6f2' })
+      .setOrigin(0.5);
+    const objs: Phaser.GameObjects.GameObject[] = [label];
+    BTN_SIZES.forEach((size, i) => {
+      const x = GAME_W / 2 + (i - 1) * 124;
+      const bg = this.add.rectangle(x, y, 108, 46, 0x111827, 0.92).setStrokeStyle(2, 0xf5c542);
+      const text = this.add
+        .text(x, y, BTN_SIZE[size].label, { fontFamily: FONT, fontSize: '20px', fontStyle: 'bold', color: '#ffffff' })
+        .setOrigin(0.5);
+      this.sizeBtns.push({ size, rect: new Phaser.Geom.Rectangle(x - 54, y - 23, 108, 46), bg, text });
+      objs.push(bg, text);
+    });
+    for (const o of objs) (o as Phaser.GameObjects.Text).setScrollFactor(0).setDepth(2501).setVisible(false);
+    this.pauseObjs.push(...objs);
+    const off = onBtnSize(() => this.drawSizeRow());
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, off);
+  }
+
+  private drawSizeRow(): void {
+    const cur = loadBtnSize();
+    for (const b of this.sizeBtns) {
+      const on = b.size === cur;
+      b.bg.setFillStyle(on ? 0xf5c542 : 0x111827, on ? 1 : 0.92);
+      b.text.setColor(on ? '#111318' : '#ffffff');
+    }
   }
 
   // ---------- 구역 진행 ----------
@@ -539,7 +671,8 @@ export class StageScene extends Phaser.Scene {
     const z = this.zones[this.zoneIndex];
     if (this.zoneState === 'walk') {
       this.goText.setVisible(this.zoneIndex > 0 && this.cameras.main.scrollX < z.left - 20);
-      if (this.player.x >= z.left + TRIGGER_X) this.startFight();
+      // 첫 판 안내(연습) 중에는 적이 오지 않는다
+      if (this.player.x >= z.left + TRIGGER_X && !this.tut) this.startFight();
       return;
     }
     if (this.zoneState !== 'fight') return;
@@ -671,7 +804,7 @@ export class StageScene extends Phaser.Scene {
   private startFight(): void {
     const z = this.zones[this.zoneIndex];
     this.zoneState = 'fight';
-    this.queue = [...z.waves];
+    this.queue = this.scaleWaves(z.waves);
     this.spawnT = 0.4;
     this.addsT = z.adds?.every ?? 0;
     this.approval = 'none';
@@ -687,6 +820,33 @@ export class StageScene extends Phaser.Scene {
     }
   }
 
+  /** 2D 난이도: 웨이브의 잡몹 수를 배율만큼 (반올림, 최소 1). 중간보스·보스는 그대로 두고, 빼거나 더하는 잡몹은 웨이브 전체에 고르게 고른다 */
+  private scaleWaves(waves: string[]): string[] {
+    const mobs = waves.map((w, i) => (ORDINARY.has(w) ? i : -1)).filter((i) => i >= 0);
+    const n = mobs.length;
+    const want = n === 0 ? 0 : Math.max(1, Math.round(n * this.diff.count));
+    if (want === n) return [...waves];
+    if (want < n) {
+      const cut = n - want;
+      const drop = new Set<number>();
+      for (let j = 0; j < cut; j++) drop.add(mobs[Math.floor(((j + 0.5) * n) / cut)]);
+      return waves.filter((_, i) => !drop.has(i));
+    }
+    // 더할 때는 고른 잡몹 바로 뒤에 같은 잡몹을 하나 더 넣는다
+    const extra = want - n;
+    const dup = new Map<number, number>();
+    for (let j = 0; j < extra; j++) {
+      const i = mobs[Math.floor(((j + 0.5) * n) / extra) % n];
+      dup.set(i, (dup.get(i) ?? 0) + 1);
+    }
+    const out: string[] = [];
+    waves.forEach((w, i) => {
+      out.push(w);
+      for (let r = 0; r < (dup.get(i) ?? 0); r++) out.push(w);
+    });
+    return out;
+  }
+
   private edgeSpawn(forceRight = false): { x: number; tx: number; y: number } {
     const left = this.zones[this.zoneIndex].left;
     let side = Math.random() < 0.5 ? -1 : 1;
@@ -699,6 +859,19 @@ export class StageScene extends Phaser.Scene {
   }
 
   private spawnType(type: string): void {
+    const before = this.enemies.length;
+    this.spawnRaw(type);
+    // 2D 난이도: 중간보스·보스 체력(결재 진행) 배율. 잡몹·돌발 방문 상대·수강편람 탑은 그대로
+    const k = this.diff.bossHp;
+    if (k === 1) return;
+    for (const e of this.enemies.slice(before)) {
+      if (ORDINARY.has(e.kind) || e instanceof Visitor || e instanceof DocTower) continue;
+      e.maxHp = Math.max(1, Math.round(e.maxHp * k));
+      e.hp = e.maxHp;
+    }
+  }
+
+  private spawnRaw(type: string): void {
     const left = this.zones[this.zoneIndex].left;
     const p = this.player;
     if (type === 'phone') {
@@ -876,12 +1049,17 @@ export class StageScene extends Phaser.Scene {
         maxCombo: this.maxCombo,
       });
     }
+    // 한 판 시간에 더했으니 이 스테이지 몫은 비운다 — 게임오버·클리어 화면에서 HUD 시계가 이 스테이지 시간을 두 번 세지 않게
+    // (이어하기를 하면 화면의 시각에서 그대로 +2분으로 이어진다)
+    this.elapsed = 0;
     return stats;
   }
 
   private finishStage(): void {
     this.zoneState = 'done';
     this.finishing = true;
+    // 배지 "무사고 근무": 이 스테이지를 받은 피해 없이 끝냈다
+    if (this.damageTaken === 0) noteStageNoDamage();
     const stats = this.commitStage(true);
     const last = this.stageIndex >= this.stages.length - 1;
     if (last) this.run.cleared = true;
@@ -905,10 +1083,13 @@ export class StageScene extends Phaser.Scene {
     const sub = st
       ? `${this.zoneLabel}에서 행정에 밀려 졸업 서류를 내지 못했습니다`
       : `${this.zoneLabel}에서 민원에 밀려 퇴근하지 못했습니다`;
-    const objs = [
+    // 이어하기 (결정 60): 한 판에 한 번. 이미 썼으면 단추가 없다
+    const retry = !this.run.continued;
+    const dy = retry ? -16 : 0;
+    const objs: (Phaser.GameObjects.Rectangle | Phaser.GameObjects.Text)[] = [
       this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0x000000, 0.6),
       this.add
-        .text(GAME_W / 2, GAME_H / 2 - 50, st ? '학사경고' : '야근 확정…', {
+        .text(GAME_W / 2, GAME_H / 2 - 50 + dy, st ? '학사경고' : '야근 확정…', {
           fontFamily: FONT,
           fontSize: '52px',
           fontStyle: 'bold',
@@ -918,26 +1099,62 @@ export class StageScene extends Phaser.Scene {
         })
         .setOrigin(0.5),
       this.add
-        .text(GAME_W / 2, GAME_H / 2 + 14, sub, {
+        .text(GAME_W / 2, GAME_H / 2 + 14 + dy, sub, {
           fontFamily: FONT,
           fontSize: '18px',
           color: '#ffffff',
         })
         .setOrigin(0.5),
-      this.add
-        .text(
-          GAME_W / 2,
-          GAME_H / 2 + 70,
-          this.pad ? '화면을 탭해서 이름 남기기' : 'Enter 이름 남기기   ·   R 처음부터 다시',
-          { fontFamily: FONT, fontSize: '20px', fontStyle: 'bold', color: '#f5c542' },
-        )
-        .setOrigin(0.5),
     ];
+    if (retry) {
+      const y = GAME_H / 2 + 66;
+      const label = this.pad ? '이 스테이지부터 다시 (+2분)' : 'C  이 스테이지부터 다시 (+2분)';
+      objs.push(
+        this.add.rectangle(GAME_W / 2, y, 400, 52, 0x1f4e79, 0.95).setStrokeStyle(3, 0xf5c542),
+        this.add
+          .text(GAME_W / 2, y, label, { fontFamily: FONT, fontSize: '21px', fontStyle: 'bold', color: '#ffffff' })
+          .setOrigin(0.5),
+      );
+      this.retryRect = new Phaser.Geom.Rectangle(GAME_W / 2 - 200, y - 26, 400, 52);
+    }
+    const prompt = this.pad
+      ? retry
+        ? '다른 곳을 탭하면 이름 남기기'
+        : '화면을 탭해서 이름 남기기'
+      : 'Enter 이름 남기기   ·   R 처음부터 다시';
+    objs.push(
+      this.add
+        .text(GAME_W / 2, GAME_H / 2 + (retry ? 128 : 70), prompt, {
+          fontFamily: FONT,
+          fontSize: '20px',
+          fontStyle: 'bold',
+          color: '#f5c542',
+        })
+        .setOrigin(0.5),
+    );
     for (const o of objs) o.setScrollFactor(0).setDepth(2600);
   }
 
   private toRecord(): void {
     this.scene.start('record', { run: this.run });
+  }
+
+  /**
+   * 이어하기 (결정 60, 한 판에 한 번): 이 스테이지를 처음부터 다시 한다.
+   * 게임 속 시계는 되돌리지 않는다 — 실패한 시도의 시간은 gameOver의 commitStage가 run.elapsed에 이미 더했고, 벌점 2분을 더한다.
+   * 목숨 3개·체력 가득. 손에 든 무기·아이템 효과는 2D에서 스테이지마다 비운 채 시작하므로 처음 상태와 같다.
+   * 이 스테이지에서 돌발 방문이 나왔다가 끝나지 않았으면 다시 나온다 (아직 안 나왔으면 원래대로 나온다).
+   */
+  private continueStage(): void {
+    const r = this.run;
+    if (r.continued) return;
+    r.continued = true;
+    r.penaltyMin += RETRY_PENALTY;
+    r.lives = 3;
+    r.hp = undefined;
+    if (this.visitor && this.visitor.outcome === 'none') r.visitDone = false;
+    this.retryRect = null;
+    this.scene.restart({ run: r, stage: this.stageIndex });
   }
 
   /** 화면 위쪽 안내 */
@@ -977,6 +1194,8 @@ export class StageScene extends Phaser.Scene {
   /** 플레이어 공격 판정. 깊이(y) 차이가 DEPTH_RANGE 안이고 앞쪽 사거리 안이면 맞는다. */
   resolvePlayerAttack(p: Player, def: AttackDef, hitSet: Set<Fighter>): number {
     let hits = 0;
+    // 인물 장점 "처리 위력 +10%": 맨손·도장 처리(점프 공격 포함, 보스 결재 진행도). 든 무기로 휘두르는 것은 그대로
+    const dmg = def.bare || def === JUMP_ATTACK ? def.dmg * this.perk.power : def.dmg;
     for (const e of this.enemies) {
       if (hitSet.has(e) || !e.hittable) continue;
       if (Math.abs(e.y - p.y) > DEPTH_RANGE) continue;
@@ -986,13 +1205,13 @@ export class StageScene extends Phaser.Scene {
       hitSet.add(e);
       // 인감 도장(출석 스티커): 맨손 공격이 잡몹만 넘어뜨린다 (중간보스·보스·사람은 그대로)
       const knockdown = def.knockdown || (def.bare === true && p.sealT > 0 && ORDINARY.has(e.kind));
-      if (e.takeHit({ dmg: def.dmg, dir: p.facing, kb: def.kb, knockdown, tag: def.tag })) {
+      if (e.takeHit({ dmg, dir: p.facing, kb: def.kb, knockdown, tag: def.tag })) {
         hits++;
         fx.stampMark(this, e.x - p.facing * 4, e.y - e.z - Math.min(e.height, 70) * 0.6, this.hitLabel(e));
         if (this.studentMode && e.persuadable && Math.random() < 0.3) this.persuadeText(e);
       }
     }
-    this.meleeProps(p, def);
+    this.meleeProps(p, def, dmg);
     if (this.debug) this.debugBoxes.push({ x: p.x, y: p.y, facing: p.facing, reach: def.reach, ttl: 0.12 });
     if (hits > 0) this.addCombo(hits, def.knockdown);
     return hits;
@@ -1011,7 +1230,7 @@ export class StageScene extends Phaser.Scene {
   }
 
   /** 플레이어의 공격이 상자(부서진다)나 경비원(인사부터 하라며 무기를 안 준다)에 닿았는지. 한 번 휘두르기에 한 번만 */
-  private meleeProps(p: Player, def: AttackDef): void {
+  private meleeProps(p: Player, def: AttackDef, dmg: number): void {
     if (p.z > def.zReach) return;
     const inReach = (x: number, y: number, halfW: number) => {
       const dx = (x - p.x) * p.facing;
@@ -1023,7 +1242,7 @@ export class StageScene extends Phaser.Scene {
       return true;
     };
     for (const c of this.crates) {
-      if (!c.removed && inReach(c.x, c.y, c.halfW) && fresh(c)) this.hitCrate(c, def.dmg, p.facing);
+      if (!c.removed && inReach(c.x, c.y, c.halfW) && fresh(c)) this.hitCrate(c, dmg, p.facing);
     }
     for (const g of this.givers) {
       if (g.kind === 'guard' && !g.removed && inReach(g.x, g.y, g.halfW) && fresh(g)) g.rudeHit();
@@ -1039,7 +1258,7 @@ export class StageScene extends Phaser.Scene {
       // 돌발 방문 보상(장갑·그래프)은 상자도 부수고 그대로 지나간다
       if (pr.pierce) return false;
       if (pr.explodes) {
-        this.explode(pr.x, pr.y, 90, { player: 0, enemies: 3 }, this.studentMode ? '따르릉!' : '펑!');
+        this.explode(pr.x, pr.y, 90, this.blast, this.studentMode ? '따르릉!' : '펑!');
         pr.destroy();
         return true;
       }
@@ -1082,11 +1301,19 @@ export class StageScene extends Phaser.Scene {
 
   private addCombo(hits: number, heavy: boolean): void {
     this.hitstop = heavy ? 0.09 : 0.05;
-    this.player.sp = Math.min(100, this.player.sp + 7 * hits);
-    this.combo += hits;
+    // 인물 장점 "필살기 충전 +15%": 맞힐 때 차는 양 (보조배터리 +50은 그대로)
+    this.player.sp = Math.min(100, this.player.sp + 7 * hits * this.perk.special);
+    this.bumpCombo(hits);
+    if (heavy) this.cameras.main.shake(90, 0.005);
+  }
+
+  /** 연속 처리 수를 올린다 (1.2초 안에 다음 처리가 이어지면 계속, 맞으면 끊긴다). 오를 때마다 배지 "민원 처리 달인"(30연속)을 본다 */
+  private bumpCombo(n: number): void {
+    if (n <= 0) return;
+    this.combo += n;
     this.comboT = 1.2;
     this.maxCombo = Math.max(this.maxCombo, this.combo);
-    if (heavy) this.cameras.main.shake(90, 0.005);
+    noteCombo(this.combo);
   }
 
   private updateProjectiles(dt: number): void {
@@ -1118,7 +1345,7 @@ export class StageScene extends Phaser.Scene {
           continue;
         }
       } else if (pr.expired || pr.x < left - 80 || pr.x > left + GAME_W + 80) {
-        if (pr.explodes) this.explode(pr.x, pr.y, 90, { player: 0, enemies: 3 }, this.studentMode ? '따르릉!' : '펑!');
+        if (pr.explodes) this.explode(pr.x, pr.y, 90, this.blast, this.studentMode ? '따르릉!' : '펑!');
         pr.destroy();
         continue;
       }
@@ -1148,7 +1375,7 @@ export class StageScene extends Phaser.Scene {
         const aide = this.aides.find((a) => a.stops(pr.x, pr.y, pr.z, pr.halfW));
         if (aide) {
           aide.blockedText();
-          if (pr.explodes) this.explode(pr.x, pr.y, 90, { player: 0, enemies: 3 }, this.studentMode ? '따르릉!' : '펑!');
+          if (pr.explodes) this.explode(pr.x, pr.y, 90, this.blast, this.studentMode ? '따르릉!' : '펑!');
           pr.destroy();
           continue;
         }
@@ -1182,7 +1409,7 @@ export class StageScene extends Phaser.Scene {
           this.addCombo(1, true);
         }
         if (pr.explodes) {
-          this.explode(pr.x, pr.y, 90, { player: 0, enemies: 3 }, this.studentMode ? '따르릉!' : '펑!');
+          this.explode(pr.x, pr.y, 90, this.blast, this.studentMode ? '따르릉!' : '펑!');
           pr.destroy();
           break;
         }
@@ -1240,9 +1467,12 @@ export class StageScene extends Phaser.Scene {
         const label = this.studentMode ? spellById(this.run.skill).stamp : '규정';
         for (const e of this.enemies) {
           if (!e.hittable || Math.abs(e.x - h.x) > h.radius + e.halfW || Math.abs(e.y - h.y) > h.radius * 0.45) continue;
+          const hp0 = e.hp;
           if (e.takeHit({ dmg: h.dmg, dir: e.x >= h.x ? 1 : -1, kb: 0, knockdown: true, stamps: h.dmg })) {
             hits++;
             fx.stampMark(this, e.x, e.y - e.z - Math.min(e.height, 70) * 0.6, label);
+            // 플레이어 쪽 낙하물은 필살기(규정집 낙하 / ЗАЧЁТ!)뿐이다
+            this.countSpecialKill(e, hp0);
           }
         }
         if (hits) this.addCombo(hits, true);
@@ -1264,6 +1494,20 @@ export class StageScene extends Phaser.Scene {
     this.tweens.add({ targets: c, alpha: 0, delay: 700, duration: 600, onComplete: () => c.destroy() });
   }
 
+  /** 인물 장점 "아이템 시간 +30%"를 적용한 지속 시간 (초) */
+  private buffSec(sec: number): number {
+    return sec * this.perk.buff;
+  }
+
+  /** 돌발 방문 보상 설명 (띠 아래 줄): 아이템 시간 장점이면 초 수를 늘려 쓴다 */
+  private rewardDesc(reward: VisitReward): string {
+    const d = REWARD_DESC_2D[reward];
+    const secs: Partial<Record<VisitReward, number>> = { clicker: CLICKER_SEC, cheer: CHEER_SEC, plaque: PLAQUE_SEC, hush: HUSH_SEC };
+    const sec = secs[reward];
+    if (sec === undefined || this.perk.buff === 1) return d;
+    return d.replace(`${sec}초`, `${Math.round(this.buffSec(sec))}초`);
+  }
+
   private updatePickups(dt: number): void {
     const p = this.player;
     for (const it of this.pickups) {
@@ -1281,7 +1525,7 @@ export class StageScene extends Phaser.Scene {
           fx.floatText(this, p.x, p.y - 128, '삼각김밥! 체력 +3', '#7CFC9A', 18);
           break;
         case 'americano':
-          p.coffeeT = 10;
+          p.coffeeT = this.buffSec(10);
           fx.floatText(this, p.x, p.y - 128, this.studentMode ? '아메리카노! 공격 속도 UP' : '아메리카노! 처리 속도 UP', '#ffd27f', 18);
           break;
         case 'mealticket':
@@ -1293,7 +1537,7 @@ export class StageScene extends Phaser.Scene {
           fx.floatText(this, p.x, p.y - 128, '보조배터리! 필살기 게이지 +50', '#f5c542', 18);
           break;
         case 'shield':
-          p.shieldT = SHIELD_SEC;
+          p.shieldT = this.buffSec(SHIELD_SEC);
           fx.floatText(
             this,
             p.x,
@@ -1304,20 +1548,20 @@ export class StageScene extends Phaser.Scene {
           );
           break;
         case 'shuttle':
-          p.shuttleT = SHUTTLE_SEC;
-          fx.floatText(this, p.x, p.y - 128, '셔틀버스 시간표! 10초 동안 빨라져요', '#ffd27f', 18);
+          p.shuttleT = this.buffSec(SHUTTLE_SEC);
+          fx.floatText(this, p.x, p.y - 128, `셔틀버스 시간표! ${Math.round(p.shuttleT)}초 동안 빨라져요`, '#ffd27f', 18);
           break;
         case 'capture':
-          this.freezeMobs(CAPTURE_SEC);
+          this.freezeMobs(this.buffSec(CAPTURE_SEC));
           fx.floatText(this, p.x, p.y - 128, '단톡방 공지 캡처! 잡몹이 잠깐 멈춰요', '#9fd3ff', 18);
           break;
         case 'seal':
-          p.sealT = SEAL_SEC;
+          p.sealT = this.buffSec(SEAL_SEC);
           fx.floatText(
             this,
             p.x,
             p.y - 128,
-            this.studentMode ? '출석 스티커! 8초 동안 맨손 공격이 넘어뜨려요' : '인감 도장! 8초 동안 맨손 공격이 넘어뜨려요',
+            `${this.studentMode ? '출석 스티커' : '인감 도장'}! ${Math.round(p.sealT)}초 동안 맨손 공격이 넘어뜨려요`,
             '#ff9f9f',
             18,
           );
@@ -1600,11 +1844,7 @@ export class StageScene extends Phaser.Scene {
         fx.stampMark(this, e.x, top, this.hitLabel(e));
       }
     }
-    if (processed > 0) {
-      this.combo += processed;
-      this.comboT = 1.2;
-      this.maxCombo = Math.max(this.maxCombo, this.combo);
-    }
+    this.bumpCombo(processed);
     const heal = Math.round(p.maxHp * HELPER_HEAL);
     p.heal(heal);
     p.invuln = Math.max(p.invuln, HELPER_INVULN);
@@ -1644,6 +1884,8 @@ export class StageScene extends Phaser.Scene {
       return;
     }
     const card = w.def.boomerang;
+    // 인물 장점 "던지기 위력·거리 +20%": 피해와 날아가는 거리 (사원증은 되돌아오기 시작하는 거리)
+    const k = this.perk.throw;
     this.projectiles.push(
       new Projectile(this, {
         x: p.x + p.facing * 26,
@@ -1651,18 +1893,24 @@ export class StageScene extends Phaser.Scene {
         z: 52,
         vx: p.facing * (card ? 560 : 640),
         owner: 'player',
-        dmg: w.def.throwDmg,
+        dmg: w.def.throwDmg * k,
         knockdown: !card,
         tag: w.id === 'notice' ? 'notice' : undefined,
         halfW: 24,
-        ttl: card ? 3 : 1.3,
+        ttl: card ? 3 : 1.3 * k,
         obj: weaponIcon(this, w.id, this.studentMode),
         spin: (card ? 22 : 16) * p.facing,
         returnTo: card ? p : undefined,
+        range: card && k !== 1 ? CARD_RANGE * k : undefined,
         explodes: w.id === 'bomb',
         weaponId: w.id,
       }),
     );
+  }
+
+  /** 던진 서류 뭉치(마감 시계)가 터질 때 잡몹이 받는 피해 (던지기 장점이면 +20%) */
+  private get blast(): { player: number; enemies: number } {
+    return { player: 0, enemies: 3 * this.perk.throw };
   }
 
   /** 마감 서류 뭉치(마감 시계)를 너무 오래 들고 있었다 */
@@ -2258,6 +2506,7 @@ export class StageScene extends Phaser.Scene {
     this.player.enterSpecial();
     this.specialT = 0;
     this.specialFired = false;
+    this.specialKills = 0;
     const dim = this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0x000000, 0.55);
     if (this.studentMode) {
       this.specialObjs = [dim, ...this.spellBanner()];
@@ -2342,9 +2591,18 @@ export class StageScene extends Phaser.Scene {
 
   private skillHit(e: Enemy, label: string): void {
     const dir = e.x >= this.player.x ? 1 : -1;
+    const hp0 = e.hp;
     if (e.takeHit({ dmg: 4, dir, kb: 0, knockdown: true, force: true, thrown: true, stamps: 4 })) {
       fx.stampMark(this, e.x, e.y - e.z - Math.min(e.height, 70) * 0.6, label);
+      this.countSpecialKill(e, hp0);
     }
+  }
+
+  /** 필살기에 맞은 잡몹이 이번에 처리됐으면 센다 (배지 "일괄 처리": 필살기 한 번에 10명 이상) */
+  private countSpecialKill(e: Enemy, hp0: number): void {
+    if (!ORDINARY.has(e.kind) || hp0 <= 0 || e.hp > 0) return;
+    this.specialKills++;
+    noteSpecialKills(this.specialKills);
   }
 
   private fireSkill(): void {
@@ -2461,6 +2719,161 @@ export class StageScene extends Phaser.Scene {
     }
   }
 
+  // ---------- 첫 판 안내 (직접 해 보는 5단계 연습, 결정 60) ----------
+  // 이 기기에서 처음 하는 2D 판(교직원·학생 구분 없이 한 번)의 1스테이지 첫 구역, 잡몹이 나오기 전.
+  // 화면 위 띠에 한 단계씩 보여 주고, 해 보면 ✓를 잠깐 보여 준 뒤 다음 단계로. 그동안 시계가 멈추고 적이 오지 않는다.
+  // 끝까지 했거나 오른쪽 위 "건너뛰기"를 누르면 markTutorialSeen('2d') (설정 "안내 다시 보기"가 지운다).
+
+  /** 단계별 이름과 하는 법 (PC·터치 키 이름이 다르다) */
+  private tutSteps(): { name: string; how: string }[] {
+    const touch = this.pad !== null;
+    const act = this.studentMode ? '공격' : '처리';
+    const card = this.studentMode ? '학생증' : '사원증';
+    return [
+      { name: '이동', how: touch ? '화면 왼쪽을 누른 채 밀어서 움직여 보세요' : '방향키나 WASD로 움직여 보세요' },
+      { name: act, how: touch ? `A 단추로 ${act}해 보세요` : `J 키로 ${act}해 보세요` },
+      { name: '점프', how: touch ? 'B 단추로 점프해 보세요' : 'K 키(또는 Space)로 점프해 보세요' },
+      {
+        name: '줍기·던지기',
+        how: touch ? `줍기 단추로 ${card}을 줍고, 한 번 더 눌러 던져 보세요` : `L 키로 ${card}을 줍고, 한 번 더 눌러 던져 보세요`,
+      },
+      {
+        name: '필살기',
+        how: touch ? '게이지를 채워 줬어요. SP 단추로 필살기를 써 보세요' : '게이지를 채워 줬어요. I 키로 필살기를 써 보세요',
+      },
+    ];
+  }
+
+  private startTutorial(): void {
+    const box = this.add.container(GAME_W / 2, 150).setScrollFactor(0).setDepth(1850).setVisible(false);
+    box.add(this.add.rectangle(0, 0, 600, 106, 0x111827, 0.9).setStrokeStyle(2, 0xf5c542));
+    box.add(
+      this.add
+        .text(0, -34, '첫 판 연습 · 연습하는 동안 시계가 멈춰요', { fontFamily: FONT, fontSize: '13px', color: '#9fd3ff' })
+        .setOrigin(0.5),
+    );
+    const title = this.add
+      .text(0, -6, '', { fontFamily: FONT, fontSize: '26px', fontStyle: 'bold', color: '#ffffff' })
+      .setOrigin(0.5);
+    const sub = this.add.text(0, 30, '', { fontFamily: FONT, fontSize: '17px', color: '#f5c542' }).setOrigin(0.5);
+    box.add([title, sub]);
+    const s = SKIP_BTN;
+    const skip = this.add.container(s.x, s.y).setScrollFactor(0).setDepth(2050);
+    skip.add(this.add.rectangle(0, 0, s.w, s.h, 0x111827, 0.85).setStrokeStyle(2, 0xffffff, 0.6));
+    skip.add(this.add.text(0, 0, '건너뛰기', { fontFamily: FONT, fontSize: '15px', fontStyle: 'bold', color: '#ffffff' }).setOrigin(0.5));
+    this.tut = {
+      step: -1,
+      wait: TUT_INTRO_SEC,
+      okT: 0,
+      moved: 0,
+      lastX: this.player.x,
+      lastY: this.player.y,
+      specialUsed: false,
+      card: null,
+      box,
+      title,
+      sub,
+      skip,
+    };
+  }
+
+  private showTutStep(i: number): void {
+    const t = this.tut;
+    if (!t) return;
+    const steps = this.tutSteps();
+    t.step = i;
+    t.okT = 0;
+    t.lastX = this.player.x;
+    t.lastY = this.player.y;
+    t.title.setText(`${i + 1}/${steps.length} · ${steps[i].name}`).setColor('#ffffff');
+    t.sub.setText(steps[i].how);
+    t.box.setVisible(true).setAlpha(0);
+    this.tweens.add({ targets: t.box, alpha: 1, duration: 180 });
+    const p = this.player;
+    if (i === 3) {
+      // 발 앞에 사원증(학생증)을 놓아 준다 — 줍고 던지면 된다 (연습이 끝나면 거둔다)
+      const left = this.cameras.main.scrollX;
+      const x = Phaser.Math.Clamp(p.x + p.facing * 26, left + 40, left + GAME_W - 40);
+      const y = Phaser.Math.Clamp(p.y, FLOOR_TOP + 6, FLOOR_BOTTOM - 6);
+      t.card = new Pickup(this, 'idcard', x, y, 0, this.studentMode);
+      this.pickups.push(t.card);
+      fx.dust(this, x, y);
+    }
+    if (i === 4) p.sp = 100;
+  }
+
+  private updateTutorial(dt: number): void {
+    const t = this.tut;
+    if (!t) return;
+    const p = this.player;
+    if (t.step < 0) {
+      // 시작 안내 띠("오후 4시 52분 · 퇴근 8분 전")가 사라지면 1단계
+      t.wait -= dt;
+      if (t.wait <= 0) this.showTutStep(0);
+      return;
+    }
+    if (t.okT > 0) {
+      t.okT -= dt;
+      if (t.okT <= 0) {
+        if (t.step >= this.tutSteps().length - 1) this.endTutorial(false);
+        else this.showTutStep(t.step + 1);
+      }
+      return;
+    }
+    let ok = false;
+    switch (t.step) {
+      case 0:
+        if (p.state === 'walk') t.moved += Math.hypot(p.x - t.lastX, p.y - t.lastY);
+        ok = t.moved >= TUT_MOVE;
+        break;
+      case 1:
+        ok = p.state === 'attack' || p.state === 'wattack';
+        break;
+      case 2:
+        ok = p.state === 'jump';
+        break;
+      case 3:
+        ok = this.projectiles.some((pr) => pr.owner === 'player');
+        break;
+      case 4:
+        // 필살기 연출이 끝나면 ✓ (쓰기 전에는 게이지를 가득 채워 둔다)
+        if (this.specialT >= 0) t.specialUsed = true;
+        else if (!t.specialUsed) p.sp = 100;
+        ok = t.specialUsed && this.specialT < 0;
+        break;
+    }
+    t.lastX = p.x;
+    t.lastY = p.y;
+    if (ok) {
+      t.okT = TUT_OK_SEC;
+      t.title.setText('✓ 잘했어요!').setColor('#7CFC9A');
+      sound.play('pickup');
+    }
+  }
+
+  /** 연습을 끝낸다 (끝까지 했거나 건너뛰었다). 시계가 다시 흐르고, 오른쪽으로 가면 첫 구역 싸움이 시작된다 */
+  private endTutorial(skipped: boolean): void {
+    const t = this.tut;
+    if (!t) return;
+    this.tut = null;
+    markTutorialSeen('2d');
+    t.box.destroy();
+    t.skip.destroy();
+    // 연습용 사원증(학생증)을 거둔다 (2D는 맨손으로 시작한다 — 1구역 경비 선생님에게는 사원증이 없다)
+    const p = this.player;
+    t.card?.destroy();
+    for (const it of this.pickups) if (it.kind === 'idcard') it.destroy();
+    for (const pr of this.projectiles) if (pr.owner === 'player' && pr.weaponId === 'idcard') pr.destroy();
+    if (p.weapon?.id === 'idcard') p.weapon = null;
+    // 필살기 단계에서 채워 준 게이지는 쓰지 않고 건너뛰면 거둔다
+    if (t.step >= 4 && !t.specialUsed) p.sp = 0;
+    // 시작 안내 띠가 아직 떠 있을 때 건너뛰었으면 겹치지 않게 띄우지 않는다.
+    // 연습하며 이미 싸움 시작 자리를 넘어갔으면 곧바로 싸움이 시작되므로(구역 안내 띠가 뜬다) 띄우지 않는다
+    if (t.step < 0 || p.x >= this.zones[this.zoneIndex].left + TRIGGER_X) return;
+    if (skipped) fx.banner(this, '연습을 건너뛰었어요', '오른쪽으로 이동하세요', 1600);
+    else fx.banner(this, '연습 끝!', '이제 오른쪽으로 이동하세요', 1600);
+  }
+
   // ---------- 돌발 방문 (교직원 모드, data/visits.ts) ----------
 
   /** 돌발 방문이 나올 구역: 교직원 모드에서 이 판에 고른 스테이지(처음 부를 때 1~3 중 무작위로 정해 둔다)의 잡몹 구간 하나.
@@ -2561,6 +2974,8 @@ export class StageScene extends Phaser.Scene {
     if (win) {
       sound.play('clear');
       fx.floatText(this, v.x, v.y - 200, '결재 완료!', '#7CFC9A', 24);
+      // 배지 "돌발 방문 해결"·"손님맞이 완료" (고른 교직원 id로 센다)
+      noteVisitSuccess(this.run.hero);
     } else {
       fx.floatText(this, v.x, v.y - 200, '시간 초과…', '#ff8a8a', 20);
     }
@@ -2580,7 +2995,7 @@ export class StageScene extends Phaser.Scene {
   private openVisitBox(reward: VisitReward, x: number, y: number): void {
     const p = this.player;
     const name = REWARD_NAME[reward];
-    fx.banner(this, name, REWARD_DESC_2D[reward], 2600);
+    fx.banner(this, name, this.rewardDesc(reward), 2600);
     switch (reward) {
       case 'glove':
       case 'graph':
@@ -2595,7 +3010,7 @@ export class StageScene extends Phaser.Scene {
         }
         break;
       case 'clicker':
-        p.clickT = CLICKER_SEC;
+        p.clickT = this.buffSec(CLICKER_SEC);
         fx.floatText(this, p.x, p.y - 124, `도장 연사 ${CLICKER_MUL}배!`, '#ffd27f', 18);
         break;
       case 'cheer':
@@ -2605,7 +3020,7 @@ export class StageScene extends Phaser.Scene {
         this.placePlaque(x, y);
         break;
       case 'hush':
-        this.hushT = HUSH_SEC;
+        this.hushT = this.buffSec(HUSH_SEC);
         for (const e of this.enemies) {
           if (!e.dead && ORDINARY.has(e.kind)) fx.floatText(this, e.x, e.y - e.z - e.height - 10, '쉿!', '#9fd3ff', 16);
         }
@@ -2617,11 +3032,12 @@ export class StageScene extends Phaser.Scene {
   private callCheer(): void {
     for (const c of this.cheer) c.leave();
     const left = this.cameras.main.scrollX;
+    const sec = this.buffSec(CHEER_SEC);
     for (let i = 0; i < CHEER_N; i++) {
       const side = i % 2 === 0 ? -1 : 1;
-      this.cheer.push(new CheerMember(this, CHEER_LOOKS[i % CHEER_LOOKS.length], side, side < 0 ? left - 60 : left + GAME_W + 60, CHEER_SEC));
+      this.cheer.push(new CheerMember(this, CHEER_LOOKS[i % CHEER_LOOKS.length], side, side < 0 ? left - 60 : left + GAME_W + 60, sec));
     }
-    this.cheerT = CHEER_SEC;
+    this.cheerT = sec;
   }
 
   /** 실사 통과 현판: 집은 자리에 서고 둘레가 안전지대가 된다 */
@@ -2638,7 +3054,7 @@ export class StageScene extends Phaser.Scene {
     const px = x - this.player.facing * 50;
     const py = Math.max(FLOOR_TOP, y - 16);
     const obj = createPlaque(this).setPosition(px, py).setDepth(py);
-    this.plaque = { x, y, t: PLAQUE_SEC, obj, ring };
+    this.plaque = { x, y, t: this.buffSec(PLAQUE_SEC), obj, ring };
     fx.dust(this, px, py);
   }
 
@@ -2696,9 +3112,7 @@ export class StageScene extends Phaser.Scene {
   /** 응원단 동아리원이 잡몹 하나를 처리했다 */
   cheerProcess(e: Enemy, fromX: number): void {
     this.processMob(e, e.x >= fromX ? 1 : -1);
-    this.combo++;
-    this.comboT = 1.2;
-    this.maxCombo = Math.max(this.maxCombo, this.combo);
+    this.bumpCombo(1);
   }
 
   /** 로켓 펀치 장갑·취업률 상승 그래프가 닿았다: 잡몹은 처리(개수 제한 없이 꿰뚫는다), 사람(보스·방문 상대)은 도장 4발만큼 */
@@ -2710,7 +3124,8 @@ export class StageScene extends Phaser.Scene {
       this.addCombo(1, false);
       return;
     }
-    const n = pr.weaponId === 'graph' ? GRAPH_STAMPS : GLOVE_STAMPS;
+    // 던지기 장점이면 도장 수(위력)도 +20% (반올림 — 4발 → 5발)
+    const n = Math.round((pr.weaponId === 'graph' ? GRAPH_STAMPS : GLOVE_STAMPS) * this.perk.throw);
     if (e.takeHit({ dmg: n, stamps: n, dir, kb: 0, knockdown: false, thrown: true })) {
       fx.stampMark(this, e.x, e.y - e.z - Math.min(e.height, 70) * 0.6, this.hitLabel(e));
       this.addCombo(1, true);
@@ -2733,7 +3148,7 @@ export class StageScene extends Phaser.Scene {
           dmg: GLOVE_STAMPS,
           knockdown: false,
           halfW: 26,
-          ttl: 2.2,
+          ttl: 2.2 * this.perk.throw,
           obj,
           pierce: true,
           weaponId: 'glove',
@@ -2756,7 +3171,7 @@ export class StageScene extends Phaser.Scene {
         obj,
         spin: 14 * f,
         returnTo: p,
-        range: GAME_W / 2,
+        range: (GAME_W / 2) * this.perk.throw,
         pierce: true,
         weaponId: 'graph',
       }),

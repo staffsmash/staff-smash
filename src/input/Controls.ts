@@ -15,7 +15,9 @@ export type Action =
   | 'debug'
   /** 숫자 1·2: 타이틀·출근 준비·기록판에서 교직원(1)·학생(2) 모드 고르기 */
   | 'pick1'
-  | 'pick2';
+  | 'pick2'
+  /** C: 게임오버 화면에서 이 스테이지부터 다시 (이어하기, 한 판에 한 번) */
+  | 'retry';
 
 const KEYMAP: Record<string, Action[]> = {
   KeyJ: ['attack', 'confirm'],
@@ -37,6 +39,7 @@ const KEYMAP: Record<string, Action[]> = {
   Numpad1: ['pick1'],
   Digit2: ['pick2'],
   Numpad2: ['pick2'],
+  KeyC: ['retry'],
 };
 
 const LEFT = ['ArrowLeft', 'KeyA'];
