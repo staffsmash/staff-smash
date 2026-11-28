@@ -1,4 +1,6 @@
-// 배경음악 악보 세 곡 (모두 이 게임을 위해 새로 지은 짧은 반복곡이다. 기존 곡의 가락을 옮기지 않는다).
+// 배경음악 악보 네 곡. 교직원·학생·보스 세 곡은 이 게임을 위해 새로 지은 짧은 반복곡이다.
+// Boo 곡만 사용자 결정(2026-11-28, PRD 결정 61)으로 김승민 「외대 옥상」 후렴 첫 4마디 가락을 옮겼다
+// (사용자가 준 mp3에서 두 번 나오는 후렴을 박마다 음높이로 읽어 서로 맞춰 본 값. 원음 파일은 넣지 않는다. 원곡자 허락은 사용자가 챙긴다).
 // 소리 내는 쪽은 src/music.ts. 여기에는 박자·화음·가락·반주 무늬만 둔다.
 //
 // 적는 법
@@ -7,7 +9,7 @@
 // - 화음: 마디마다 'Fmaj7' 처럼 적고, 한 마디에 둘이면 'Gm7 C7' (반 마디씩).
 // - 반주 무늬: 16칸(16분음표) 기준. 베이스는 [칸, 음, 길이(칸)] — 음은 'R' 근음, '5' 5도, '8' 옥타브 위, '3' 화음의 3도.
 
-export type TrackId = 'staff' | 'student' | 'boss';
+export type TrackId = 'staff' | 'student' | 'boss' | 'boo';
 
 export interface Song {
   /** 화면에 보일 일은 없지만 디버그용 이름 */
@@ -185,4 +187,37 @@ const BOSS: Song = {
   hat: 'oooooooooooooooo',
 };
 
-export const SONGS: Record<TrackId, Song> = { staff: STAFF, student: STUDENT, boss: BOSS };
+// ---------- Boo 호출: 김승민 「외대 옥상」 후렴 첫 4마디 (G장조, 88 BPM, 4마디 ≈ 10.9초) ----------
+// 1인칭에서 Boo가 붙잡아 나는 동안(약 9.7초)만 튼다 (src/sound.ts followFps). 착지하면 1초 동안 줄며 원래 곡으로.
+// 가락은 원곡보다 한 옥타브 위(목소리 G3~D4 → G4~D5), 화음은 반 마디씩 읽은 값을 정리했다.
+
+const BOO: Song = {
+  title: '외대 옥상 (후렴)',
+  bpm: 88,
+  chords: ['Am7 Em7', 'Am7 G', 'D G', 'D G'],
+  lead: [
+    'B4 A4 - B4 A4 - - G4 A4 - E4 G4 - - - -',
+    'A4 B4 A4 - G4 A4 - F#4 G4 A4 G4 - A4 G4 - F#4',
+    'B4 E4 A4 B4 A4 - - D5 A4 - D5 G4 - - - F#4',
+    'A4 B4 A4 - - G4 A4 G4 - A4 G4 - D5 G4 - -',
+  ],
+  leadWave: 'square',
+  leadCut: 1800,
+  leadVol: 0.13,
+  bassWave: 'triangle',
+  bassCut: 0,
+  bassVol: 0.3,
+  bass: [
+    [0, 'R', 3],
+    [4, '5', 2],
+    [8, 'R', 3],
+    [12, '5', 2],
+    [14, '8', 2],
+  ],
+  comp: { kind: 'stab', steps: [2, 6, 10, 14], len: 1, vol: 0.04, wave: 'triangle' },
+  kick: 'x.....x.x.......',
+  snare: '....x.......x...',
+  hat: 'o.o.o.o.o.o.o.o.',
+};
+
+export const SONGS: Record<TrackId, Song> = { staff: STAFF, student: STUDENT, boss: BOSS, boo: BOO };

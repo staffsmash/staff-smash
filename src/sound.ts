@@ -50,14 +50,18 @@ interface FpsView {
   mode: 'staff' | 'student';
   fight: string;
   boss: { dead: boolean; gone: boolean; state: string } | null;
+  /** Boo 호출 벨 (붙잡혀 나는 동안 carrying — 생성 전에는 없다) */
+  boo?: { carrying: boolean };
 }
 
-/** 1인칭: 판 중 보스·중간보스가 나와 있으면 보스 곡, 아니면 모드 곡. 타이틀·결과는 작게, 일시정지는 멈춘다 */
+/** 1인칭: 판 중 보스·중간보스가 나와 있으면 보스 곡, 아니면 모드 곡. 타이틀·결과는 작게, 일시정지는 멈춘다.
+ *  Boo가 붙잡아 나는 동안은 Boo 곡(김승민 「외대 옥상」 후렴, PRD 결정 61) — 첫 마디부터, 착지하면 1초 줄며 원래 곡으로 */
 export function followFps(g: FpsView): void {
   initAudio();
   music.follow((): MusicWant => {
     const normal: TrackId = g.mode === 'student' ? 'student' : 'staff';
     if (g.phase !== 'play' && g.phase !== 'paused') return { track: normal, quiet: true, paused: false };
+    if (g.boo?.carrying) return { track: 'boo', quiet: false, paused: g.phase === 'paused' };
     const b = g.boss;
     const boss = (!!b && !b.dead && !b.gone && b.state !== 'sleep') || g.fight === 'between';
     return { track: boss ? 'boss' : normal, quiet: false, paused: g.phase === 'paused' };

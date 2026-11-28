@@ -27,6 +27,8 @@ const MUSIC_GAIN = 0.5;
 const QUIET = 0.5;
 /** 곡을 겹쳐 바꾸는 시간 (초) */
 const FADE = 0.8;
+/** Boo 곡이 끝날 때(착지) 줄이는 시간 (초, PRD 결정 61) */
+const BOO_FADE = 1.0;
 /** 보스가 잠깐 비어도 곡을 바로 바꾸지 않는다 (초) */
 const BOSS_HOLD = 1.2;
 const AHEAD = 0.15;
@@ -274,7 +276,8 @@ export class Music {
     this.last = w;
     let target = w.track;
     // 보스 곡 → 보통 곡: 보스가 잠깐 비는 사이(중간보스 → 보스)에 곡이 오가지 않게 조금 기다린다
-    if (this.cur?.id === 'boss' && target !== 'boss' && target !== null && !w.quiet) {
+    // (Boo 곡은 기다리지 않고 바로 바꾼다)
+    if (this.cur?.id === 'boss' && target !== 'boss' && target !== 'boo' && target !== null && !w.quiet) {
       if (this.bossOffAt < 0) this.bossOffAt = now;
       if (now - this.bossOffAt < BOSS_HOLD) target = 'boss';
     } else this.bossOffAt = -1;
@@ -316,10 +319,11 @@ export class Music {
     const old = this.cur;
     if (old) {
       const g = old.bus.gain;
+      const out = old.id === 'boo' ? BOO_FADE : FADE;
       g.cancelScheduledValues(now);
       g.setValueAtTime(g.value, now);
-      g.linearRampToValueAtTime(0, now + FADE);
-      old.stopAt = now + FADE + 0.15;
+      g.linearRampToValueAtTime(0, now + out);
+      old.stopAt = now + out + 0.15;
     }
     this.cur = null;
     if (!id) return;
