@@ -8,7 +8,7 @@
       "label": "사회과학관 앞",
       "art": "socialScience",
       "maxAlive": 3,
-      "waves": ["queue", "mail", "janghak", "phone", "bubble", "mail"],
+      "waves": ["queue", "mail", "refcell", "janghak", "phone", "parcel", "bubble", "mail"],
       "supervisors": []
     },
     {
@@ -16,7 +16,7 @@
       "label": "본관 앞",
       "art": "bonFront",
       "maxAlive": 3,
-      "waves": ["hakjong", "mail", "docbomb", "bubble", "phone"],
+      "waves": ["hakjong", "mail", "parcel", "docbomb", "refcell", "bubble", "parcel", "phone"],
       "supervisors": []
     },
     {

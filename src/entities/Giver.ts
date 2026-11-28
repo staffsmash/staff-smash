@@ -16,6 +16,11 @@ import { play } from '../sound';
 //   11차(2026-11-21): 남녀가 번갈아 선다 — 스테이지의 자리 순서대로 남·여 (StageScene), 들어왔다 나가는 사람도 번갈아.
 // - 학생 모드 "도서 무인 대출기"(사람이 아닌 기계): 앞에서 L(줍기 버튼)로 대여하면 무기가 나온다 (전공책이 가장 자주).
 // 주고받는 흐름(무기 장착·바닥에 떨어뜨리기)은 StageScene이 맡고, 여기서는 모양·말풍선·동작·대기 시간만 다룬다.
+// 결정 61 (2026-11-28):
+// - 인사(대여)를 받아 줄 때마다 차례가 바뀐다: 아이템 → 인사만 → 아이템 → … (첫 인사는 아이템, giftTurn).
+//   아이템 차례는 대기 시간(GIFT_COOLDOWN 8초)을 그대로 지키고, 대기 중이면 "방금 드렸잖아요~"/"대출 처리 중…" (차례는 그대로).
+// - 대출기도 맞는다: "삐— 비정상적인 이용입니다." + 6초 동안 대여를 받지 않는다 (경비 선생님 "어허, 인사부터 하셔야죠."와 같다).
+// - 이스터 에그(인사 15번 → 필살기 무한, 20번 맞히면 화난 마귀)는 StageScene이 세고, 마귀는 AngryGiver.ts. 마귀인 동안 이 경비원은 숨는다.
 
 export type GiverKind = 'guard' | 'kiosk';
 
@@ -37,6 +42,27 @@ export const GIVER_TEXT = {
   guardToss: '경비 선생님: 이거 쓰세요!',
   kioskGive: '도서 대여 완료!',
   kioskCooldown: '대출 처리 중…',
+  // ---------- 결정 61 ★ (사용자 검토 대기) ----------
+  /** 인사만 차례 (아이템 → 인사만 → 아이템 …) */
+  guardHello: '네, 반갑습니다! 오늘도 힘내세요.',
+  kioskHello: '반갑습니다! 오늘도 열공하세요.',
+  /** 대출기를 때리거나 던진 것을 맞혔을 때 (6초 동안 대여를 받지 않는다 — 그동안 대여하면 같은 말) */
+  kioskRude: '삐— 비정상적인 이용입니다.',
+  /** 이스터 에그 ①: 10번째 인사(힌트), 15번째 띠 */
+  guardEgg10: '허허, 인사성이 참 밝으시네요!',
+  kioskEgg10: '이용 실적 우수 회원이시네요!',
+  guardEggTitle: '경비 선생님의 응원!',
+  kioskEggTitle: '도서관 우수 회원 혜택!',
+  eggSub: '이번 스테이지 동안 필살기 무한',
+  /** 이스터 에그 ②: 20번 맞힌 뒤 마귀 이름표·외침, 처리된 뒤 사과, 그 스테이지 동안 인사(대여)하면 */
+  guardAngryName: '화난 경비 선생님',
+  kioskAngryName: '폭주한 도서 무인 대출기',
+  guardAngry: '이제 못 참습니다!!',
+  kioskAngry: '경고! 경고! 대출 정지!!',
+  guardSorry: '…죄송합니다, 제가 잠깐 이성을 잃었네요.',
+  kioskSorry: '시스템 재부팅 완료. 점검 중입니다.',
+  guardNoMore: '오늘은 더 드릴 게 없어요.',
+  kioskNoMore: '점검 중입니다.',
 } as const;
 
 const WALK = 230;
@@ -52,16 +78,23 @@ export class Giver {
   readonly items: WeaponId[];
   /** 기믹 무기를 던져 주러 잠깐 들어온 경비 선생님 (인사를 받지 않는다) */
   readonly courier: boolean;
+  /** 여성 외형 경비 선생님 (화난 마귀도 같은 외형으로 그린다) */
+  readonly female: boolean;
   x: number;
-  readonly y: number;
+  /** 깊이 (화난 마귀를 처리하면 마귀가 있던 자리로 옮긴다) */
+  y: number;
   readonly halfW: number;
   readonly height: number;
   facing = 1;
   removed = false;
   /** 다음 선물까지 남은 시간 */
   cooldown = 0;
-  /** 인사를 받지 않는 남은 시간 (경비 선생님을 건드렸다) */
+  /** 인사를 받지 않는 남은 시간 (경비 선생님·대출기를 건드렸다) */
   refuseT = 0;
+  /** 다음 인사(대여)가 아이템 차례인지 (false = 인사만 받아 주는 차례, 결정 61) */
+  giftTurn = true;
+  /** 화난 마귀(AngryGiver)가 되어 있는 동안 숨는다 */
+  hidden = false;
   private readonly scene: StageScene;
   private readonly rig: Rig | null;
   private readonly body: Phaser.GameObjects.Container | null;
@@ -90,6 +123,7 @@ export class Giver {
     this.x = x;
     this.y = y;
     this.courier = courier;
+    this.female = female;
     this.items = items.filter(isWeaponId);
     if (this.items.length === 0) this.items = [kind === 'kiosk' ? 'clipboard' : 'stapler'];
     if (kind === 'guard') {
@@ -133,14 +167,45 @@ export class Giver {
 
   /** 인사(대여)할 수 있을 만큼 가까운지 */
   near(p: Player): boolean {
-    if (this.removed || this.courier) return false;
+    if (this.removed || this.courier || this.hidden) return false;
     return Math.abs(p.x - this.x) < (this.kind === 'kiosk' ? 82 : 72) && Math.abs(p.y - this.y) < 36 && p.z < 24;
   }
 
-  /** 화면 안에 보이는지 */
+  /** 화면 안에 보이는지 (화난 마귀가 되어 숨어 있으면 false) */
   inView(): boolean {
     const left = this.scene.cameras.main.scrollX;
-    return !this.removed && this.x > left + 20 && this.x < left + GAME_W - 20;
+    return !this.removed && !this.hidden && this.x > left + 20 && this.x < left + GAME_W - 20;
+  }
+
+  /** 화난 마귀(AngryGiver)가 대신 움직이는 동안 숨는다 */
+  hide(): void {
+    this.hidden = true;
+    this.pending = [];
+    this.speechT = 0;
+    this.setVisible(false);
+  }
+
+  /** 화난 마귀가 처리되어 (x, y)에서 원래 얼굴로 돌아온다. 숨어 있던 동안 멈춰 있던 거절·대기 시간은 비운다
+   *  (사과한 뒤 인사하면 "오늘은 더 드릴 게 없어요."가 나오게) */
+  reappear(x: number, y: number, facing: number): void {
+    this.hidden = false;
+    this.x = x;
+    this.y = y;
+    this.facing = facing;
+    this.refuseT = 0;
+    this.cooldown = 0;
+    this.blinkT = 0;
+    this.setPose('idle');
+    this.setVisible(true);
+    this.sync();
+  }
+
+  private setVisible(v: boolean): void {
+    this.rig?.root.setVisible(v);
+    this.body?.setVisible(v);
+    this.shadow.setVisible(v);
+    this.label.setVisible(v);
+    this.speech?.setVisible(false);
   }
 
   /** 무기가 나오는(경비 선생님 손, 대출기 구멍) 자리 */
@@ -170,10 +235,10 @@ export class Giver {
     if (this.kind === 'guard' && Math.abs(x - this.x) > 4) this.facing = x >= this.x ? 1 : -1;
   }
 
-  /** 맞받아 인사 */
-  bow(): void {
+  /** 맞받아 인사. give = 무기를 건넨다 (인사만 받아 주는 차례에는 소리 없이 고개만 숙인다) */
+  bow(give = true): void {
     // 경비원이 무기를 건넨다 (인사를 받아 준 때만 부른다)
-    play('open', 0.8);
+    if (give) play('open', 0.8);
     this.setPose('bow');
   }
 
@@ -183,22 +248,24 @@ export class Giver {
     this.setPose('toss');
   }
 
-  /** 대출기 화면이 깜빡인다 */
-  blink(): void {
+  /** 대출기 화면이 깜빡인다. give = 무기가 나온다 (인사만 받아 주는 차례에는 소리 없이 깜빡이기만) */
+  blink(give = true): void {
     // 대출기에서 무기가 나온다
-    play('open', 0.8);
+    if (give) play('open', 0.8);
     this.blinkT = 0.7;
   }
 
-  /** 플레이어의 공격·던진 무기에 맞았다. 경비 선생님만 반응한다 (다치지 않고 움찔할 뿐). 반응했으면 true */
+  /** 플레이어의 공격·던진 무기에 맞았다 (다치지 않는다). 경비 선생님은 움찔하고, 대출기는 화면이 빨개지며 떤다.
+   *  REFUSE_SEC 동안 인사(대여)를 받지 않는다. 반응했으면 true */
   rudeHit(): boolean {
-    if (this.kind !== 'guard' || this.removed) return false;
+    if (this.removed || this.hidden) return false;
     this.refuseT = REFUSE_SEC;
     this.setPose('flinch');
     this.face(this.scene.player.x);
+    if (this.kind === 'kiosk') this.blinkT = 0.7;
     if (this.t - this.lastRudeSay > 1.2) {
       this.lastRudeSay = this.t;
-      this.say(GIVER_TEXT.guardRude, 2.0);
+      this.say(this.kind === 'kiosk' ? GIVER_TEXT.kioskRude : GIVER_TEXT.guardRude, 2.0);
     }
     return true;
   }
@@ -209,7 +276,7 @@ export class Giver {
   }
 
   update(dt: number, player: Player): void {
-    if (this.removed) return;
+    if (this.removed || this.hidden) return;
     this.t += dt;
     this.poseT += dt;
     if (this.cooldown > 0) this.cooldown -= dt;
@@ -234,7 +301,9 @@ export class Giver {
     if (this.screen) {
       if (this.blinkT > 0) this.blinkT -= dt;
       const on = this.blinkT > 0 && Math.floor(this.blinkT * 12) % 2 === 0;
-      this.screen.setFillStyle(on ? 0xffffff : 0x9fd3ff);
+      // 맞아서 대여를 받지 않는 동안은 화면이 빨갛다 (깜빡일 때는 빨강·흰색)
+      const base = this.refuseT > 0 ? 0xff8a8a : 0x9fd3ff;
+      this.screen.setFillStyle(on ? 0xffffff : base);
     }
     this.sync();
     if (this.speech) {

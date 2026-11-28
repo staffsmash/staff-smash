@@ -176,8 +176,9 @@ export class TouchPad {
     this.c.setTouchMove(qx, qy, run);
   }
 
-  /** pickLabel: 줍기 버튼에 따로 쓸 이름 (경비원 앞 "인사", 대출기 앞 "대여") */
-  draw(spReady: boolean, holding: boolean, pickLabel: string | null = null): void {
+  /** pickLabel: 줍기 버튼에 따로 쓸 이름 (경비원 앞 "인사", 대출기 앞 "대여").
+   *  spInfinite: 필살기 무한 (결정 61 이스터 에그) — SP 단추에 "∞" */
+  draw(spReady: boolean, holding: boolean, pickLabel: string | null = null, spInfinite = false): void {
     const g = this.g;
     g.clear();
     g.lineStyle(3, 0xffffff, 0.35);
@@ -188,8 +189,9 @@ export class TouchPad {
       let color = 0xffffff;
       let alpha = b.down ? 0.5 : 0.22;
       if (b.def.action === 'special') {
-        color = spReady ? 0xf5c542 : 0x888888;
+        color = spInfinite ? 0xc084fc : spReady ? 0xf5c542 : 0x888888;
         alpha = spReady ? 0.7 : 0.18;
+        b.text.setText(spInfinite ? 'SP∞' : 'SP');
       }
       if (b.def.action === 'pickup') {
         b.text.setText(pickLabel ?? (holding ? '던지기' : '줍기'));

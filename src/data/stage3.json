@@ -8,7 +8,7 @@
       "label": "국제학사 앞",
       "art": "dormFront",
       "maxAlive": 3,
-      "waves": ["queue", "mail", "phone", "bubble", "mail"],
+      "waves": ["queue", "mail", "refcell", "phone", "parcel", "bubble", "mail"],
       "supervisors": ["hoho"]
     },
     {
@@ -16,7 +16,7 @@
       "label": "운동장 스탠드",
       "art": "stands",
       "maxAlive": 3,
-      "waves": ["presidentMail", "mail", "docbomb", "bubble", "phone"],
+      "waves": ["presidentMail", "mail", "parcel", "docbomb", "refcell", "bubble", "phone"],
       "supervisors": ["molla", "bogo"]
     },
     {
@@ -24,7 +24,7 @@
       "label": "운동장 트랙",
       "art": "track",
       "maxAlive": 3,
-      "waves": ["queue", "minwon", "mail", "docbomb", "phone"],
+      "waves": ["queue", "minwon", "parcel", "mail", "refcell", "docbomb", "parcel", "phone"],
       "supervisors": ["gumto"],
       "approval": true
     },

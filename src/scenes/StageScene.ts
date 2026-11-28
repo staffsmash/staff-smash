@@ -20,6 +20,9 @@ import { PhoneEnemy } from '../entities/PhoneEnemy';
 import { BubbleEnemy } from '../entities/BubbleEnemy';
 import { DocBomb } from '../entities/DocBomb';
 import { QueueSlip } from '../entities/QueueSlip';
+import { REFCELL_TEXT, RefCell } from '../entities/RefCell';
+import { PARCEL_TEXT, ParcelBox } from '../entities/ParcelBox';
+import { AngryGiver } from '../entities/AngryGiver';
 import { StudentEnemy, type StudentKind } from '../entities/StudentEnemy';
 import { MinwonLeader } from '../entities/MinwonLeader';
 import { NoticeBoss } from '../entities/NoticeBoss';
@@ -98,14 +101,38 @@ import * as sound from '../sound';
 
 // 스테이지. 구역을 차례로 잠그고 웨이브(교직원 src/data/stageN.json, 학생 studentN.json)를 정리한다.
 // run.mode가 모든 것을 정한다: 교직원 모드는 민원 처리(방해 상사, 교수 서명 대기), 학생 모드는 행정 돌파(창구 직원, 학과장·교수·학장·총장).
+// 결정 61 (2026-11-28):
+// - 교직원 모드 교수 서명 대기 보충 1.3초마다·동시 4개 아래, 보스전 지원 잡몹(adds) 간격 절반·최대 2배 (학생 모드는 그대로)
+// - 새 잡몹: 2스테이지부터 #REF! 오류 셀(학생: 최종_진짜최종.hwp, 처리하면 작은 것 둘로), 3스테이지에 반송 택배 상자(학생: 연체 도서 더미,
+//   부르르 떤 뒤 돌진). 처음 만날 때 요령 띠. 잡몹 속도·체력이 스테이지마다 오른다 (STAGE_MOB_SPEED·STAGE_MOB_HP, 2D 난이도와 곱한다)
+// - 경비 선생님(대출기)은 아이템 → 인사만 → 아이템 … 번갈아 (tryGreet). 대출기도 맞으면 6초 동안 대여를 받지 않는다
+// - 이스터 에그 ① 한 스테이지에 받아 준 인사 15번 → 그 스테이지 필살기 무한 (10번째는 힌트 대사)
+//   이스터 에그 ② 한 스테이지에 경비원(대출기)을 20번 맞히면 화난 마귀(AngryGiver)가 쫓아와 3칸씩 때린다. 처리하면 원래대로, 그 스테이지는 더 주지 않는다
+//   두 숫자 모두 스테이지마다(이어하기 포함) 0부터. 시험: ?debug에서 __game.scene.getScene('stage').eggGreet(n) · eggHit(n)
 
 const MAX_ATTACKERS = 2;
 const TRIGGER_X = 330;
 const STUDENT_KINDS: StudentKind[] = ['wrongNumber', 'lateDoc', 'tantrum', 'graduation', 'presidentMail'];
 /** 학생 모드 보스 (처리되면 남은 잡몹이 함께 물러난다). 한학고 학장은 3스테이지 총장실 앞 관문 */
 const STUDENT_BOSSES = ['jeonpilBoss', 'bujaeBoss', 'hanhakgoBoss', 'presidentBoss'];
-/** 잡몹 (조력자가 한꺼번에 처리해 주고, 처리하면 가끔 무언가를 떨어뜨린다). 나머지는 중간보스·보스다 */
-const ORDINARY = new Set(['mail', 'phone', 'bubble', 'docbomb', 'queue']);
+/** 잡몹 (조력자가 한꺼번에 처리해 주고, 처리하면 가끔 무언가를 떨어뜨린다). 나머지는 중간보스·보스다.
+ *  결정 61 새 잡몹: refcell(#REF! 오류 셀)·refbit(갈라진 작은 것)·parcel(반송 택배 상자) */
+const ORDINARY = new Set(['mail', 'phone', 'bubble', 'docbomb', 'queue', 'refcell', 'refbit', 'parcel']);
+/** 스테이지(1·2·3)마다 잡몹 속도(이동·공격 빠르기)·체력 배율 (결정 61). 2D 난이도 배율과 곱하고, 체력은 반올림해 원래보다 작아지지 않게.
+ *  갈라진 작은 #REF!는 한 대에 처리되도록 체력을 그대로 둔다 */
+const STAGE_MOB_SPEED = [1, 1.1, 1.2];
+const STAGE_MOB_HP = [1, 1.25, 1.5];
+/** 교직원 모드 교수 서명 대기: 잡몹 보충 간격(초)과 동시에 있는 수 상한 (결정 61: 2.6초·2개 → 1.3초·4개) */
+const APPROVAL_ADD_SEC = 1.3;
+const APPROVAL_MAX_ALIVE = 4;
+/** 교직원 모드 보스전 지원 잡몹(adds): 간격은 이 값으로 나누고 최대 수는 곱한다 (결정 61, 학생 모드는 1) */
+const STAFF_ADDS_MUL = 2;
+/** 이스터 에그 ①: 받아 준 인사 수 — 힌트 대사, 필살기 무한 / ②: 맞힌 수 — 화난 마귀 */
+const EGG_HINT_AT = 10;
+const EGG_GREETS = 15;
+const EGG_HITS = 20;
+/** 새 잡몹 요령 띠를 이미 본 종류 (한 판에 한 번씩, 이어하기·다음 스테이지에도 이어진다) */
+const seenMobHints = new WeakMap<RunState, Set<string>>();
 /** 조력자 이벤트: 맞고 남은 체력이 이 비율 이하로 떨어지면 HELPER_CHANCE 확률로 온다 (스테이지마다 한 번) */
 const HELPER_HP = 0.25;
 const HELPER_CHANCE = 0.6;
@@ -301,6 +328,17 @@ export class StageScene extends Phaser.Scene {
   private retryRect: Phaser.Geom.Rectangle | null = null;
   /** 일시정지 화면의 단추 크기 고르기 (터치 화면에서만) */
   private sizeBtns: { size: BtnSize; rect: Phaser.Geom.Rectangle; bg: Phaser.GameObjects.Rectangle; text: Phaser.GameObjects.Text }[] = [];
+  /** 결정 61 이스터 에그: 이 스테이지에서 경비원(대출기)이 받아 준 인사 수, 경비원을 맞힌 수 (경비원이 여럿이면 합친다) */
+  private eggGreets = 0;
+  private eggHits = 0;
+  /** 이 스테이지 동안 필살기 무한 (인사 15번) */
+  private spInfinite = false;
+  /** 이 스테이지에서 화난 마귀가 나왔다: 더는 아이템을 주지 않고 인사 15번 이스터 에그도 꺼진다 */
+  private eggOff = false;
+  /** 지금 쫓아오는 화난 경비 선생님(폭주한 대출기) */
+  private angry: AngryGiver | null = null;
+  /** 새 잡몹을 처음 만났을 때 띄울 요령 띠 (다른 띠가 걷히면 하나씩) */
+  private mobHints: { title: string; sub: string }[] = [];
 
   constructor() {
     super('stage');
@@ -390,6 +428,18 @@ export class StageScene extends Phaser.Scene {
     this.tut = null;
     this.retryRect = null;
     this.sizeBtns = [];
+    // 이스터 에그 숫자는 스테이지마다(이어하기도) 0부터
+    this.eggGreets = 0;
+    this.eggHits = 0;
+    this.spInfinite = false;
+    this.eggOff = false;
+    this.angry = null;
+    this.mobHints = [];
+  }
+
+  /** 이 스테이지 잡몹 속도 배율 (결정 61) */
+  private get mobSpeed(): number {
+    return STAGE_MOB_SPEED[this.stageIndex] ?? 1;
   }
 
   /** 플레이어가 받는 피해 배율 (2D 난이도, Player.takeHit이 묻는다) */
@@ -547,6 +597,7 @@ export class StageScene extends Phaser.Scene {
       clockMin: runClock(this.run, this.elapsed),
       notice: this.noticeLine(),
       perks: this.visitPerks(),
+      spInfinite: this.spInfinite,
       boss: b
         ? { name: b.bossName, type: b.bossType, hp: b.bossHp, maxHp: b.bossMaxHp, extra: b.bossExtra() }
         : null,
@@ -556,7 +607,7 @@ export class StageScene extends Phaser.Scene {
       // 사원증을 든 채 다른 물건 위에 서 있으면 버튼은 "줍기"(바꿔 들기)
       const holding = hw !== null && !hw.inFlight && !(hw.def.boomerang && this.pickableAt(this.player));
       const greet = this.greetTarget(this.player) ? (this.studentMode ? '대여' : '인사') : null;
-      this.pad.draw(this.player.sp >= 100, holding, greet);
+      this.pad.draw(this.player.sp >= 100, holding, greet, this.spInfinite);
     }
     this.drawDebug(dt);
   }
@@ -584,6 +635,8 @@ export class StageScene extends Phaser.Scene {
       this.updateSpecial(dt);
       return;
     }
+    // 이스터 에그 ①: 필살기 무한 — 필살기 연출이 끝나면 곧바로 다시 가득
+    if (this.spInfinite) this.player.sp = 100;
     if (this.hitstop > 0) {
       this.hitstop -= dt;
       return;
@@ -592,11 +645,14 @@ export class StageScene extends Phaser.Scene {
     const prevX = this.player.x;
     this.player.update(dt, this.controls);
     this.updatePull(dt);
-    // 2D 난이도: 적 이동·공격 빠르기 (돌발 방문 상대는 제한 시간 20초가 그대로 흐르게 뺀다)
-    // 쉿! 정숙 표지판: 잡몹만 이동·발사(공격) 속도 절반
+    // 2D 난이도: 적 이동·공격 빠르기 (돌발 방문 상대는 제한 시간 20초가 그대로 흐르게 뺀다 — 화난 마귀도 사람 걸음 그대로)
+    // 잡몹은 스테이지마다 더 빠르다 (결정 61). 쉿! 정숙 표지판: 잡몹만 이동·발사(공격) 속도 절반
     for (const e of this.enemies) {
-      let edt = e instanceof Visitor ? dt : dt * this.diff.speed;
-      if (this.hushT > 0 && ORDINARY.has(e.kind)) edt *= HUSH_MUL;
+      let edt = e instanceof Visitor || e instanceof AngryGiver ? dt : dt * this.diff.speed;
+      if (ORDINARY.has(e.kind)) {
+        edt *= this.mobSpeed;
+        if (this.hushT > 0) edt *= HUSH_MUL;
+      }
       e.update(edt, this.player);
     }
     this.enemies = this.enemies.filter((e) => !e.removed);
@@ -662,9 +718,16 @@ export class StageScene extends Phaser.Scene {
 
   // ---------- 구역 진행 ----------
 
-  /** 구역을 끝내지 못하게 막는 적이 남았는지 (승인하고 선 채로 남는 프레지던트 캉은 막지 않는다) */
+  /** 구역을 끝내지 못하게 막는 적이 남았는지 (승인하고 선 채로 남는 프레지던트 캉, 화난 마귀(장난)는 막지 않는다) */
   private get enemiesLeft(): boolean {
-    return this.enemies.some((e) => !(e.dead && e.staysAfter));
+    return this.enemies.some((e) => !(e.dead && e.staysAfter) && !(e instanceof AngryGiver));
+  }
+
+  /** 보스전 지원 잡몹 간격·최대 수 (교직원 모드는 간격 절반·최대 2배, 결정 61) */
+  private addsOf(z: ZoneDef): { type: string; every: number; max: number } | null {
+    if (!z.adds) return null;
+    const k = this.studentMode ? 1 : STAFF_ADDS_MUL;
+    return { type: z.adds.type, every: z.adds.every / k, max: z.adds.max * k };
   }
 
   private updateZones(dt: number): void {
@@ -678,26 +741,28 @@ export class StageScene extends Phaser.Scene {
     if (this.zoneState !== 'fight') return;
 
     this.spawnT -= dt;
-    // 돌발 방문 상대는 웨이브 머릿수에 넣지 않는다
-    const alive = this.enemies.filter((e) => !e.dead && !(e instanceof Visitor)).length;
+    // 돌발 방문 상대·화난 마귀는 웨이브 머릿수에 넣지 않는다
+    const alive = this.enemies.filter((e) => !e.dead && !(e instanceof Visitor) && !(e instanceof AngryGiver)).length;
     if (this.queue.length > 0 && this.spawnT <= 0 && alive < z.maxAlive) {
       this.spawnType(this.queue.shift() as string);
       this.spawnT = 0.8;
     }
     // 보스전 지원 잡몹 (서버 폭주 중에는 쉰다)
-    if (z.adds && this.boss && !this.bossDefeated && !this.storm) {
+    const za = this.addsOf(z);
+    if (za && this.boss && !this.bossDefeated && !this.storm) {
       this.addsT -= dt;
-      const adds = this.enemies.filter((e) => e.kind === z.adds?.type && !e.dead).length;
-      if (this.addsT <= 0 && adds < z.adds.max) {
-        this.spawnType(z.adds.type);
-        this.addsT = z.adds.every;
+      const adds = this.enemies.filter((e) => e.kind === za.type && !e.dead).length;
+      if (this.addsT <= 0 && adds < za.max) {
+        this.spawnType(za.type);
+        this.addsT = za.every;
       }
     }
     this.supplyItems(dt, z);
     this.updateVisit(dt);
 
     // 김부재중 교수 서명: 웨이브를 다 정리한 뒤 버텨야 한다 (돌발 방문이 남았으면 그 뒤에)
-    if (z.approval && this.approval === 'none' && this.queue.length === 0 && this.enemies.length === 0 && !this.visitHolds) {
+    const cleared = !this.enemies.some((e) => !(e instanceof AngryGiver));
+    if (z.approval && this.approval === 'none' && this.queue.length === 0 && cleared && !this.visitHolds) {
       this.approval = 'waiting';
       this.approvalT = 9;
       this.approvalAddT = 1.2;
@@ -706,9 +771,9 @@ export class StageScene extends Phaser.Scene {
     if (this.approval === 'waiting') {
       this.approvalT -= dt;
       this.approvalAddT -= dt;
-      if (this.approvalAddT <= 0 && alive < 2) {
+      if (this.approvalAddT <= 0 && alive < APPROVAL_MAX_ALIVE) {
         this.spawnType(Math.random() < 0.6 ? 'mail' : 'phone');
-        this.approvalAddT = 2.6;
+        this.approvalAddT = APPROVAL_ADD_SEC;
       }
       if (this.approvalT <= 0) {
         this.approval = 'called';
@@ -806,7 +871,7 @@ export class StageScene extends Phaser.Scene {
     this.zoneState = 'fight';
     this.queue = this.scaleWaves(z.waves);
     this.spawnT = 0.4;
-    this.addsT = z.adds?.every ?? 0;
+    this.addsT = this.addsOf(z)?.every ?? 0;
     this.approval = 'none';
     this.goText.setVisible(false);
     if (this.zoneIndex === this.visitZone) this.visitWait = Phaser.Math.FloatBetween(VISIT_DELAY[0], VISIT_DELAY[1]);
@@ -861,14 +926,38 @@ export class StageScene extends Phaser.Scene {
   private spawnType(type: string): void {
     const before = this.enemies.length;
     this.spawnRaw(type);
-    // 2D 난이도: 중간보스·보스 체력(결재 진행) 배율. 잡몹·돌발 방문 상대·수강편람 탑은 그대로
-    const k = this.diff.bossHp;
-    if (k === 1) return;
+    this.tuneSpawned(before);
+  }
+
+  /** 방금 나온 적(this.enemies[before..])의 체력 배율.
+   *  잡몹: 스테이지 오름 ×1 / ×1.25 / ×1.5 (결정 61, 반올림하되 원래보다 작아지지 않게. 갈라진 작은 #REF!는 한 대 그대로).
+   *  중간보스·보스: 2D 난이도 체력(결재 진행) 배율. 돌발 방문 상대·수강편람 탑은 그대로 */
+  private tuneSpawned(before: number): void {
+    const mob = STAGE_MOB_HP[this.stageIndex] ?? 1;
+    const boss = this.diff.bossHp;
     for (const e of this.enemies.slice(before)) {
-      if (ORDINARY.has(e.kind) || e instanceof Visitor || e instanceof DocTower) continue;
-      e.maxHp = Math.max(1, Math.round(e.maxHp * k));
+      if (e instanceof Visitor || e instanceof DocTower || e instanceof AngryGiver) continue;
+      if (ORDINARY.has(e.kind)) {
+        if (mob === 1 || e.kind === 'refbit') continue;
+        e.maxHp = Math.max(e.maxHp, Math.round(e.maxHp * mob));
+      } else {
+        if (boss === 1) continue;
+        e.maxHp = Math.max(1, Math.round(e.maxHp * boss));
+      }
       e.hp = e.maxHp;
     }
+  }
+
+  /** 새 잡몹을 처음 만났다: 요령 띠를 한 판에 한 번 (다른 띠가 걷히면 띄운다 — updateProps) */
+  private noteNewMob(kind: string, title: string, sub: string): void {
+    let seen = seenMobHints.get(this.run);
+    if (!seen) {
+      seen = new Set();
+      seenMobHints.set(this.run, seen);
+    }
+    if (seen.has(kind)) return;
+    seen.add(kind);
+    this.mobHints.push({ title, sub });
   }
 
   private spawnRaw(type: string): void {
@@ -893,6 +982,28 @@ export class StageScene extends Phaser.Scene {
       case 'docbomb':
         this.enemies.push(new DocBomb(this, x, y, tx));
         break;
+      case 'refcell': {
+        // 결정 61 새 잡몹 A: #REF! 오류 셀 / 최종_진짜최종.hwp (처리하면 작은 것 둘로)
+        const st = this.studentMode;
+        this.enemies.push(new RefCell(this, x, y, tx));
+        this.noteNewMob(
+          'refcell',
+          st ? REFCELL_TEXT.studentName : REFCELL_TEXT.staffName,
+          st ? REFCELL_TEXT.studentHint : REFCELL_TEXT.staffHint,
+        );
+        break;
+      }
+      case 'parcel': {
+        // 결정 61 새 잡몹 B: 반송 택배 상자 / 연체 도서 더미 (부르르 떤 뒤 돌진)
+        const st = this.studentMode;
+        this.enemies.push(new ParcelBox(this, x, y, tx));
+        this.noteNewMob(
+          'parcel',
+          st ? PARCEL_TEXT.studentName : PARCEL_TEXT.staffName,
+          st ? PARCEL_TEXT.studentHint : PARCEL_TEXT.staffHint,
+        );
+        break;
+      }
       case 'queue':
         this.spawnQueue(x, y, tx, 5);
         if (this.studentMode) fx.banner(this, '대기번호표 행렬', '줄줄이 길을 막습니다 — 위아래로 돌아가거나 하나씩 처리', 1500);
@@ -995,6 +1106,22 @@ export class StageScene extends Phaser.Scene {
     }
   }
 
+  /** #REF! 오류 셀(최종_진짜최종.hwp)이 처리되면 작은 것 둘로 갈라진다 (RefCell.die가 부른다).
+   *  보스가 처리돼 잡몹이 함께 물러날 때·스테이지가 끝나거나 게임오버된 뒤에는 갈라지지 않는다. 작은 것은 체력 배율도 받지 않는다 (한 대) */
+  splitRefCell(e: RefCell): void {
+    if (this.bossDefeated || this.over || this.finishing) return;
+    const left = this.cameras.main.scrollX;
+    for (const s of [-1, 1]) {
+      const x = Phaser.Math.Clamp(e.x + s * 22, left + 30, left + GAME_W - 30);
+      const y = Phaser.Math.Clamp(e.y + s * 16, FLOOR_TOP + 6, FLOOR_BOTTOM - 6);
+      const tx = Phaser.Math.Clamp(x + s * 46, left + 30, left + GAME_W - 30);
+      const bit = new RefCell(this, x, y, tx, true);
+      bit.popOut();
+      this.enemies.push(bit);
+    }
+    fx.dust(this, e.x, e.y);
+  }
+
   /** 프레지던트 캉 등장: 큰 초상이 오른쪽에서 잠깐 들어왔다 나간다 */
   private showPresidentCard(): void {
     const card = createPresidentPortrait(this, GAME_W + 120, 286).setScrollFactor(0).setDepth(1850);
@@ -1008,6 +1135,8 @@ export class StageScene extends Phaser.Scene {
     this.traps = [];
     this.clearFloorGimmicks();
     this.player.releaseCling();
+    // 화난 마귀는 다음 구역으로 따라오지 않고 사라진다 (결정 61)
+    this.dismissAngryGiver();
     if (this.zoneIndex >= this.zones.length - 1) {
       this.finishStage();
       return;
@@ -1206,7 +1335,8 @@ export class StageScene extends Phaser.Scene {
       // 인감 도장(출석 스티커): 맨손 공격이 잡몹만 넘어뜨린다 (중간보스·보스·사람은 그대로)
       const knockdown = def.knockdown || (def.bare === true && p.sealT > 0 && ORDINARY.has(e.kind));
       if (e.takeHit({ dmg, dir: p.facing, kb: def.kb, knockdown, tag: def.tag })) {
-        hits++;
+        // 화난 마귀(장난)를 맞힌 것은 연속·필살기 충전에 넣지 않는다
+        if (!(e instanceof AngryGiver)) hits++;
         fx.stampMark(this, e.x - p.facing * 4, e.y - e.z - Math.min(e.height, 70) * 0.6, this.hitLabel(e));
         if (this.studentMode && e.persuadable && Math.random() < 0.3) this.persuadeText(e);
       }
@@ -1229,7 +1359,7 @@ export class StageScene extends Phaser.Scene {
     return true;
   }
 
-  /** 플레이어의 공격이 상자(부서진다)나 경비원(인사부터 하라며 무기를 안 준다)에 닿았는지. 한 번 휘두르기에 한 번만 */
+  /** 플레이어의 공격이 상자(부서진다)나 경비원·대출기(인사부터 하라며 무기를 안 준다)에 닿았는지. 한 번 휘두르기에 한 번만 */
   private meleeProps(p: Player, def: AttackDef, dmg: number): void {
     if (p.z > def.zReach) return;
     const inReach = (x: number, y: number, halfW: number) => {
@@ -1245,11 +1375,11 @@ export class StageScene extends Phaser.Scene {
       if (!c.removed && inReach(c.x, c.y, c.halfW) && fresh(c)) this.hitCrate(c, dmg, p.facing);
     }
     for (const g of this.givers) {
-      if (g.kind === 'guard' && !g.removed && inReach(g.x, g.y, g.halfW) && fresh(g)) g.rudeHit();
+      if (!g.removed && !g.hidden && inReach(g.x, g.y, g.halfW) && fresh(g)) this.hitGiver(g);
     }
   }
 
-  /** 던진 무기가 상자·경비원에 닿았는지. 부딪힌 무기는 떨어진다 (사원증은 꿰뚫고, 서류 뭉치는 터진다) */
+  /** 던진 무기가 상자·경비원·대출기에 닿았는지. 부딪힌 무기는 떨어진다 (사원증은 꿰뚫고, 서류 뭉치는 터진다) */
   private projectileProps(pr: Projectile): void {
     const dir = Math.sign(pr.vx) || 1;
     const hits = (x: number, y: number, halfW: number, height: number) =>
@@ -1274,8 +1404,8 @@ export class StageScene extends Phaser.Scene {
       if (stop()) return;
     }
     for (const g of this.givers) {
-      if (g.kind !== 'guard' || g.removed || !hits(g.x, g.y, g.halfW, g.height) || !this.touchOnce(pr.hitSet, g)) continue;
-      g.rudeHit();
+      if (g.removed || g.hidden || !hits(g.x, g.y, g.halfW, g.height) || !this.touchOnce(pr.hitSet, g)) continue;
+      this.hitGiver(g);
       if (stop()) return;
     }
   }
@@ -1406,7 +1536,7 @@ export class StageScene extends Phaser.Scene {
         if (hit) {
           const label = this.studentMode || e.kind === 'visit' ? this.hitLabel(e) : pr.tag === 'notice' ? '부착' : '처리';
           fx.stampMark(this, e.x, e.y - e.z - Math.min(e.height, 70) * 0.6, label);
-          this.addCombo(1, true);
+          if (!(e instanceof AngryGiver)) this.addCombo(1, true);
         }
         if (pr.explodes) {
           this.explode(pr.x, pr.y, 90, this.blast, this.studentMode ? '따르릉!' : '펑!');
@@ -1469,7 +1599,7 @@ export class StageScene extends Phaser.Scene {
           if (!e.hittable || Math.abs(e.x - h.x) > h.radius + e.halfW || Math.abs(e.y - h.y) > h.radius * 0.45) continue;
           const hp0 = e.hp;
           if (e.takeHit({ dmg: h.dmg, dir: e.x >= h.x ? 1 : -1, kb: 0, knockdown: true, stamps: h.dmg })) {
-            hits++;
+            if (!(e instanceof AngryGiver)) hits++;
             fx.stampMark(this, e.x, e.y - e.z - Math.min(e.height, 70) * 0.6, label);
             // 플레이어 쪽 낙하물은 필살기(규정집 낙하 / ЗАЧЁТ!)뿐이다
             this.countSpecialKill(e, hp0);
@@ -1674,46 +1804,163 @@ export class StageScene extends Phaser.Scene {
     return best;
   }
 
-  /** L(줍기 버튼): 경비원에게 인사하면 무기를 준다 / 대출기에서 대여하면 무기가 나온다 */
+  /** L(줍기 버튼): 경비원에게 인사하면 무기를 준다 / 대출기에서 대여하면 무기가 나온다.
+   *  결정 61: 받아 줄 때마다 아이템 → 인사만 → 아이템 … 차례가 바뀐다 (Giver.giftTurn, 첫 인사는 아이템).
+   *  아이템 차례는 대기 시간 8초를 지키고, 대기 중이면 "방금 드렸잖아요~"/"대출 처리 중…" (차례는 그대로).
+   *  받아 준 인사(아이템·인사만·"방금 드렸잖아요")는 이스터 에그 ①로 센다 — 무례해서 거절당한 것은 세지 않는다. */
   tryGreet(p: Player): boolean {
     const g = this.greetTarget(p);
     if (!g) return false;
     const st = this.studentMode;
-    p.startGreet(g.x >= p.x ? 1 : -1, st ? null : GIVER_TEXT.hello);
+    const T = GIVER_TEXT;
+    p.startGreet(g.x >= p.x ? 1 : -1, st ? null : T.hello);
     g.face(p.x);
-    if (st) {
-      if (g.cooldown > 0) {
-        g.later(0.2, () => g.say(GIVER_TEXT.kioskCooldown, 1.3));
-        return true;
-      }
-      g.cooldown = GIFT_COOLDOWN;
-      g.later(0.3, () => {
-        g.blink();
-        g.say(GIVER_TEXT.kioskGive, 1.6);
-        this.giveWeapon(g);
+    // 대답하는 때: 대출기는 누르자마자, 경비 선생님은 인사를 듣고 (예전 값 그대로)
+    const reply = st ? 0.2 : 0.5;
+    const give = st ? 0.3 : 0.45;
+    if (g.refuseT > 0) {
+      g.later(reply, () => g.say(st ? T.kioskRude : T.guardRefuse, 1.6));
+      return true;
+    }
+    // 화난 마귀가 나온 스테이지: 더는 주지 않는다
+    if (this.eggOff) {
+      g.later(reply, () => g.say(st ? T.kioskNoMore : T.guardNoMore, 1.6));
+      return true;
+    }
+    if (!g.giftTurn) {
+      // 인사만 받아 주는 차례
+      g.later(give, () => {
+        if (g.refuseT > 0) return; // 인사하고 나서 바로 건드렸다
+        g.giftTurn = true;
+        if (st) g.blink(false);
+        else g.bow(false);
+        g.say(this.countGreet(st ? T.kioskHello : T.guardHello), 1.8);
       });
       return true;
     }
-    if (g.refuseT > 0) {
-      g.later(0.5, () => g.say(GIVER_TEXT.guardRefuse, 1.6));
-      return true;
-    }
     if (g.cooldown > 0) {
-      g.later(0.5, () => g.say(GIVER_TEXT.guardCooldown, 1.4));
+      g.later(reply, () => {
+        if (g.refuseT > 0) return;
+        g.say(this.countGreet(st ? T.kioskCooldown : T.guardCooldown), st ? 1.3 : 1.4);
+      });
       return true;
     }
     g.cooldown = GIFT_COOLDOWN;
-    g.later(0.45, () => {
+    g.later(give, () => {
       if (g.refuseT > 0) {
         // 인사하고 나서 바로 건드렸다
         g.cooldown = 0;
         return;
       }
-      g.bow();
-      g.say(GIVER_TEXT.guardGive, 2.0);
+      g.giftTurn = false;
+      if (st) g.blink();
+      else g.bow();
+      g.say(this.countGreet(st ? T.kioskGive : T.guardGive), st ? 1.6 : 2.0);
       this.giveWeapon(g);
     });
     return true;
+  }
+
+  // ---------- 이스터 에그 (결정 61) ----------
+
+  /** ①: 받아 준 인사(대여)를 센다. 10번째는 힌트 대사로 바꾸고, 15번째에 이 스테이지 필살기 무한. 실제로 말할 대사를 돌려준다 */
+  private countGreet(line: string): string {
+    if (this.eggOff) return line;
+    this.eggGreets++;
+    const st = this.studentMode;
+    if (this.eggGreets === EGG_HINT_AT) return st ? GIVER_TEXT.kioskEgg10 : GIVER_TEXT.guardEgg10;
+    if (this.eggGreets === EGG_GREETS) this.startInfiniteSp();
+    return line;
+  }
+
+  /** ①: 이 스테이지가 끝날 때까지 필살기 게이지가 늘 가득 (쓰면 연출이 끝나는 즉시 다시 가득 — step·updateSpecial) */
+  private startInfiniteSp(): void {
+    if (this.spInfinite || this.eggOff) return;
+    this.spInfinite = true;
+    if (this.specialT < 0) this.player.sp = 100;
+    const st = this.studentMode;
+    fx.banner(this, st ? GIVER_TEXT.kioskEggTitle : GIVER_TEXT.guardEggTitle, GIVER_TEXT.eggSub, 2600);
+    sound.play('clear', 0.7);
+  }
+
+  /** 경비 선생님·대출기를 맞혔다 (휘두르기 한 번·던진 것 하나에 한 번 — 필살기는 닿지 않는다).
+   *  ②: 한 스테이지에서 20번째면 화난 마귀가 된다. 그 전(과 마귀가 나온 뒤)에는 무례 반응 — 6초 동안 인사를 받지 않는다.
+   *  기믹 무기를 던져 주러 잠깐 들어온 경비 선생님은 세지 않는다 */
+  private hitGiver(g: Giver): void {
+    if (g.removed || g.hidden) return;
+    if (g.courier || this.eggOff) {
+      g.rudeHit();
+      return;
+    }
+    this.eggHits++;
+    if (this.eggHits >= EGG_HITS) this.summonAngryGiver(g);
+    else g.rudeHit();
+  }
+
+  /** ②: 경비원(대출기)이 화난 마귀가 되어 쫓아온다. 그 스테이지는 더 주지 않고, 인사 15번 이스터 에그(필살기 무한)도 꺼진다 */
+  private summonAngryGiver(g: Giver): void {
+    this.eggOff = true;
+    this.spInfinite = false;
+    const a = new AngryGiver(this, g);
+    g.hide();
+    this.angry = a;
+    this.enemies.push(a);
+    this.cameras.main.shake(260, 0.012);
+    this.cameras.main.flash(180, 220, 40, 40);
+    sound.play('boom', 0.6);
+  }
+
+  /** ②: 화난 마귀를 처리했다 — 그 자리에서 원래 얼굴로 돌아와 사과한다 (처리 수·연속·필살기 충전·배지에 넣지 않는다) */
+  onAngryGiverDone(a: AngryGiver): void {
+    const g = a.giver;
+    const st = this.studentMode;
+    if (this.angry === a) this.angry = null;
+    const left = this.cameras.main.scrollX;
+    fx.dust(this, a.x, a.y);
+    this.cameras.main.flash(140, 255, 255, 255);
+    g.reappear(Phaser.Math.Clamp(a.x, left + 40, left + GAME_W - 40), a.y, a.facing);
+    g.say(st ? GIVER_TEXT.kioskSorry : GIVER_TEXT.guardSorry, 2.8);
+    a.destroy();
+  }
+
+  /** ②: 구역을 정리하면 화난 마귀는 따라오지 않고 사라진다 (그 경비원도 이 스테이지에는 다시 서지 않는다) */
+  private dismissAngryGiver(): void {
+    const a = this.angry;
+    if (!a) return;
+    this.angry = null;
+    if (!a.removed) {
+      fx.dust(this, a.x, a.y);
+      a.destroy();
+    }
+    a.giver.destroy();
+  }
+
+  /**
+   * 시험 지름길 (?debug — 콘솔에서 __game.scene.getScene('stage').eggGreet(14)):
+   * 이 스테이지에서 받아 준 인사를 n번 센 것으로 한다. 15 이상이면 바로 필살기 무한이 켜진다.
+   */
+  eggGreet(n: number): string {
+    if (!DEBUG_DEFAULT) return 'debug only (?debug)';
+    this.eggGreets = Math.max(0, Math.floor(n));
+    if (this.eggGreets >= EGG_GREETS) this.startInfiniteSp();
+    return `greets ${this.eggGreets}${this.spInfinite ? ' · SP ∞' : ''}${this.eggOff ? ' · off' : ''}`;
+  }
+
+  /**
+   * 시험 지름길 (?debug — 콘솔에서 __game.scene.getScene('stage').eggHit(19)):
+   * 이 스테이지에서 경비원(대출기)을 n번 맞힌 것으로 한다. 20 이상이면 화면 안(없으면 가장 가까운) 경비원이 바로 화난 마귀가 된다.
+   */
+  eggHit(n: number): string {
+    if (!DEBUG_DEFAULT) return 'debug only (?debug)';
+    this.eggHits = Math.max(0, Math.floor(n));
+    if (this.eggHits >= EGG_HITS && !this.eggOff) {
+      const px = this.player.x;
+      const pool = this.givers.filter((g) => !g.courier && !g.removed && !g.hidden);
+      const g = pool.find((x) => x.inView()) ?? pool.sort((a, b) => Math.abs(a.x - px) - Math.abs(b.x - px))[0];
+      if (!g) return 'no giver';
+      this.summonAngryGiver(g);
+    }
+    return `hits ${this.eggHits}${this.angry ? ' · angry' : ''}${this.eggOff ? ' · off' : ''}`;
   }
 
   /** 무기를 건넨다: 손이 비어 있으면 바로 들려 주고, 아니면 발밑에 떨어뜨린다 */
@@ -1754,6 +2001,11 @@ export class StageScene extends Phaser.Scene {
           : `경비 선생님께 인사하면${key} 무기를 줍니다`;
         fx.banner(this, g.name, sub, 2800);
       }
+    }
+    // 새 잡몹 요령 띠 (처음 만났을 때, 다른 띠와 겹치지 않게)
+    if (this.mobHints.length > 0 && fx.bannerFree(this)) {
+      const h = this.mobHints.shift() as { title: string; sub: string };
+      fx.banner(this, h.title, h.sub, 2800);
     }
   }
 
@@ -1827,8 +2079,8 @@ export class StageScene extends Phaser.Scene {
     let processed = 0;
     for (const e of [...this.enemies]) {
       if (e.dead || e.removed || e.x < left - 10 || e.x > left + GAME_W + 10) continue;
-      // 돌발 방문 상대(사람)는 조력자가 건드리지 않는다
-      if (e instanceof Visitor) continue;
+      // 돌발 방문 상대(사람)·화난 경비 선생님(장난)은 조력자가 건드리지 않는다
+      if (e instanceof Visitor || e instanceof AngryGiver) continue;
       const top = e.y - e.z - Math.min(e.height, 70) * 0.6;
       if (ORDINARY.has(e.kind)) {
         fx.stampMark(this, e.x, top, st ? '통과' : '처리');
@@ -1932,7 +2184,7 @@ export class StageScene extends Phaser.Scene {
       let hits = 0;
       for (const e of this.enemies) {
         if (!e.hittable || Math.abs(e.x - x) > r + e.halfW || Math.abs(e.y - y) > r * 0.45) continue;
-        if (e.takeHit({ dmg: dmg.enemies, dir: e.x >= x ? 1 : -1, kb: 0, knockdown: true, thrown: true })) hits++;
+        if (e.takeHit({ dmg: dmg.enemies, dir: e.x >= x ? 1 : -1, kb: 0, knockdown: true, thrown: true }) && !(e instanceof AngryGiver)) hits++;
       }
       if (hits) this.addCombo(hits, true);
     }
@@ -2003,7 +2255,7 @@ export class StageScene extends Phaser.Scene {
 
   /** 단대학생회 간부: 민원 잡몹을 부른다 */
   rally(n: number): void {
-    const alive = this.enemies.filter((e) => !e.dead).length;
+    const alive = this.enemies.filter((e) => !e.dead && !(e instanceof AngryGiver)).length;
     for (let i = 0; i < n && alive + i < 6; i++) this.spawnType(Math.random() < 0.7 ? 'mail' : 'bubble');
   }
 
@@ -2045,7 +2297,9 @@ export class StageScene extends Phaser.Scene {
     const left = this.cameras.main.scrollX;
     const sx = Phaser.Math.Clamp(x, left + 40, left + GAME_W - 40);
     const tx = Phaser.Math.Clamp(this.player.x + (sx < this.player.x ? -120 : 120), left + 80, left + GAME_W - 80);
+    const before = this.enemies.length;
     this.enemies.push(new MailEnemy(this, sx, FLOOR_TOP + 6, tx));
+    this.tuneSpawned(before);
     fx.floatText(this, sx, FLOOR_TOP - 90, '넘겨받은 민원', '#ffd27f', 15);
   }
 
@@ -2169,7 +2423,9 @@ export class StageScene extends Phaser.Scene {
   /** 김학종지: 대기번호표 줄을 부른다 */
   summonTickets(n: number): void {
     const { x, tx, y } = this.edgeSpawn();
+    const before = this.enemies.length;
     this.spawnQueue(x, y, tx, n);
+    this.tuneSpawned(before);
     const left = this.cameras.main.scrollX;
     fx.floatText(this, Phaser.Math.Clamp(x, left + 80, left + GAME_W - 80), y - 70, '번호표 발행!', '#9fd3ff', 18);
   }
@@ -2429,6 +2685,8 @@ export class StageScene extends Phaser.Scene {
     fx.banner(this, title, sub, 2400);
     for (const o of this.enemies) {
       if (o.dead || o.kind === 'chonghak' || o.kind === 'noticeBoss' || o.kind === 'deadlineBoss' || o instanceof Visitor) continue;
+      // 화난 경비 선생님(장난)은 보스와 상관없다 — 구역이 정리되면 사라진다 (dismissAngryGiver)
+      if (o instanceof AngryGiver) continue;
       if (STUDENT_BOSSES.includes(o.kind)) continue;
       o.takeHit({ dmg: 99, dir: o.x >= this.player.x ? 1 : -1, kb: 0, knockdown: true, force: true });
       if (o instanceof DocBomb) o.destroy();
@@ -2575,6 +2833,8 @@ export class StageScene extends Phaser.Scene {
       this.specialObjs = [];
       this.specialT = -1;
       this.player.endSpecial();
+      // 이스터 에그 ① 필살기 무한: 연출이 끝나는 즉시 다시 가득
+      if (this.spInfinite) this.player.sp = 100;
     }
   }
 
@@ -3128,7 +3388,7 @@ export class StageScene extends Phaser.Scene {
     const n = Math.round((pr.weaponId === 'graph' ? GRAPH_STAMPS : GLOVE_STAMPS) * this.perk.throw);
     if (e.takeHit({ dmg: n, stamps: n, dir, kb: 0, knockdown: false, thrown: true })) {
       fx.stampMark(this, e.x, e.y - e.z - Math.min(e.height, 70) * 0.6, this.hitLabel(e));
-      this.addCombo(1, true);
+      if (!(e instanceof AngryGiver)) this.addCombo(1, true);
     }
   }
 

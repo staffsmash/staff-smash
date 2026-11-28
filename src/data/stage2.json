@@ -8,7 +8,7 @@
       "label": "교수학습개발원 앞",
       "art": "learningFront",
       "maxAlive": 3,
-      "waves": ["mail", "docbomb", "bubble", "mail", "phone"],
+      "waves": ["mail", "docbomb", "refcell", "bubble", "mail", "phone"],
       "supervisors": ["molla"]
     },
     {
@@ -16,7 +16,7 @@
       "label": "교수학습개발원 로비",
       "art": "learningLobby",
       "maxAlive": 3,
-      "waves": ["queue", "mail", "tantrum", "docbomb", "mail"],
+      "waves": ["queue", "mail", "tantrum", "refcell", "docbomb", "mail"],
       "supervisors": ["hoho"],
       "approval": true
     },
@@ -25,7 +25,7 @@
       "label": "인문과학관 앞",
       "art": "humanitiesFront",
       "maxAlive": 3,
-      "waves": ["bubble", "docbomb", "graduation", "mail", "phone", "mail"],
+      "waves": ["bubble", "refcell", "docbomb", "graduation", "mail", "refcell", "phone", "mail"],
       "supervisors": ["gumto", "bogo"]
     },
     {
