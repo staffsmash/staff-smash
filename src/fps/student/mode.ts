@@ -22,6 +22,7 @@ import type { World } from '../world';
 import { Bujae, Hanhakgo, Jeonpil, Juchulseok, studentBossLines, StudentBoss, StudentPresident, WindowStaff, type StaffKind, type StuCtx } from './bosses';
 import { AbsenceStamp, CancelBot, DocTower, RejectDoc, Ticket } from './enemies';
 import { AttendQR, DueBadge, spawnDue } from './mobs';
+import { Charger, lateDoneText, SplitMob } from '../latemobs';
 import { StudentHazards } from './hazards';
 import { StudentKit } from './models';
 import { buildStudentPeople, staffHero, type StudentPeople } from './people';
@@ -39,6 +40,8 @@ import { perkLabel } from '../../perks';
 // 학생은 도장 대신 졸업 서류(비행기)를 던진다. 맞힌 자리에는 "통과"(사물)·"설득"(사람 결재판) 도장 자국이 남는다.
 // 16:52 시작, 17:00 본관 업무 마감. 결과는 성적표(구역마다 학점, 누적 GPA — 본편 2D grade.ts와 같은 기준).
 // main.ts의 Game은 연결 부분(모드 고르기·단계·HUD 몇 줄)만 이 파일을 부른다. 그래서 Game의 모양을 여기 적어 둔다.
+// 2026-11-28 (결정 61): 뒤쪽 구역 새 잡몹 둘(../latemobs.ts) — 인문과학관 앞(ROUTE[2])부터 "최종_진짜최종.hwp"(처리하면 사본 둘로 갈라짐),
+// 본관 앞(ROUTE[4])부터 "연체 도서 더미"(부르르 떨고 돌진). 기존 배치는 그대로. 구역 오름(속도·체력)은 main.ts mobRise.
 
 type Phase = 'title' | 'play' | 'paused' | 'clear' | 'over';
 
@@ -115,8 +118,9 @@ const EYE = 1.6;
 /** 마지막 구역 (성적표 마지막 줄) */
 const FINAL_NAME = '본관 총장실';
 
-/** due = 과제 마감 알림 떼, qr = 출석 QR 코드 (student/mobs.ts, 2번째 구역부터) */
-type Spawn = 'doc' | 'absence' | 'bot' | 'queue' | 'due' | 'qr';
+/** due = 과제 마감 알림 떼, qr = 출석 QR 코드 (student/mobs.ts, 2번째 구역부터).
+ *  hwp = 최종_진짜최종.hwp (3번째 구역부터), overdue = 연체 도서 더미 (5번째 구역부터) — ../latemobs.ts */
+type Spawn = 'doc' | 'absence' | 'bot' | 'queue' | 'due' | 'qr' | 'hwp' | 'overdue';
 type BossKind = 'jeonpil' | 'hanhakgo' | 'bujae' | 'juchulseok';
 type V3 = THREE.Vector3;
 const v3 = (x: number, z: number) => new THREE.Vector3(x, 0, z);
@@ -208,7 +212,7 @@ const ROUTE: AreaDef[] = [
     name: '인문과학관 앞',
     stage: 'hum',
     rect: (w) => w.hum,
-    wave: { doc: 3, bot: 1, absence: 2, due: 1, qr: 1 },
+    wave: { doc: 3, bot: 1, absence: 2, due: 1, qr: 1, hwp: 2 },
     staff: 'jinchwi',
     boss: 'bujae',
     // 인문과학관 현관에서 나온다 (김부재중 교수는 이 문으로 드나든다)
@@ -224,7 +228,7 @@ const ROUTE: AreaDef[] = [
     name: '사회과학관 앞',
     stage: 'plaza',
     rect: (w) => w.plaza,
-    wave: { doc: 3, bot: 2, absence: 1, due: 1, qr: 1 },
+    wave: { doc: 3, bot: 2, absence: 1, due: 1, qr: 1, hwp: 2 },
     staff: 'sikdang',
     boss: 'juchulseok',
     // 사회과학관 현관에서 나온다
@@ -240,7 +244,7 @@ const ROUTE: AreaDef[] = [
     name: '본관 앞',
     stage: 'yard',
     rect: (w) => w.yard,
-    wave: { doc: 3, bot: 2, absence: 1, queue: 1, due: 1, qr: 1 },
+    wave: { doc: 3, bot: 2, absence: 1, queue: 1, due: 1, qr: 1, hwp: 1, overdue: 2 },
     staff: 'hakjong',
     boss: null,
     // 본관 문에서 나온다
@@ -338,6 +342,8 @@ const COUNT_LABEL: Record<string, [string, string]> = {
   tower: ['수강편람 탑', '개'],
   due: ['과제 마감 알림', '개'],
   qr: ['출석 QR 코드', '개'],
+  hwp: ['최종_진짜최종.hwp', '개'],
+  overdue: ['연체 도서 더미', '권'],
 };
 
 const PERSUADE = ['설득!', '반려 취소!', '한 번만 봐 주세요!', '서류 다 있어요!', '검토 부탁드려요!'];
@@ -357,6 +363,10 @@ const HURT: Partial<Record<HurtKind, string>> = {
   cap: '학사모에 맞음… (느려짐)',
   note: '과제 마감 알림에 맞음… (느려짐)',
   qr: '출석 QR 코드에 부딪힘… (느려짐)',
+  ref: '최종_진짜최종.hwp에 부딪힘… (느려짐)',
+  parcel: '연체 도서 더미에 부딪힘… (느려짐)',
+  // 도장(서류) 20번 이스터 에그: 폭주한 도서 무인 대출기 (props.ts)
+  devil: '폭주한 대출기에 부딪힘… (느려짐)',
 };
 
 const BEST_KEY = 'staffsmash.fps.studentBest';
@@ -619,6 +629,9 @@ export class StudentMode implements StuCtx {
     const p = _v.set(0, 1.6, 6);
     for (const [t, col] of [
       ...DONE_TEXT.map(([, t]) => [t, '#7CFC9A']),
+      ['과제 제출 완료!', '#7CFC9A'],
+      ['사본 삭제!', '#7CFC9A'],
+      ['반납 완료!', '#7CFC9A'],
       ['쾅! 결석!', '#ff6b6b'],
       ['결석!', '#ff6b6b'],
       ['번호표 발행!', '#9fd3ff'],
@@ -995,6 +1008,13 @@ export class StudentMode implements StuCtx {
     } else if (kind === 'qr') {
       g.enemies.push(new AttendQR(g, this.spawnPoint(_v, 1.8)));
       this.h.hint('s-qr', '출석 QR 코드 — 사라지기 전에 맞히세요! 놓치면 들이받아요', 3.2);
+    } else if (kind === 'hwp') {
+      // 최종_진짜최종.hwp: 처리하면 "최종_진짜최종(1).hwp" 둘로 갈라진다 (Game.onProcessed)
+      g.enemies.push(new SplitMob(g, 'student', this.spawnPoint(_v, 1.6 + Math.random() * 0.6)));
+      this.h.hint('s-hwp', '최종_진짜최종 파일은 처리하면 사본 둘로 갈라져요!', 3.2);
+    } else if (kind === 'overdue') {
+      g.enemies.push(new Charger(g, 'student', this.spawnPoint(_v, 0)));
+      this.h.hint('s-overdue', '연체 도서 더미가 부르르 떨면 옆으로 비키세요 — 돌진합니다!', 3.4);
     } else {
       this.spawnQueue(QUEUE_LEN);
     }
@@ -1481,6 +1501,13 @@ export class StudentMode implements StuCtx {
 
   /** 잡몹을 통과시켰을 때 (Game.onProcessed가 부른다) */
   processed(e: Enemy): void {
+    // 뒤쪽 구역 새 잡몹 (갈라져 나온 사본도 같은 줄에 센다)
+    if (e instanceof SplitMob || e instanceof Charger) {
+      const key = e instanceof SplitMob ? 'hwp' : 'overdue';
+      this.counts[key] = (this.counts[key] ?? 0) + 1;
+      this.g.fx.text(_v.copy(e.center).setY(e.center.y + 1.0), lateDoneText(e), '#7CFC9A', 0.6);
+      return;
+    }
     for (const [cls, text, key] of DONE_TEXT) {
       if (!(e instanceof cls)) continue;
       this.counts[key] = (this.counts[key] ?? 0) + 1;

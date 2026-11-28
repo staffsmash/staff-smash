@@ -6,7 +6,7 @@ import type { Fx } from './fx';
 import type { FoodKind, Models } from './models';
 import { guardLook } from './looks';
 import { Person } from './people';
-import { prepareSpeech, showSubtitle } from './speech';
+import { prepareSpeech, prepareTag, showSubtitle } from './speech';
 import { canvasTex, FONT, NAVY } from './textures';
 
 // 1인칭 시험판: 무기를 주는 사람·기계와 부수는 상자 (2026-11-14).
@@ -18,6 +18,19 @@ import { canvasTex, FONT, NAVY } from './textures';
 // - 부수는 상자: 구역마다 2~3개. 교직원 "조기출근 박스"(종이 상자), 학생 "수강편람"(두꺼운 책자 더미).
 //   2~3번 맞히면 부서지고 식권(25%)이나 음식이 나온다 (2026-11-17: 교직원은 늘 식권 1장 → 자판기, vending.ts). 상자는 민원(잡몹)이 아니다: 차례 정리·조준 보조와 상관없다.
 // 사람·기계·상자는 걸어서 통과하지 못한다 (solids → Game.move).
+//
+// 결정 61 (2026-11-28) ★ — "구역"은 경비 선생님(대출기)이 서 있는 자리 하나다 (길이 열리면 다음 구역으로 먼저 옮겨 가고, 그때 아래 숫자는 0부터).
+// - 아이템과 인사를 번갈아: 받아 줄 때마다 아이템 → 인사만 → 아이템 …(구역마다 아이템부터). 아이템 차례는 10초 대기를 지키고,
+//   대기 중이면 지금처럼 "방금 드렸잖아요~"/"대출 처리 중…" (차례는 그대로). 인사만 차례 대사 "네, 반갑습니다! 오늘도 힘내세요." /
+//   대출기 "반갑습니다! 오늘도 열공하세요."
+// - 인사 15번 → 그 구역 동안 필살기 무한 (infinite → Game.keepSpFull, 게이지·터치 단추에 "∞"). 아이템·인사만·"방금 드렸잖아요" 모두 센다.
+//   토라져서 거절한 인사는 세지 않는다. 10번째에 힌트 한마디. 이어하기(같은 구역 처음부터)도 0부터.
+// - 도장(무기)으로 20번 맞히면 화난 마귀: 빨간 얼굴·뿔 두 개·빛나는 노란 눈·송곳니, 이름표 "화난 경비 선생님"
+//   (대출기는 화면에 같은 마귀 얼굴·"폭주한 도서 무인 대출기", 바닥을 미끄러지듯). 1~19번은 무례 반응 (대출기도 "삐— 비정상적인 이용입니다." + 6초).
+//   마귀는 보통 사람 걸음으로 쫓아오고 가까우면 0.5초 예고(팔 들기·화면 번쩍) 뒤 때린다 — 맞으면 3칸 (Game.devilHurt: 난이도·장점 배율 없음,
+//   무적·연차 쿠폰은 평소대로). 도장 10발이면 원래 얼굴로 돌아와 제자리로 가고, 그 구역에서는 더 주지 않는다 (인사 15번도 꺼진다).
+//   마귀는 Game.enemies에 넣지 않는다: 구역 정리·차례 끝 판정을 막지 않고, 처리 수·평정·연속·필살기 충전·배지에도 들어가지 않는다.
+// - 시험 지름길 (?debug): __fps.props.eggGreet(n) · eggHit(n) — n번 센 것으로 (15·20 이상이면 바로).
 
 export type Place = 'yard' | 'plaza' | 'hum' | 'dorm' | 'field' | 'final';
 
@@ -48,6 +61,8 @@ export interface PerkHost {
   equip(id: ArmId): void;
   /** 조력자 도착: 잡몹 처리·회복·무적·보스 진행 */
   rescueHit(): void;
+  /** 화난 마귀에게 맞았다: 3칸 (난이도·장점 배율 없이, 무적·연차 쿠폰은 평소대로 — 결정 61) */
+  devilHurt(from: THREE.Vector3): void;
 }
 
 interface Spot {
@@ -111,9 +126,51 @@ export function placesOf(mode: 'staff' | 'student', stage: string): [Place, Plac
   return ['yard', 'yard'];
 }
 
-const GUARD_LINES = ['어허, 인사부터 하셔야죠.', '네, 수고 많으십니다! 이거 쓰세요.', '방금 드렸잖아요~', '…'];
+/** 대사 (결정 61 ★: 인사만 · 10번째 힌트 · 마귀 외침 · 처리된 뒤 · 다 준 뒤) */
+const L = {
+  rude: '어허, 인사부터 하셔야죠.',
+  give: '네, 수고 많으십니다! 이거 쓰세요.',
+  again: '방금 드렸잖아요~',
+  hello: '네, 반갑습니다! 오늘도 힘내세요.',
+  ten: '허허, 인사성이 참 밝으시네요!',
+  rage: '이제 못 참습니다!!',
+  sorry: '…죄송합니다, 제가 잠깐 이성을 잃었네요.',
+  none: '오늘은 더 드릴 게 없어요.',
+  // 도서 무인 대출기
+  kHello: '반갑습니다! 오늘도 열공하세요.',
+  kTen: '이용 실적 우수 회원이시네요!',
+  kRude: '삐— 비정상적인 이용입니다.',
+  kRage: '경고! 경고! 대출 정지!!',
+  kSorry: '시스템 재부팅 완료. 점검 중입니다.',
+  kNone: '점검 중입니다.',
+};
+const GUARD_LINES = [L.rude, L.give, L.again, '…', L.hello, L.ten, L.rage, L.sorry, L.none];
 /** 경비 선생님 이름표 (11차: "경비원" → "경비 선생님", 미화·조리사 선생님처럼 띄어 쓴다) */
 const GUARD_NAME = '경비 선생님';
+const GUARD_COLOR = '#c9d3e6';
+/** 마귀 이름표 ★ */
+const DEVIL_NAME = '화난 경비 선생님';
+const KIOSK_DEVIL_NAME = '폭주한 도서 무인 대출기';
+const DEVIL_COLOR = '#ff6b6b';
+/** 인사 15번 띠 ★ */
+const INF_BANNER: Record<'staff' | 'student', [string, string]> = {
+  staff: ['경비 선생님의 응원!', '이번 스테이지 동안 필살기 무한'],
+  student: ['도서관 우수 회원 혜택!', '이번 스테이지 동안 필살기 무한'],
+};
+/** 이스터 에그 숫자: 10번째 인사 힌트, 15번째 필살기 무한, 20번째 맞힘 마귀 */
+const GREET_HINT = 10;
+const GREET_INF = 15;
+const STRIKE_DEVIL = 20;
+/** 마귀: 체력(도장 수), 걷는 빠르기 (m/s — 보스가 걸어 나가는 빠르기와 같다), 변하는 시간, 예고 거리·시간, 때리는 거리, 때린 뒤 쉬는 시간 */
+const DEVIL_HP = 10;
+const DEVIL_WALK = 2.6;
+const RAGE_T = 1.1;
+const WIND_R = 1.9;
+const WIND_T = 0.5;
+const STRIKE_R = 2.3;
+const RECOVER_T = 0.9;
+/** 마귀가 플레이어 앞에서 멈추는 거리 */
+const DEVIL_STOP = 1.4;
 /** 경비 선생님이 남(짝수)·여(홀수)로 번갈아 서는 구역 순서 (교직원 모드 진행 순서) */
 const PLACE_ORDER: Place[] = ['yard', 'plaza', 'hum', 'dorm', 'field', 'final'];
 const RUDE_SEC = 6;
@@ -135,6 +192,16 @@ interface Crate {
 
 const _c = new THREE.Vector3();
 
+/** 화난 마귀: off = 평소, rage = 변하는 중, chase = 쫓아옴, wind = 때리기 예고, recover = 때린 뒤, back = 처리된 뒤 제자리로 */
+type DevilState = 'off' | 'rage' | 'chase' | 'wind' | 'recover' | 'back';
+
+/** 경비 선생님 한 사람의 마귀 모양 (머리 재질, 뿔·눈) */
+interface DevilHead {
+  orig: THREE.Material | THREE.Material[];
+  mats: THREE.Material[];
+  extra: THREE.Group;
+}
+
 function wrap(a: number): number {
   while (a > Math.PI) a -= Math.PI * 2;
   while (a < -Math.PI) a += Math.PI * 2;
@@ -151,6 +218,12 @@ export class Props {
   private readonly guardObj = new THREE.Group();
   private readonly kiosk: THREE.Group;
   private readonly screenMat: THREE.MeshBasicMaterial;
+  private readonly screenTex: THREE.Texture | null;
+  private readonly kioskLabel: THREE.Sprite;
+  /** 폭주한 대출기: 이름표·뿔 (평소에는 숨긴다), 화면 마귀 얼굴 */
+  private readonly kioskDevil: THREE.Group;
+  private readonly devilScreen: THREE.CanvasTexture;
+  private readonly devilHeads = new Map<Person, DevilHead>();
   private readonly boxProto: THREE.Group;
   private readonly bookProto: THREE.Group;
   private crates: Crate[] = [];
@@ -177,6 +250,25 @@ export class Props {
   private hintT = -1;
   /** 지금 E·인사 버튼을 누를 수 있다 */
   near = false;
+  // ---------- 이스터 에그 (결정 61 · 4~6절): 모두 이 구역(npcPlace)에서만, 옮겨 가면 0부터 ----------
+  /** 받아 준 인사 (아이템·인사만·"방금 드렸잖아요" 모두. 토라져 거절한 인사·다 준 뒤는 빼고) */
+  private greets = 0;
+  /** 도장·무기로 맞힌 수 (필살기는 세지 않는다) */
+  private struck = 0;
+  /** 다음 인사가 아이템 차례 (아이템 → 인사만 → 아이템 …) */
+  private itemTurn = true;
+  /** 인사 15번: 이 구역 동안 필살기 무한 (Game.keepSpFull) */
+  infinite = false;
+  private devil: DevilState = 'off';
+  private devilT = 0;
+  private devilHp = 0;
+  /** 마귀를 처리했다: 이 구역에서는 더 주지 않는다 (인사 15번도 꺼진다) */
+  private spent = false;
+  /** 마귀가 원래 서 있던 자리 */
+  private home = new THREE.Vector3();
+  /** 조금 뒤에 하는 말 (10번째 인사 힌트) */
+  private followT = -1;
+  private followLine = '';
   private uiKey = '';
   private readonly hintEl: HTMLElement;
   private readonly btnEl: HTMLButtonElement | null;
@@ -193,11 +285,28 @@ export class Props {
     const k = buildKiosk(h.models);
     this.kiosk = k.obj;
     this.screenMat = k.screen;
+    this.screenTex = k.screen.map;
+    this.kioskLabel = k.label;
+    // 폭주한 도서 무인 대출기: 빨간 이름표와 머리판 위 뿔 두 개, 화면에는 마귀 얼굴
+    this.kioskDevil = new THREE.Group();
+    const dl = h.models.label(KIOSK_DEVIL_NAME, DEVIL_COLOR);
+    dl.position.y = 2.4;
+    this.kioskDevil.add(dl);
+    for (const s of [-1, 1]) {
+      const horn = hornMesh(0.09, 0.3);
+      horn.position.set(s * 0.32, 1.96, 0);
+      horn.rotation.z = -s * 0.35;
+      this.kioskDevil.add(horn);
+    }
+    this.kioskDevil.visible = false;
+    this.kiosk.add(this.kioskDevil);
+    this.devilScreen = devilScreenTex();
     this.kiosk.visible = false;
     h.scene.add(this.kiosk);
     this.boxProto = buildBox();
     this.bookProto = buildBooks();
     prepareSpeech(GUARD_LINES);
+    prepareTag(DEVIL_NAME, DEVIL_COLOR);
     this.hintEl = document.getElementById('actHint') as HTMLElement;
     this.btnEl = document.getElementById('actBtn') as HTMLButtonElement | null;
     if (this.btnEl) {
@@ -254,28 +363,53 @@ export class Props {
       this.pending = null;
       if (student) h.equip(id);
     }
+    // 10번째 인사 힌트 (대답 조금 뒤)
+    if (this.followT > 0 && (this.followT -= dt) <= 0) this.follow(student);
 
-    // 가까이에서 바라보고 있으면 E
+    // 화난 마귀: 쫓아오고 때린다 (자리·막는 칸이 같이 움직인다)
+    if (this.devil !== 'off') this.stepDevil(dt, student);
+
+    // 가까이에서 바라보고 있으면 E (마귀일 때는 인사를 받지 않는다)
     const dx = this.npc.x - h.pos.x;
     const dz = this.npc.z - h.pos.z;
     const d = Math.hypot(dx, dz);
     const cos = d > 0.01 ? (dx * -Math.sin(h.yaw) + dz * -Math.cos(h.yaw)) / d : 1;
-    this.near = h.playing && h.stage !== 'done' && d <= NEAR && (cos >= 0.77 || (d < 1.6 && cos >= 0.2));
+    this.near = h.playing && h.stage !== 'done' && this.devil === 'off' && d <= NEAR && (cos >= 0.77 || (d < 1.6 && cos >= 0.2));
 
     if (student) {
-      // 화면: 대여하면 초록으로 깜빡이고, 처리 중에는 노랗게
+      // 화면: 대여하면 초록으로 깜빡이고, 처리 중에는 노랗게. 무례하면 붉게, 마귀가 때리기 전에는 번쩍번쩍, 다 준 뒤(점검 중)는 회색
       if (this.flashT > 0) this.flashT -= dt;
-      this.screenMat.color.setHex(this.flashT > 0 ? (Math.floor(this.flashT * 10) % 2 === 0 ? 0x9dffb0 : 0xffffff) : this.cd > 0 ? 0xffd27a : 0xffffff);
+      const blink = Math.floor(this.t * 12) % 2 === 0;
+      let col = this.flashT > 0 ? (Math.floor(this.flashT * 10) % 2 === 0 ? 0x9dffb0 : 0xffffff) : this.cd > 0 ? 0xffd27a : 0xffffff;
+      if (this.devil === 'wind') col = blink ? 0xffffff : 0xff4040;
+      else if (this.devil === 'rage') col = blink ? 0xffb0b0 : 0xffffff;
+      else if (this.devil !== 'off') col = 0xffffff;
+      else if (this.rudeT > 0) col = 0xff9a9a;
+      else if (this.spent) col = 0x9aa0a8;
+      this.screenMat.color.setHex(col);
     } else {
-      // 경비 선생님: 가까이 오면 플레이어를 본다. 토라지면 등을 돌린다
+      // 경비 선생님: 가까이 오면 플레이어를 본다. 토라지면 등을 돌린다. 마귀는 늘 플레이어를, 돌아갈 때는 제자리를 본다
       let want = this.restYaw;
-      if (this.rudeT > 0) want = Math.atan2(dx, dz);
+      if (this.devil === 'back') want = Math.atan2(this.home.x - this.npc.x, this.home.z - this.npc.z);
+      else if (this.devil !== 'off') want = Math.atan2(-dx, -dz);
+      else if (this.rudeT > 0) want = Math.atan2(dx, dz);
       else if (d < 12) want = Math.atan2(-dx, -dz);
-      this.yawNow += wrap(want - this.yawNow) * Math.min(1, dt * 5);
+      this.yawNow += wrap(want - this.yawNow) * Math.min(1, dt * (this.devil === 'off' ? 5 : 9));
       this.guardObj.rotation.y = this.yawNow;
       if (this.hopT > 0) this.hopT = Math.max(0, this.hopT - dt);
       this.guardObj.position.y = this.hopT > 0 ? Math.sin((1 - this.hopT / 0.3) * Math.PI) * 0.22 : 0;
-      this.guard.update(dt, { walking: false, raise: 0, reach: this.giveT > 0 ? 1 : 0, wave: false });
+      // 마귀: 변할 때 부르르, 때리기 전에 두 팔을 번쩍 든다
+      if (this.devil === 'rage') this.guardObj.position.x = this.npc.x + Math.sin(this.t * 70) * 0.05;
+      const walking = this.devil === 'chase' || this.devil === 'back';
+      const up = this.devil === 'wind' ? Math.min(1, this.devilT / 0.25) : this.devil === 'rage' ? 0.6 : 0;
+      this.guard.update(dt, { walking, raise: up, reach: up > 0 ? up : this.giveT > 0 ? 1 : 0, wave: false });
+      const dh = this.devilHeads.get(this.guard);
+      if (dh && dh.extra.visible) {
+        // 빛나는 눈: 때리기 전에는 더 밝게 깜빡인다
+        const glow = dh.extra.userData.glow as THREE.Sprite[];
+        const k = this.devil === 'wind' ? 1.4 + Math.sin(this.t * 40) * 0.4 : 1 + Math.sin(this.t * 6) * 0.12;
+        for (const g of glow) g.scale.setScalar(0.2 * k);
+      }
     }
 
     // 상자 흔들림
@@ -310,22 +444,42 @@ export class Props {
     const h = this.h;
     if (h.mode === 'student') {
       // 화면 앞에서 떠오르는 글자 (머리판 글씨와 겹치지 않게 낮게)
-      _c.set(this.npc.x + (h.pos.x - this.npc.x) * 0.25, 1.3, this.npc.z + (h.pos.z - this.npc.z) * 0.25);
-      if (this.cd > 0) {
-        h.note('대출 처리 중…', 1.2);
+      this.kioskTextAt();
+      if (this.rudeT > 0) {
+        // 무례해서 거절 (세지 않는다)
+        this.kioskSay(L.kRude, '#ff9a9a', 1.4);
         h.sound('tick', _c, 0.6);
         return;
       }
-      this.cd = GIVE_CD;
-      this.flashT = 0.6;
-      h.fx.text(_c, '도서 대여 완료!', '#7CFC9A', 0.5);
-      h.fx.confetti(_c, 10, 2, 0x9fd3ff, 1.5, 0.6);
-      h.note('도서 대여 완료!', 1.0);
-      h.sound('pickup', _c, 0.6);
-      // 전공책이 가장 잦다 (절반), 나머지는 고르게. 책은 잠깐 뒤에 나온다 (그때 무기 알림)
-      const r = Math.random();
-      this.pending = r < 0.5 ? 'clipboard' : r < 0.6667 ? 'stapler' : r < 0.8333 ? 'notice' : 'idcard';
-      this.pendingT = 0.9;
+      if (this.spent) {
+        // 마귀를 처리한 구역: 더 주지 않는다 (세지 않는다)
+        this.kioskSay(L.kNone, '#cfd4d8', 1.4);
+        return;
+      }
+      const n = ++this.greets;
+      if (!this.itemTurn) {
+        // 인사만 차례
+        this.itemTurn = true;
+        this.flashT = 0.4;
+        this.kioskSay(L.kHello, '#9fd3ff', 1.6);
+        h.sound('pickup', _c, 0.4);
+      } else if (this.cd > 0) {
+        h.note('대출 처리 중…', 1.2);
+        h.sound('tick', _c, 0.6);
+      } else {
+        this.itemTurn = false;
+        this.cd = GIVE_CD;
+        this.flashT = 0.6;
+        h.fx.text(_c, '도서 대여 완료!', '#7CFC9A', 0.5);
+        h.fx.confetti(_c, 10, 2, 0x9fd3ff, 1.5, 0.6);
+        h.note('도서 대여 완료!', 1.0);
+        h.sound('pickup', _c, 0.6);
+        // 전공책이 가장 잦다 (절반), 나머지는 고르게. 책은 잠깐 뒤에 나온다 (그때 무기 알림)
+        const r = Math.random();
+        this.pending = r < 0.5 ? 'clipboard' : r < 0.6667 ? 'stapler' : r < 0.8333 ? 'notice' : 'idcard';
+        this.pendingT = 0.9;
+      }
+      this.counted(n);
       return;
     }
     // 교직원: 먼저 인사, 잠시 뒤 경비 선생님 대답
@@ -334,36 +488,345 @@ export class Props {
     this.replyT = 0.75;
   }
 
-  /** 경비 선생님 대답 */
+  /** 경비 선생님 대답: 아이템 → 인사만 → 아이템 … (아이템 차례는 10초 대기를 지킨다) */
   private reply(): void {
     const h = this.h;
-    if (h.mode !== 'staff' || !this.guardObj.visible) return;
+    if (h.mode !== 'staff' || !this.guardObj.visible || this.devil !== 'off') return;
     if (this.rudeT > 0) {
+      // 토라져서 거절 (세지 않는다)
       this.guard.say('…', 1.2);
       return;
     }
-    if (this.cd > 0) {
-      this.guard.say('방금 드렸잖아요~', 1.8);
+    if (this.spent) {
+      // 마귀를 처리한 구역: 더 주지 않는다 (세지 않는다)
+      this.guard.say(L.none, 2);
       return;
     }
-    this.guard.say('네, 수고 많으십니다! 이거 쓰세요.', 2.4);
-    this.cd = GIVE_CD;
-    this.giveT = 0.8;
-    h.equip(ARM_IDS[Math.floor(Math.random() * ARM_IDS.length)]);
+    const n = ++this.greets;
+    if (!this.itemTurn) {
+      this.itemTurn = true;
+      this.guard.say(L.hello, 2.2);
+      this.hopT = 0.3;
+    } else if (this.cd > 0) {
+      this.guard.say(L.again, 1.8);
+    } else {
+      this.itemTurn = false;
+      this.guard.say(L.give, 2.4);
+      this.cd = GIVE_CD;
+      this.giveT = 0.8;
+      h.equip(ARM_IDS[Math.floor(Math.random() * ARM_IDS.length)]);
+    }
+    this.counted(n);
   }
 
-  /** 도장이 경비 선생님을 맞혔다 */
+  /** 받아 준 인사 n번째: 10번째 힌트 (대답 조금 뒤), 15번째 필살기 무한 */
+  private counted(n: number): void {
+    if (n === GREET_HINT) {
+      this.followT = this.h.mode === 'student' ? 1.2 : 1.9;
+      this.followLine = this.h.mode === 'student' ? L.kTen : L.ten;
+    }
+    if (n >= GREET_INF) this.turnInfinite();
+  }
+
+  /** 인사 15번 이스터 에그: 띠 + 이 구역 동안 필살기 무한 (마귀가 되었거나 처리한 구역에서는 꺼진다) */
+  private turnInfinite(): void {
+    if (this.infinite || this.spent || this.devil !== 'off') return;
+    this.infinite = true;
+    const [title, sub] = INF_BANNER[this.h.mode];
+    this.h.banner(title, sub);
+    this.h.sound('special', undefined, 0.6);
+    _c.set(this.npc.x, 2.4, this.npc.z);
+    this.h.fx.confetti(_c, 26, 4, 0xf5c542, 2, 1);
+  }
+
+  /** 10번째 인사 힌트 */
+  private follow(student: boolean): void {
+    if (this.devil !== 'off' || this.spent) return;
+    if (student) {
+      this.kioskTextAt();
+      this.kioskSay(this.followLine, '#ffe066', 2);
+    } else if (this.guardObj.visible) this.guard.say(this.followLine, 2.4);
+  }
+
+  /** 대출기 앞 떠오르는 글자 자리 (_c) */
+  private kioskTextAt(): void {
+    const h = this.h;
+    _c.set(this.npc.x + (h.pos.x - this.npc.x) * 0.25, 1.3, this.npc.z + (h.pos.z - this.npc.z) * 0.25);
+  }
+
+  /** 대출기 한마디: 화면 앞 글자(자리는 _c) + 아래 알림 */
+  private kioskSay(text: string, color: string, sec: number): void {
+    this.h.fx.text(_c, text, color, 0.42);
+    this.h.note(text, sec);
+  }
+
+  /** 도장이 경비 선생님(대출기)을 맞혔다: 무례 반응 (6초 동안 안 받아 준다). 20번째면 화난 마귀 */
   private rude(): void {
     const h = this.h;
+    const student = h.mode === 'student';
+    this.struck++;
+    if (this.struck >= STRIKE_DEVIL && !this.spent) {
+      this.enrage();
+      return;
+    }
     if (this.t - this.rudeSaid > 1.2) {
-      this.guard.say('어허, 인사부터 하셔야죠.', 2.2);
+      if (student) {
+        this.kioskTextAt();
+        this.kioskSay(L.kRude, '#ff9a9a', 1.6);
+      } else this.guard.say(L.rude, 2.2);
       this.rudeSaid = this.t;
     }
     this.rudeT = RUDE_SEC;
     this.replyT = -1;
     this.hopT = 0.3;
-    _c.set(this.npc.x, 2.2, this.npc.z);
+    _c.set(this.npc.x, student ? 1.4 : 2.2, this.npc.z);
     h.sound('hit', _c, 0.7);
+  }
+
+  // ---------- 화난 마귀 (도장 20번) ----------
+
+  /** 마귀로 변한다: 얼굴·이름표를 바꾸고 외친다. 필살기 무한은 꺼진다 */
+  private enrage(): void {
+    const h = this.h;
+    const student = h.mode === 'student';
+    this.devil = 'rage';
+    this.devilT = 0;
+    this.devilHp = DEVIL_HP;
+    this.infinite = false;
+    this.rudeT = 0;
+    this.replyT = -1;
+    this.followT = -1;
+    this.pending = null;
+    this.setDevilLook(true);
+    _c.set(this.npc.x, student ? 1.6 : 2.4, this.npc.z);
+    if (student) {
+      showSubtitle(KIOSK_DEVIL_NAME, L.kRage, 2.4, DEVIL_COLOR);
+      h.fx.text(_c, L.kRage, DEVIL_COLOR, 0.6);
+    } else this.guard.say(L.rage, 2.4);
+    h.fx.confetti(_c, 30, 5, 0xe5484d, 2.4, 1);
+    h.sound('boom', _c, 0.7);
+    this.hopT = 0.3;
+  }
+
+  /** 마귀 한 단계: 보통 사람 걸음으로 쫓아오고, 가까우면 0.5초 예고 뒤 때린다 (3칸). npc가 마귀의 실제 자리다 */
+  private stepDevil(dt: number, student: boolean): void {
+    const h = this.h;
+    this.devilT += dt;
+    const p = this.npc;
+    const dx = h.pos.x - p.x;
+    const dz = h.pos.z - p.z;
+    const dist = Math.hypot(dx, dz) || 0.001;
+    let moving = false;
+    switch (this.devil) {
+      case 'rage':
+        if (this.devilT >= RAGE_T) this.setDevil('chase');
+        break;
+      case 'chase':
+        if (dist > DEVIL_STOP) {
+          const step = Math.min(dist - DEVIL_STOP, DEVIL_WALK * dt);
+          p.x += (dx / dist) * step;
+          p.z += (dz / dist) * step;
+          moving = true;
+        }
+        if (dist <= WIND_R && h.playing) {
+          this.setDevil('wind');
+          _c.set(p.x, 1.6, p.z);
+          h.sound('tick', _c, 1);
+        }
+        break;
+      case 'wind':
+        if (this.devilT >= WIND_T) {
+          // 때린다: 아직 가까이 있으면 3칸
+          _c.set(p.x, 1.2, p.z);
+          h.fx.ring(p.x, 0.08, p.z, 0.4, STRIKE_R, 0.35, 0xe5484d);
+          h.sound('hit', _c, 1);
+          if (dist <= STRIKE_R && h.playing) h.devilHurt(_c);
+          this.setDevil('recover');
+        }
+        break;
+      case 'recover':
+        if (this.devilT >= RECOVER_T) this.setDevil('chase');
+        break;
+      case 'back': {
+        const bx = this.home.x - p.x;
+        const bz = this.home.z - p.z;
+        const bd = Math.hypot(bx, bz);
+        if (bd < 0.15) {
+          // 제자리에 돌아왔다: 다시 인사를 받는다 (아이템은 더 없다)
+          p.copy(this.home);
+          this.devil = 'off';
+          if (student) this.kiosk.rotation.set(0, this.restYaw, 0);
+        } else {
+          const step = Math.min(bd, DEVIL_WALK * dt);
+          p.x += (bx / bd) * step;
+          p.z += (bz / bd) * step;
+          moving = true;
+        }
+        break;
+      }
+    }
+    if (student) {
+      // 대출기: 바닥을 미끄러지듯 (움직이는 쪽으로 살짝 기울고, 때리기 전에는 뒤로 젖히고, 변할 때는 부르르)
+      if (this.devil !== 'off') {
+        const face = this.devil === 'back' ? Math.atan2(this.home.x - p.x, this.home.z - p.z) : Math.atan2(dx, dz);
+        this.kiosk.rotation.y += wrap(face - this.kiosk.rotation.y) * Math.min(1, dt * 8);
+      }
+      const lean = moving ? 0.08 : this.devil === 'wind' ? -0.14 * Math.min(1, this.devilT / 0.25) : 0;
+      this.kiosk.rotation.x += (lean - this.kiosk.rotation.x) * Math.min(1, dt * 8);
+      const jit = this.devil === 'rage' ? Math.sin(this.t * 70) * 0.05 : 0;
+      this.kiosk.position.set(p.x + jit, moving ? 0.05 + Math.sin(this.t * 5) * 0.02 : 0, p.z);
+    } else {
+      this.guardObj.position.x = p.x;
+      this.guardObj.position.z = p.z;
+    }
+    this.rebuildSolids();
+  }
+
+  private setDevil(s: DevilState): void {
+    this.devil = s;
+    this.devilT = 0;
+  }
+
+  /** 마귀가 도장(무기)에 맞았다. 다 맞으면 원래 얼굴로 돌아와 제자리로 */
+  private devilHit(power: number, at: THREE.Vector3): void {
+    const h = this.h;
+    this.devilHp -= power;
+    this.hopT = 0.2;
+    h.fx.confetti(at, 6, 2.6, 0xe5484d, 1.2, 0.6);
+    h.sound('hit', at, 0.8);
+    if (this.devil === 'chase' || this.devil === 'recover') {
+      // 조금 밀려난다
+      const dx = this.npc.x - h.pos.x;
+      const dz = this.npc.z - h.pos.z;
+      const d = Math.hypot(dx, dz) || 1;
+      this.npc.x += (dx / d) * 0.25;
+      this.npc.z += (dz / d) * 0.25;
+    }
+    if (this.devilHp > 0) return;
+    // 처리 (민원 처리 수·평정·연속·필살기·배지에는 넣지 않는다 — Game.damage를 거치지 않는다)
+    const student = h.mode === 'student';
+    this.setDevilLook(false);
+    this.spent = true;
+    this.infinite = false;
+    this.rudeT = 0;
+    this.setDevil('back');
+    _c.set(this.npc.x, student ? 1.6 : 2.4, this.npc.z);
+    h.fx.confetti(_c, 30, 5, 0xffffff, 2.4, 1);
+    h.sound('pop', _c);
+    if (student) {
+      showSubtitle('도서 무인 대출기', L.kSorry, 3, '#9fd3ff');
+      h.fx.text(_c, L.kSorry, '#9fd3ff', 0.5);
+    } else this.guard.say(L.sorry, 3.2);
+  }
+
+  /** 마귀 얼굴·이름표 (on) ↔ 원래대로 */
+  private setDevilLook(on: boolean): void {
+    const kiosk = on ? this.h.mode === 'student' : true;
+    if (kiosk) {
+      this.screenMat.map = on ? this.devilScreen : this.screenTex;
+      this.screenMat.needsUpdate = true;
+      this.kioskDevil.visible = on;
+      this.kioskLabel.visible = !on;
+      if (!on) this.kiosk.rotation.x = 0;
+    }
+    const want = on && this.h.mode === 'staff' ? this.guard : null;
+    for (const g of this.guards) {
+      const dh = g === want ? this.devilHead(g) : this.devilHeads.get(g);
+      if (!dh) continue;
+      const show = g === want;
+      g.headMesh.material = show ? dh.mats : dh.orig;
+      dh.extra.visible = show;
+      g.tag.rename(show ? DEVIL_NAME : GUARD_NAME, show ? DEVIL_COLOR : GUARD_COLOR);
+    }
+  }
+
+  /** 경비 선생님 한 사람의 마귀 머리 (처음 쓸 때 만든다): 빨간 얼굴(송곳니), 뿔 두 개, 빛나는 노란 눈 */
+  private devilHead(g: Person): DevilHead {
+    let dh = this.devilHeads.get(g);
+    if (dh) return dh;
+    const red = new THREE.MeshLambertMaterial({ color: 0xc8282a });
+    const face = new THREE.MeshLambertMaterial({ map: devilFaceTex() });
+    const extra = new THREE.Group();
+    // 뿔: 근무모를 뚫고 위로 (머리 상자 0.52 × 0.5 × 0.48, 가운데 y 0.27, 모자 꼭대기 0.69)
+    for (const s of [-1, 1]) {
+      const horn = hornMesh(0.09, 0.38);
+      horn.position.set(s * 0.21, 0.84, 0.02);
+      horn.rotation.z = -s * 0.4;
+      extra.add(horn);
+    }
+    // 빛나는 눈: 얼굴 앞의 노란 눈 (빛을 받지 않는 재질) + 둘레 빛
+    const eyeMat = new THREE.MeshBasicMaterial({ color: 0xfff36b });
+    const glowMat = new THREE.SpriteMaterial({ map: glowTex(), color: 0xffe14d, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending });
+    const glow: THREE.Sprite[] = [];
+    for (const s of [-1, 1]) {
+      const eye = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.075, 0.02), eyeMat);
+      eye.position.set(s * 0.12, 0.29, 0.245);
+      eye.rotation.z = s * 0.25;
+      const sp = new THREE.Sprite(glowMat);
+      sp.position.set(s * 0.12, 0.29, 0.27);
+      sp.scale.setScalar(0.2);
+      glow.push(sp);
+      extra.add(eye, sp);
+    }
+    extra.userData.glow = glow;
+    extra.visible = false;
+    g.head.add(extra);
+    dh = { orig: g.headMesh.material, mats: [red, red, red, red, face, red], extra };
+    this.devilHeads.set(g, dh);
+    return dh;
+  }
+
+  /** 이 구역의 이스터 에그를 처음으로 (구역을 옮길 때·이어하기·새 판): 원래 얼굴, 숫자 0, 아이템 차례부터 */
+  private resetEgg(): void {
+    this.setDevilLook(false);
+    this.devil = 'off';
+    this.devilT = 0;
+    this.devilHp = 0;
+    this.greets = 0;
+    this.struck = 0;
+    this.itemTurn = true;
+    this.infinite = false;
+    this.spent = false;
+    this.followT = -1;
+  }
+
+  /** 이어하기 (같은 구역 처음부터, Game.clearArena): 숫자·마귀를 처음으로, 경비 선생님·대출기는 제자리로 */
+  retry(): void {
+    this.pending = null;
+    if (this.npcPlace) this.placeNpc(this.npcPlace, this.npcStudent);
+    else this.resetEgg();
+  }
+
+  /** 시험용 (?debug): 받아 준 인사를 n번 센 것으로 (15 이상이면 바로 필살기 무한) */
+  eggGreet(n: number): number {
+    this.greets = Math.max(0, Math.floor(n));
+    if (this.greets >= GREET_INF) this.turnInfinite();
+    return this.greets;
+  }
+
+  /** 시험용 (?debug): 맞힌 수를 n번 센 것으로 (20 이상이면 바로 마귀) */
+  eggHit(n: number): number {
+    this.struck = Math.max(0, Math.floor(n));
+    if (this.struck >= STRIKE_DEVIL && this.devil === 'off' && !this.spent && this.npcPlace) {
+      this.struck = STRIKE_DEVIL;
+      this.enrage();
+    }
+    return this.struck;
+  }
+
+  /** 시험용: 이스터 에그 상태 */
+  get egg(): { greets: number; struck: number; itemTurn: boolean; infinite: boolean; devil: DevilState; devilHp: number; spent: boolean; place: Place | null; at: [number, number] } {
+    return {
+      greets: this.greets,
+      struck: this.struck,
+      itemTurn: this.itemTurn,
+      infinite: this.infinite,
+      devil: this.devil,
+      devilHp: this.devilHp,
+      spent: this.spent,
+      place: this.npcPlace,
+      at: [this.npc.x, this.npc.z],
+    };
   }
 
   // ---------- 도장 판정 ----------
@@ -372,16 +835,22 @@ export class Props {
    * 날아가는 도장(서류·무기)이 p에 왔을 때: 'stop' = 사람·기계에 막혔다, 'hit' = 상자를 맞혔다(꿰뚫는 무기는 계속 간다), 'none'.
    * seen: 이 도장이 이미 맞힌 것 (꿰뚫기·부메랑이 한 상자를 여러 번 치지 않게)
    */
-  stampHit(p: THREE.Vector3, power: number, seen: Set<object>): 'none' | 'hit' | 'stop' {
+  stampHit(p: THREE.Vector3, power: number, seen: Set<object>): 'none' | 'hit' | 'stop' | 'devil' {
     if (this.npcPlace) {
-      if (this.guardObj.visible) {
-        if (p.y > 0 && p.y < 3.3 && Math.hypot(p.x - this.npc.x, p.z - this.npc.z) < 0.62) {
-          this.rude();
-          return 'stop';
+      const near = Math.hypot(p.x - this.npc.x, p.z - this.npc.z) < 0.62;
+      const onGuard = this.guardObj.visible && p.y > 0 && p.y < 3.3 && near;
+      const onKiosk = !this.guardObj.visible && this.kiosk.visible && p.y < 2.0 && near;
+      if (onGuard || onKiosk) {
+        // 던진 것 하나는 한 번만 센다 (막혀서 멈춘다). 마귀면 체력이 깎이고 (제자리로 가는 중에는 막히기만), 아니면 무례 반응.
+        // 'devil': 마귀를 맞혔다 — Game은 이 던지기를 명중률(평정)에 넣지 않는다
+        if (this.devil === 'rage' || this.devil === 'chase' || this.devil === 'wind' || this.devil === 'recover') {
+          this.devilHit(power, p);
+          return 'devil';
         }
-      } else if (this.kiosk.visible && p.y < 2.0 && Math.hypot(p.x - this.npc.x, p.z - this.npc.z) < 0.62) {
-        this.h.fx.confetti(p, 4, 2, 0xffffff, 1, 0.6);
-        this.h.sound('hit', p, 0.4);
+        if (this.devil === 'off') {
+          if (onKiosk) this.h.fx.confetti(p, 4, 2, 0xffffff, 1, 0.6);
+          this.rude();
+        }
         return 'stop';
       }
     }
@@ -421,10 +890,13 @@ export class Props {
   // ---------- 놓기 ----------
 
   private placeNpc(place: Place, student: boolean): void {
+    // 새 구역 (또는 이어하기): 이스터 에그 숫자는 0부터, 마귀는 원래 얼굴로
+    this.resetEgg();
     this.npcPlace = place;
     this.npcStudent = student;
     const s = SPOTS[student ? 'student' : 'staff'][place];
     this.npc.set(s.npc[0], 0, s.npc[1]);
+    this.home.copy(this.npc);
     this.restYaw = Math.atan2(s.look[0] - s.npc[0], s.look[1] - s.npc[1]);
     this.yawNow = this.restYaw;
     this.cd = 0;
@@ -434,7 +906,7 @@ export class Props {
     this.kiosk.visible = student;
     const o = student ? this.kiosk : this.guardObj;
     o.position.set(s.npc[0], 0, s.npc[1]);
-    o.rotation.y = this.restYaw;
+    o.rotation.set(0, this.restYaw, 0);
     if (!student) {
       // 구역 순서대로 남·여가 번갈아 선다
       const g = this.guards[PLACE_ORDER.indexOf(place) % 2];
@@ -484,6 +956,7 @@ export class Props {
     this.crates = [];
     this.spawned.clear();
     this.npcPlace = null;
+    this.resetEgg();
     this.guardObj.visible = false;
     this.kiosk.visible = false;
     this.guard.reset();
@@ -521,15 +994,41 @@ export class Props {
       g.say('…', 1, false);
       g.update(0.016, { walking: false, raise: 0, reach: 0.5, wave: false });
     }
-    this.h.fx.text(_c.set(0, 1.6, 6), '도서 대여 완료!', '#7CFC9A');
+    // 마귀 모양도 한 번 그려 둔다 (안 서 있는 쪽 경비 선생님과 대출기에. 처음 변할 때 끊기지 않게)
+    const odh = this.devilHead(other);
+    other.headMesh.material = odh.mats;
+    odh.extra.visible = true;
+    this.devilHead(this.guard);
+    this.kioskDevil.visible = true;
+    const warmScreen = new THREE.Mesh(new THREE.PlaneGeometry(0.4, 0.3), new THREE.MeshBasicMaterial({ map: this.devilScreen }));
+    warmScreen.position.set(4, -1, -3);
+    group.add(warmScreen);
+    const p = _c.set(0, 1.6, 6);
+    for (const [t, col] of [
+      ['도서 대여 완료!', '#7CFC9A'],
+      [L.kHello, '#9fd3ff'],
+      [L.kTen, '#ffe066'],
+      [L.kRude, '#ff9a9a'],
+      [L.kNone, '#cfd4d8'],
+      [L.kRage, DEVIL_COLOR],
+      [L.kSorry, '#9fd3ff'],
+    ]) {
+      this.h.fx.text(p, t, col, 0.42);
+    }
     return () => {
       for (const o of items) group.remove(o);
+      group.remove(warmScreen);
+      warmScreen.geometry.dispose();
+      (warmScreen.material as THREE.Material).dispose();
       kioskParent?.add(this.kiosk);
       this.h.scene.add(this.guardObj);
       this.kiosk.visible = false;
+      this.kioskDevil.visible = false;
       this.guardObj.visible = false;
       this.guardObj.remove(other.root);
       other.root.position.set(0, 0, 0);
+      other.headMesh.material = odh.orig;
+      odh.extra.visible = false;
       for (const g of this.guards) g.reset();
     };
   }
@@ -538,7 +1037,7 @@ export class Props {
 // ---------- 모형 ----------
 
 /** 도서 무인 대출기: 밝은 회색 몸통, 남색 머리판(글씨), 파란 화면, 스캐너, 책 나오는 칸 */
-function buildKiosk(models: Models): { obj: THREE.Group; screen: THREE.MeshBasicMaterial } {
+function buildKiosk(models: Models): { obj: THREE.Group; screen: THREE.MeshBasicMaterial; label: THREE.Sprite } {
   const g = new THREE.Group();
   const body = new THREE.MeshLambertMaterial({ color: 0xe6e9ee });
   const dark = new THREE.MeshLambertMaterial({ color: 0x2b2f38 });
@@ -590,7 +1089,116 @@ function buildKiosk(models: Models): { obj: THREE.Group; screen: THREE.MeshBasic
   const label = models.label('도서 무인 대출기', '#9fd3ff');
   label.position.y = 2.4;
   g.add(label);
-  return { obj: g, screen };
+  return { obj: g, screen, label };
+}
+
+// ---------- 화난 마귀 (결정 61 · 6절) ----------
+
+const hornMat = new THREE.MeshLambertMaterial({ color: 0xf1e6c8 });
+let hornGeo: THREE.ConeGeometry | null = null;
+
+/** 뿔 하나 (상아색 원뿔, 밑동이 원점 아래 h/2) */
+function hornMesh(r: number, h: number): THREE.Mesh {
+  hornGeo ??= new THREE.ConeGeometry(1, 1, 10);
+  const m = new THREE.Mesh(hornGeo, hornMat);
+  m.scale.set(r, h, r);
+  m.castShadow = true;
+  return m;
+}
+
+/** 빨간 마귀 얼굴 그리기 (w × h): 치켜 올라간 검은 눈썹, 빛나는 노란 눈, 송곳니 둘이 난 입. 경비 선생님 얼굴·대출기 화면이 함께 쓴다 */
+function drawDevilFace(g: CanvasRenderingContext2D, w: number, h: number, bg: string): void {
+  g.fillStyle = bg;
+  g.fillRect(0, 0, w, h);
+  const s = Math.min(w, h) / 128;
+  const cx = w / 2;
+  const cy = h / 2;
+  g.save();
+  g.translate(cx, cy);
+  g.scale(s, s);
+  // 눈썹: 가운데로 내려온 V자
+  g.fillStyle = '#1a0606';
+  for (const k of [-1, 1]) {
+    g.beginPath();
+    g.moveTo(k * 6, -14);
+    g.lineTo(k * 44, -34);
+    g.lineTo(k * 46, -24);
+    g.lineTo(k * 8, -5);
+    g.closePath();
+    g.fill();
+  }
+  // 빛나는 노란 눈 (둘레 빛 + 세로 동공)
+  for (const k of [-1, 1]) {
+    const ex = k * 26;
+    const glow = g.createRadialGradient(ex, 0, 2, ex, 0, 22);
+    glow.addColorStop(0, 'rgba(255,248,170,1)');
+    glow.addColorStop(0.45, 'rgba(255,214,60,0.85)');
+    glow.addColorStop(1, 'rgba(255,214,60,0)');
+    g.fillStyle = glow;
+    g.fillRect(ex - 24, -24, 48, 48);
+    // 화난 눈: 윗변이 가운데 쪽으로 내려간다 (바깥 위 → 안쪽 위 → 안쪽 아래 → 바깥 아래)
+    g.fillStyle = '#fff36b';
+    g.beginPath();
+    g.moveTo(ex + k * 15, -10);
+    g.lineTo(ex - k * 13, -2);
+    g.lineTo(ex - k * 11, 8);
+    g.lineTo(ex + k * 14, 6);
+    g.closePath();
+    g.fill();
+    g.fillStyle = '#3a1500';
+    g.fillRect(ex - 2, -5, 4, 12);
+  }
+  // 입: 어두운 반달 + 위에서 내려온 흰 송곳니 둘
+  g.fillStyle = '#3a0505';
+  g.beginPath();
+  g.moveTo(-30, 26);
+  g.quadraticCurveTo(0, 50, 30, 26);
+  g.lineTo(-30, 26);
+  g.closePath();
+  g.fill();
+  g.fillStyle = '#ffffff';
+  for (const k of [-1, 1]) {
+    g.beginPath();
+    g.moveTo(k * 20, 25);
+    g.lineTo(k * 9, 25);
+    g.lineTo(k * 14, 42);
+    g.closePath();
+    g.fill();
+  }
+  g.restore();
+}
+
+/** 경비 선생님 마귀 얼굴 (머리 상자 앞면 128 × 128) */
+function devilFaceTex(): THREE.CanvasTexture {
+  return canvasTex(128, 128, (g) => drawDevilFace(g, 128, 128, '#c8282a'));
+}
+
+/** 폭주한 대출기 화면 (256 × 180): 같은 마귀 얼굴 + 화면 위쪽 작은 뿔 둘 */
+function devilScreenTex(): THREE.CanvasTexture {
+  return canvasTex(256, 180, (g) => {
+    drawDevilFace(g, 256, 180, '#b81d22');
+    g.fillStyle = '#f1e6c8';
+    for (const k of [-1, 1]) {
+      g.beginPath();
+      g.moveTo(128 + k * 50, 26);
+      g.lineTo(128 + k * 84, 26);
+      g.lineTo(128 + k * 92, 0);
+      g.closePath();
+      g.fill();
+    }
+  });
+}
+
+/** 둥근 빛 (가운데 흰빛 → 바깥 투명) */
+function glowTex(): THREE.CanvasTexture {
+  return canvasTex(64, 64, (g) => {
+    const gr = g.createRadialGradient(32, 32, 2, 32, 32, 32);
+    gr.addColorStop(0, 'rgba(255,255,255,1)');
+    gr.addColorStop(0.35, 'rgba(255,255,255,0.6)');
+    gr.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = gr;
+    g.fillRect(0, 0, 64, 64);
+  });
 }
 
 /** 조기출근 박스: 테이프 붙인 종이 상자, 옆면마다 "조기출근" */
@@ -697,6 +1305,7 @@ function buildBooks(): THREE.Group {
 // ---------- 화면 조각 (fps.html은 그대로 두고 여기서 넣는다) ----------
 
 const CSS = `
+#sp.inf { border-color: #fff1a0; box-shadow: 0 0 10px #f5c542, 0 0 3px #ffffff; }
 #weapon { margin-top: 3px; font-size: 12px; font-weight: 700; color: #ffd27a; }
 #weapon:empty { display: none; }
 #actHint { left: 50%; top: calc(50% + 22px); transform: translateX(-50%); padding: 3px 14px 4px; border-radius: 999px;
