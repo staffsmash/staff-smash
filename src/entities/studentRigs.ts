@@ -262,6 +262,84 @@ export function createTicketRig(scene: Phaser.Scene): Rig {
   return rig;
 }
 
+/** 결정 61 새 잡몹 A "최종_진짜최종.hwp" — 한글 파일 아이콘 (귀퉁이 접힌 흰 문서 + 파란 HWP 띠). 파일 이름은 RefCell이 이름표로 단다 */
+export function createHwpFileRig(scene: Phaser.Scene): Rig {
+  const rig = new Rig(scene, {
+    ...NO_LIMBS,
+    legW: 7,
+    legH: 14,
+    legGap: 22,
+    legColor: 0x3a3a44,
+    shoeColor: 0x1b1b1f,
+    torsoW: 46,
+    torsoH: 56,
+    torsoColor: 0xffffff,
+    armW: 6,
+    armH: 12,
+    armColor: 0xffffff,
+    handColor: 0xffffff,
+  });
+  // 접힌 귀퉁이, 글줄 두 줄 (몸통 위쪽 끝 = -56)
+  rig.torso.add(rig.part(16, -56, 14, 13, 0xd7dde6, 0.5, 0));
+  rig.torso.add(rig.part(-5, -50, 26, 2, 0x9aa3ad, 0.5, 0, false));
+  rig.torso.add(rig.part(-7, -45, 22, 2, 0x9aa3ad, 0.5, 0, false));
+  // 화난 눈
+  rig.torso.add(rig.part(-9, -33, 5, 6, INK, 0.5, 0.5, false));
+  rig.torso.add(rig.part(8, -33, 5, 6, INK, 0.5, 0.5, false));
+  const bl = rig.part(-9, -38, 9, 2.5, INK, 0.5, 0.5, false);
+  bl.rotation = 0.35;
+  const br = rig.part(8, -38, 9, 2.5, INK, 0.5, 0.5, false);
+  br.rotation = -0.35;
+  rig.torso.add([bl, br]);
+  // 한글 파일 표시: 파란 띠에 흰 "HWP"
+  rig.torso.add(rig.part(0, -15, 40, 17, 0x1f7ad6, 0.5, 0.5, false));
+  rig.torso.add(rig.text(0, -15, 'HWP', '#ffffff', 12, 32, FONT));
+  return rig;
+}
+
+/** 결정 61 새 잡몹 B "연체 도서 더미" — 책 세 권을 쌓은 더미에 빨간 "연체" 띠 */
+export function createOverdueBooksRig(scene: Phaser.Scene): Rig {
+  const rig = new Rig(scene, {
+    ...NO_LIMBS,
+    legW: 9,
+    legH: 13,
+    legGap: 28,
+    legColor: 0x3a3a44,
+    shoeColor: 0x1b1b1f,
+    torsoW: 60,
+    torsoH: 16,
+    torsoColor: 0x13707a,
+    armW: 7,
+    armH: 13,
+    armColor: 0x1f3a6b,
+    handColor: 0xf1c7a0,
+  });
+  // 아래 책(몸통 0~-16) 위로 두 권을 더 쌓는다. 오른쪽 끝은 책장(종이) 색
+  const books: [number, number, number, number][] = [
+    [-2, -32, 58, 0x1f3a6b],
+    [2, -48, 56, 0x7a1f2b],
+  ];
+  rig.torso.add(rig.part(25, -13, 6, 10, 0xf4f0e0, 0.5, 0, false));
+  for (const [x, y, w, col] of books) {
+    rig.torso.add(rig.part(x, y, w, 16, col, 0.5, 0));
+    rig.torso.add(rig.part(x + w / 2 - 5, y + 3, 6, 10, 0xf4f0e0, 0.5, 0, false));
+  }
+  // 맨 위 책의 화난 눈 (어두운 표지라 흰자 위에 검은 눈동자)
+  for (const x of [-6, 10]) {
+    rig.torso.add(rig.part(x, -40, 7, 7, 0xffffff, 0.5, 0.5, false));
+    rig.torso.add(rig.part(x + 1, -40, 3, 4, INK, 0.5, 0.5, false));
+  }
+  const bl = rig.part(-6, -46, 9, 2.5, 0xffffff, 0.5, 0.5, false);
+  bl.rotation = 0.35;
+  const br = rig.part(10, -46, 9, 2.5, 0xffffff, 0.5, 0.5, false);
+  br.rotation = -0.35;
+  rig.torso.add([bl, br]);
+  // 가운데 책을 두른 빨간 "연체" 띠
+  rig.torso.add(rig.part(0, -24, 64, 13, RED, 0.5, 0.5, false).setStrokeStyle(2, 0xffffff));
+  rig.torso.add(rig.text(0, -24, '연체', '#ffffff', 11, 26, FONT));
+  return rig;
+}
+
 // ---------- 학생 모드 보스: 학과장·교수·학장 (가상 인물) ----------
 
 /** jeonpil = 전필수 스페인어과 학과장, bujae = 김부재중 교수, hanhakgo = 한학고 영어대학 학장 */
@@ -441,6 +519,61 @@ export function createKiosk(scene: Phaser.Scene): Phaser.GameObjects.Container {
   c.add(box(scene, 7, -106, 12, 16, 0xffffff, 0.5, 0.5, false));
   c.add(box(scene, 0, -106, 2, 16, 0x1f3a6b, 0.5, 0.5, false));
   return c;
+}
+
+/** 결정 61 이스터 에그 "폭주한 도서 무인 대출기": createKiosk와 같은 몸에, 화면에는 경비 선생님과 같은 화난 마귀 얼굴
+ *  (빨간 화면·뿔 두 개·빛나는 노란 눈·송곳니). 적(AngryGiver)으로 움직이므로 맞으면 깜빡이게 Rig 조각으로 그린다.
+ *  예고 때 화면을 번쩍이게 할 덮개는 getByName('glare')로 찾는다 (원점 = 바닥 가운데). */
+export function createAngryKioskRig(scene: Phaser.Scene): Rig {
+  const rig = new Rig(scene, {
+    ...NO_LIMBS,
+    legW: 0,
+    legH: 0,
+    legGap: 0,
+    legColor: 0,
+    shoeColor: 0,
+    torsoW: 66,
+    torsoH: 84,
+    torsoColor: HUFS_NAVY,
+  });
+  const T = rig.torso;
+  const p = (x: number, y: number, w: number, h: number, col: number, stroke = true) => rig.part(x, y, w, h, col, 0.5, 0.5, stroke);
+  // 유리창 안의 책등, 책 나오는 구멍, 카드 리더 (createKiosk와 같은 자리)
+  T.add(p(0, -24, 50, 26, 0xcfe3f2));
+  [0x7a1f2b, 0x13707a, GOLD, 0x1f3a6b, RED, 0x2f6b5a].forEach((col, i) => T.add(p(-20 + i * 8, -22, 6, 20, col, false)));
+  T.add(p(-6, -54, 40, 8, 0x111827));
+  T.add(p(24, -70, 10, 8, 0x374151));
+  T.add(p(24, -70, 6, 2, RED, false));
+  // 뿔 두 개 (화면 몸체 뒤에서 솟는다)
+  for (const [x, rot] of [
+    [-24, -0.42],
+    [24, 0.42],
+  ] as const) {
+    const horn = rig.part(x, -118, 9, 22, 0xf5e6c4, 0.5, 1);
+    horn.rotation = rot;
+    T.add(horn);
+  }
+  // 위쪽 화면 몸체와 빨간 화면
+  T.add(p(0, -104, 72, 46, 0xe5e7eb));
+  T.add(p(0, -106, 54, 32, 0xb3122b));
+  // 빛나는 노란 눈, 안쪽으로 내려간 눈썹, 송곳니
+  for (const x of [-12, 12]) {
+    T.add(p(x, -111, 14, 9, 0xfff6c2, false));
+    T.add(p(x, -111, 11, 6, 0xffe066, false));
+    T.add(p(x, -111, 3, 6, INK, false));
+  }
+  const bl = p(-12, -117, 14, 3, INK, false);
+  bl.rotation = 0.45;
+  const br = p(12, -117, 14, 3, INK, false);
+  br.rotation = -0.45;
+  T.add([bl, br]);
+  T.add(p(0, -98, 24, 6, 0x3a0a0a, false));
+  T.add(p(-7, -95, 4, 6, 0xffffff, false));
+  T.add(p(7, -95, 4, 6, 0xffffff, false));
+  // 예고 때 번쩍이는 덮개 (깜빡임 대상이 아니다 — AngryGiver가 투명도만 바꾼다)
+  const glare = new Phaser.GameObjects.Rectangle(scene, 0, -106, 54, 32, 0xffffff).setAlpha(0).setName('glare');
+  T.add(glare);
+  return rig;
 }
 
 /** 학생 모드 상자 "수강편람": 두꺼운 책자 세 권을 쌓은 더미 (원점 = 바닥 가운데) */

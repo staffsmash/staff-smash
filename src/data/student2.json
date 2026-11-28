@@ -8,7 +8,7 @@
       "label": "인문과학관 앞",
       "art": "humanitiesFront",
       "maxAlive": 3,
-      "waves": ["mail", "docbomb", "bubble", "mail", "phone"],
+      "waves": ["mail", "docbomb", "refcell", "bubble", "mail", "phone"],
       "supervisors": []
     },
     {
@@ -16,7 +16,7 @@
       "label": "인문과학관 강의실 앞",
       "art": "humanitiesHall",
       "maxAlive": 3,
-      "waves": ["queue", "mail", "jinchwi", "docbomb", "mail"],
+      "waves": ["queue", "mail", "jinchwi", "refcell", "docbomb", "mail"],
       "supervisors": []
     },
     {
@@ -24,7 +24,7 @@
       "label": "교수학습개발원 로비",
       "art": "learningLobby",
       "maxAlive": 3,
-      "waves": ["bubble", "docbomb", "gukje", "mail", "phone", "mail"],
+      "waves": ["bubble", "refcell", "docbomb", "gukje", "mail", "refcell", "phone", "mail"],
       "supervisors": []
     },
     {

@@ -19,6 +19,8 @@ export interface HitInfo {
   thrown?: boolean;
   /** 돌발 방문 상대(사람)의 결재판을 몇 칸 채우는지 — 필살기·보상 아이템은 사람 보스와 같은 양(도장 몇 발만큼). 없으면 1칸 */
   stamps?: number;
+  /** 피해를 그대로 받는다 (2D 난이도 피해 배율을 곱하지 않는다 — 화난 경비 선생님(폭주한 대출기)의 3칸, 결정 61) */
+  fixed?: boolean;
 }
 
 export interface AttackDef {

@@ -27,6 +27,8 @@ export interface HudInfo {
   notice: string;
   /** 체력 상자 아래 효과 줄에 더할 것 (돌발 방문 보상: 매크로 클리커·응원단·실사 통과 현판·정숙 표지판) */
   perks?: string[];
+  /** 이 스테이지 동안 필살기 무한 (결정 61 이스터 에그: 경비 선생님·대출기에 인사 15번) — 게이지에 "∞" */
+  spInfinite?: boolean;
   boss: BossInfo | null;
 }
 
@@ -56,6 +58,8 @@ export class Hud {
   private helpHint: Phaser.GameObjects.Text | null = null;
   private helpVisible = true;
   private lastCombo = 0;
+  /** 지난 프레임에 필살기 무한이었는지 (SP 글자색) */
+  private lastInf = false;
 
   constructor(scene: Phaser.Scene, touch: boolean, heroName = '주무관', student = false) {
     this.touch = touch;
@@ -223,9 +227,17 @@ export class Hud {
     g.fillStyle(0x2b2b3a, 1);
     g.fillRect(22, 50, 178, 8);
     const blink = spReady && Math.floor(performance.now() / 150) % 2 === 0;
-    g.fillStyle(blink ? 0xffffff : 0xf5c542, 1);
+    // 필살기 무한: 게이지를 보라·흰색으로 번갈아 칠하고 "SP ∞"
+    const inf = info.spInfinite === true;
+    g.fillStyle(blink ? 0xffffff : inf ? 0xc084fc : 0xf5c542, 1);
     g.fillRect(22, 50, (178 * Math.min(p.sp, 100)) / 100, 8);
-    this.spT.setText(spReady ? (this.touch ? 'SP 준비!' : 'SP 준비! (I)') : 'SP');
+    // 글자색은 바뀔 때만 칠한다 (setColor는 같은 색이어도 글자를 다시 그린다)
+    if (inf !== this.lastInf) {
+      this.lastInf = inf;
+      this.spT.setColor(inf ? '#d8b4fe' : '#f5c542');
+    }
+    if (inf) this.spT.setText(this.touch ? 'SP ∞' : 'SP ∞ (I)');
+    else this.spT.setText(spReady ? (this.touch ? 'SP 준비!' : 'SP 준비! (I)') : 'SP');
 
     // 무기
     const w = p.weapon;

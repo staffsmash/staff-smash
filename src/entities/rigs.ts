@@ -992,9 +992,16 @@ function createOtherSupervisorRig(scene: Phaser.Scene, look: 'bujae' | 'molla' |
 
 const GUARD_NAVY = 0x1f2a44;
 
+/** 화난 마귀 얼굴 색 (결정 61: 빨간 얼굴·뿔 두 개·빛나는 노란 눈·송곳니 — 경비 선생님과 대출기 화면이 같다) */
+export const DEMON_RED = 0xd0202f;
+export const DEMON_EYE = 0xffe066;
+export const DEMON_GLOW = 0xfff6c2;
+export const DEMON_HORN = 0xf5e6c4;
+
 /** 경비 선생님 (이름 없는 가상 인물): 남색 제복과 모자, 금색 모표·가슴 배지.
- *  11차: 구역마다 남녀가 번갈아 선다 (female = 단발·리본, StageScene이 정한다) */
-export function createGuardRig(scene: Phaser.Scene, female = false): Rig {
+ *  11차: 구역마다 남녀가 번갈아 선다 (female = 단발·리본, StageScene이 정한다)
+ *  demon = 결정 61 이스터 에그 "화난 경비 선생님": 빨간 얼굴, 모자를 뚫고 나온 뿔 두 개, 빛나는 노란 눈, 송곳니 */
+export function createGuardRig(scene: Phaser.Scene, female = false, demon = false): Rig {
   const rig = new Rig(scene, {
     legW: 15,
     legH: 36,
@@ -1010,7 +1017,7 @@ export function createGuardRig(scene: Phaser.Scene, female = false): Rig {
     handColor: SKIN,
     headW: 32,
     headH: 31,
-    headColor: SKIN,
+    headColor: demon ? DEMON_RED : SKIN,
     outline: INK,
   });
   // 셔츠 깃·넥타이, 가슴 배지, 허리띠 (몸통 위쪽 끝 = -40)
@@ -1025,13 +1032,46 @@ export function createGuardRig(scene: Phaser.Scene, female = false): Rig {
   // 머리카락: 남 = 모자 밑 짧은 옆머리, 여 = 모자 밑으로 내려온 단발
   if (female) rig.head.add(rig.part(-10, -27, 15, 22, 0x2a2420, 0.5, 0));
   else rig.head.add(rig.part(-14, -24, 6, 10, 0x2a2420, 0.5, 0, false));
-  dressHead(rig, { hair: 0x2a2420, style: 'none', female });
+  if (demon) addDemonFace(rig);
+  else dressHead(rig, { hair: 0x2a2420, style: 'none', female });
+  // 마귀 뿔은 모자보다 먼저 그려 모자 위로 솟아 보이게 한다 (뿌리는 모자에 가린다)
+  if (demon) {
+    for (const [x, rot] of [
+      [-11, -0.38],
+      [9, 0.38],
+    ] as const) {
+      const horn = rig.part(x, -36, 7, 17, DEMON_HORN, 0.5, 1);
+      horn.rotation = rot;
+      rig.head.add(horn);
+    }
+  }
   // 모자: 몸통 + 검은 띠 + 앞(+x)으로 나온 챙 + 금색 모표 (머리 위쪽 끝 = -31)
   rig.head.add(rig.part(-1, -41, 36, 14, GUARD_NAVY, 0.5, 0));
   rig.head.add(rig.part(-1, -31, 36, 4, 0x111827, 0.5, 0, false));
   rig.head.add(rig.part(16, -29, 16, 4, 0x111111, 0.5, 0));
   rig.head.add(rig.part(6, -39, 6, 6, 0xd9b44a, 0.5, 0, false));
   return rig;
+}
+
+/** 화난 마귀 얼굴 (머리 상자는 빨갛게 이미 그렸다): 빛나는 노란 눈, 안쪽으로 내려간 눈썹, 송곳니 두 개가 보이는 입 */
+function addDemonFace(rig: Rig): void {
+  const H = rig.head;
+  // 눈: 연한 노란 빛 + 노란 눈 + 가운데 검은 동공(세로로 가늘게)
+  for (const x of [4, 13]) {
+    H.add(rig.part(x, -22, 9, 8, DEMON_GLOW, 0.5, 0, false));
+    H.add(rig.part(x, -21, 7, 6, DEMON_EYE, 0.5, 0, false));
+    H.add(rig.part(x, -21, 2, 6, INK, 0.5, 0, false));
+  }
+  // 화난 눈썹: 가운데(두 눈 사이) 쪽 끝이 내려간다
+  const bl = rig.part(4, -24, 10, 3, INK, 0.5, 0.5, false);
+  bl.rotation = 0.45;
+  const br = rig.part(13, -24, 10, 3, INK, 0.5, 0.5, false);
+  br.rotation = -0.45;
+  H.add([bl, br]);
+  // 입과 송곳니
+  H.add(rig.part(9, -10, 13, 5, 0x3a0a0a, 0.5, 0, false));
+  H.add(rig.part(5, -10, 3, 5, 0xffffff, 0.5, 0, false));
+  H.add(rig.part(13, -10, 3, 5, 0xffffff, 0.5, 0, false));
 }
 
 /** 교직원 모드 상자 "조기출근 박스": 테이프 붙인 골판지 상자 + 흰 라벨 (원점 = 바닥 가운데) */
@@ -1182,6 +1222,86 @@ export function createPhoneRig(scene: Phaser.Scene): Rig {
     }
   }
   rig.torso.add(rig.part(17, -20, 5, 5, 0xff4d4d, 0.5, 0, false));
+  return rig;
+}
+
+/** 엑셀 선택 테두리 초록 */
+const EXCEL_GREEN = 0x217346;
+
+/** 결정 61 새 잡몹 A "#REF! 오류 셀" — 초록 선택 테두리가 둘린 흰 엑셀 칸에 빨간 "#REF!", 오른쪽 아래 채우기 핸들.
+ *  처리되면 작은 것 둘로 갈라진다 (작은 것은 같은 그림을 줄여 쓴다 — RefCell.ts) */
+export function createRefCellRig(scene: Phaser.Scene): Rig {
+  const rig = new Rig(scene, {
+    legW: 7,
+    legH: 14,
+    legGap: 26,
+    legColor: 0x3a3a44,
+    shoeColor: 0x1b1b1f,
+    torsoW: 60,
+    torsoH: 46,
+    torsoColor: 0xffffff,
+    armW: 6,
+    armH: 12,
+    armColor: 0xffffff,
+    handColor: 0xffffff,
+    headW: 0,
+    headH: 0,
+    headColor: 0,
+    outline: INK,
+  });
+  // 칸 위 열 머리글 띠(연회색), 초록 선택 테두리, 채우기 핸들 (몸통 위쪽 끝 = -46)
+  rig.torso.add(rig.part(0, -46, 60, 7, 0xe6e8eb, 0.5, 0, false));
+  rig.torso.add(rig.part(0, -39, 54, 36, 0xffffff, 0.5, 0, false).setStrokeStyle(3, EXCEL_GREEN));
+  rig.torso.add(rig.part(27, -3, 7, 7, EXCEL_GREEN, 0.5, 0.5, false).setStrokeStyle(1.5, 0xffffff));
+  rig.torso.add(rig.text(0, -27, '#REF!', '#d0202f', 15, 46, FONT));
+  // 화난 눈
+  rig.torso.add(rig.part(-9, -12, 5, 6, INK, 0.5, 0.5, false));
+  rig.torso.add(rig.part(9, -12, 5, 6, INK, 0.5, 0.5, false));
+  const bl = rig.part(-9, -17, 9, 2.5, INK, 0.5, 0.5, false);
+  bl.rotation = 0.35;
+  const br = rig.part(9, -17, 9, 2.5, INK, 0.5, 0.5, false);
+  br.rotation = -0.35;
+  rig.torso.add([bl, br]);
+  return rig;
+}
+
+/** 결정 61 새 잡몹 B "반송 택배 상자" — 테이프 붙인 갈색 골판지 상자에 빨간 "반송" 도장 스티커와 송장 */
+export function createParcelRig(scene: Phaser.Scene): Rig {
+  const rig = new Rig(scene, {
+    legW: 9,
+    legH: 13,
+    legGap: 28,
+    legColor: 0x3a3a44,
+    shoeColor: 0x1b1b1f,
+    torsoW: 62,
+    torsoH: 48,
+    torsoColor: 0xc8955a,
+    armW: 7,
+    armH: 13,
+    armColor: 0xb07a40,
+    handColor: 0xb07a40,
+    headW: 0,
+    headH: 0,
+    headColor: 0,
+    outline: INK,
+  });
+  // 윗면 덮개 선·가운데 테이프 (몸통 위쪽 끝 = -48)
+  rig.torso.add(rig.part(0, -48, 62, 6, 0xb07a40, 0.5, 0, false));
+  rig.torso.add(rig.part(0, -48, 12, 20, 0xe2cf9a, 0.5, 0, false));
+  // 송장 (바코드 줄)
+  rig.torso.add(rig.part(17, -33, 20, 14, 0xffffff, 0.5, 0, true));
+  for (const x of [10, 13, 15, 18, 21, 24]) rig.torso.add(rig.part(x, -30, 1.5, 7, INK, 0.5, 0, false));
+  // 빨간 "반송" 도장 스티커
+  rig.torso.add(rig.part(-13, -31, 28, 17, DEMON_RED, 0.5, 0.5, false).setStrokeStyle(2, 0xffffff));
+  rig.torso.add(rig.text(-13, -31, '반송', '#ffffff', 12, 24, FONT));
+  // 화난 눈
+  rig.torso.add(rig.part(-9, -12, 6, 6, INK, 0.5, 0.5, false));
+  rig.torso.add(rig.part(9, -12, 6, 6, INK, 0.5, 0.5, false));
+  const bl = rig.part(-9, -17, 10, 3, INK, 0.5, 0.5, false);
+  bl.rotation = 0.4;
+  const br = rig.part(9, -17, 10, 3, INK, 0.5, 0.5, false);
+  br.rotation = -0.4;
+  rig.torso.add([bl, br]);
   return rig;
 }
 

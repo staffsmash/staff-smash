@@ -652,8 +652,8 @@ export class Player extends Fighter {
       fx.floatText(this.scene, this.x, this.y - 128, text, '#9fd3ff', 18);
       return false;
     }
-    // 2D 난이도: 받는 피해 배율 (초보 0.6 · 중급 1 · 고급 1.3, src/difficulty.ts)
-    const dmg = h.dmg * this.scene.hurtMul;
+    // 2D 난이도: 받는 피해 배율 (초보 0.6 · 중급 1 · 고급 1.3, src/difficulty.ts). fixed면 배율 없이 그대로 (결정 61)
+    const dmg = h.fixed ? h.dmg : h.dmg * this.scene.hurtMul;
     this.hp = Math.max(0, this.hp - dmg);
     play('hurt');
     this.rig.flash();

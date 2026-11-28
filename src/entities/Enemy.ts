@@ -40,7 +40,13 @@ export type EnemyKind =
   | 'hanhakgoBoss'
   | 'presidentBoss'
   // 교직원 모드 돌발 방문 상대 (2026-11-25, Visitor.ts): 사람이라 다치지 않고 결재판만 찬다
-  | 'visit';
+  | 'visit'
+  // 결정 61 (2026-11-28) 새 잡몹: #REF! 오류 셀(학생: 최종_진짜최종.hwp)과 갈라진 작은 것, 반송 택배 상자(학생: 연체 도서 더미)
+  | 'refcell'
+  | 'refbit'
+  | 'parcel'
+  // 결정 61 이스터 에그: 20번 맞아 화난 경비 선생님(학생: 폭주한 도서 무인 대출기). 잡몹도 보스도 아니다 (AngryGiver.ts)
+  | 'angryGiver';
 
 /** 보스 체력바에 보여 줄 정보 */
 export interface BossLike {
