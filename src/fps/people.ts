@@ -163,6 +163,8 @@ export class Person {
   private walkT = 0;
   private t = 0;
   private faceMat: THREE.MeshLambertMaterial;
+  /** 머리 상자 (재질: 오른쪽·왼쪽·위·아래·앞(얼굴)·뒤). 화난 경비 선생님이 잠깐 바꿔 끼운다 (props.ts) */
+  readonly headMesh: THREE.Mesh;
 
   /** look: 학생 모드 인물(처장·부총장·창구 직원)은 외형을 따로 준다 */
   constructor(who: Who, labelText: string, labelColor: string, look: Look = LOOKS[who]) {
@@ -321,7 +323,7 @@ export class Person {
     // 머리 (목 = 1.64)
     this.head.position.set(0, 1.64, 0);
     this.body.add(this.head);
-    const headMesh = new THREE.Mesh(k.unit, [skin, skin, skin, skin, this.faceMat, skin]);
+    const headMesh = (this.headMesh = new THREE.Mesh(k.unit, [skin, skin, skin, skin, this.faceMat, skin]));
     headMesh.scale.set(0.52, 0.5, 0.48);
     headMesh.position.set(0, 0.27, 0);
     headMesh.castShadow = true;

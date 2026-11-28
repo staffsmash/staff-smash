@@ -126,6 +126,20 @@ function tagTex(text: string, color: string): THREE.CanvasTexture {
 
 const bubbles = new Map<string, THREE.SpriteMaterial>();
 const textures: THREE.Texture[] = [];
+/** 이름을 바꾸는 이름표 그림 (이름|색 → 그림). 화난 경비 선생님 (props.ts, 결정 61) */
+const tagTexs = new Map<string, THREE.CanvasTexture>();
+
+/** 이름표 그림을 미리 만든다 (HeadTag.rename이 쓴다. 처음 바꿀 때 끊기지 않게) */
+export function prepareTag(name: string, color: string): THREE.CanvasTexture {
+  const key = `${name}|${color}`;
+  let t = tagTexs.get(key);
+  if (!t) {
+    t = tagTex(name, color);
+    tagTexs.set(key, t);
+    textures.push(t);
+  }
+  return t;
+}
 
 /** 대사 하나의 말풍선 재질 (대사마다 한 번만 그린다) */
 function bubbleMat(text: string): THREE.SpriteMaterial {
@@ -158,8 +172,9 @@ export class HeadTag {
   readonly group = new THREE.Group();
   readonly label: THREE.Sprite | null = null;
   readonly bubble: THREE.Sprite;
-  readonly name: string;
-  readonly color: string;
+  /** 이름표 글자이자 자막 이름 (rename으로 바뀐다) */
+  name: string;
+  color: string;
   private parentScale: number;
   private t = 0;
   /** 이름표 아래(머리 바로 위)에 끼우는 그림 — 돌발 방문 결재판 (visit.ts). 이름표·말풍선은 그 위로 올라간다 */
@@ -177,8 +192,7 @@ export class HeadTag {
     this.color = color;
     this.parentScale = parentScale;
     if (name) {
-      const tex = tagTex(name, color);
-      textures.push(tex);
+      const tex = prepareTag(name, color);
       const label = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, sizeAttenuation: false }));
       label.center.set(0.5, 0);
       label.renderOrder = 8;
@@ -217,6 +231,16 @@ export class HeadTag {
       s.frustumCulled = false;
       this.group.add(s);
     }
+    this.fit();
+  }
+
+  /** 이름표 글자·색을 바꾼다 (자막 이름도). 처음에 이름표가 있던 HeadTag만 (화난 경비 선생님 — props.ts) */
+  rename(name: string, color = this.color): void {
+    this.name = name;
+    this.color = color;
+    if (!this.label) return;
+    this.label.material.map = prepareTag(name, color);
+    this.label.material.needsUpdate = true;
     this.fit();
   }
 

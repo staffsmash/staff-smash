@@ -13,10 +13,12 @@ import { drawTimer } from './textures';
 // - 마감 1분 전 서류 뭉치: 째깍거리며 다가온다. 도장으로 맞히면 그 자리에서 터져 주변 민원까지 처리.
 // 보스(사람)는 bosses.ts. 새 잡몹(말풍선 둘·메신저 쪽지 알림 떼·팩스기)은 mobs.ts, 학생 새 잡몹은 student/mobs.ts.
 
-/** note = 메신저 쪽지 알림(학생: 과제 마감 알림), fax = 팩스기, qr = 출석 QR 코드(학생) */
-export type Kind = 'mail' | 'bulk' | 'phone' | 'bubble' | 'bomb' | 'boss' | 'note' | 'fax' | 'qr';
+/** note = 메신저 쪽지 알림(학생: 과제 마감 알림), fax = 팩스기, qr = 출석 QR 코드(학생).
+ *  ref = 갈라지는 몹 "#REF! 오류 셀"(학생: 최종_진짜최종.hwp), parcel = 돌진하는 몹 "반송 택배 상자"(학생: 연체 도서 더미) — latemobs.ts (결정 61) */
+export type Kind = 'mail' | 'bulk' | 'phone' | 'bubble' | 'bomb' | 'boss' | 'note' | 'fax' | 'qr' | 'ref' | 'parcel';
 /** 다친 까닭 (잡몹 + 보스가 쓰는 것). sign = 총장 MOU 서명선, cap = 총장 학사모·상장, cart = 최도서관 책수레 (11차).
- *  punch·cursor·resume·luggage·inspect·book = 돌발 방문 상대의 공격 (visit.ts) */
+ *  punch·cursor·resume·luggage·inspect·book = 돌발 방문 상대의 공격 (visit.ts).
+ *  devil = 화난 경비 선생님·폭주한 도서 무인 대출기 (props.ts — 도장 20번 이스터 에그, 결정 61) */
 export type HurtKind =
   | Kind
   | 'wave'
@@ -34,7 +36,8 @@ export type HurtKind =
   | 'resume'
   | 'luggage'
   | 'inspect'
-  | 'book';
+  | 'book'
+  | 'devil';
 /** 날아오는 종이·물건 (도장으로 맞혀 없앨 수 있다). fax = 팩스기가 쏘는 종이 */
 export type SheetKind = 'paper' | 'rental' | 'meeting' | 'packet' | 'fax';
 

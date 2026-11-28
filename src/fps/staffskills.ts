@@ -251,6 +251,11 @@ export class StaffSkills {
     };
   }
 
+  /** 필살기 연출 중 (돌진·흔적·떨어지는 규정집·내선 빛줄기). 인사 15번 필살기 무한은 이게 끝나야 다시 채운다 (main.ts keepSpFull) */
+  get busy(): boolean {
+    return this.dashT > 0 || this.trailT >= 0 || this.waveT >= 0 || this.bookT >= 0 || this.beamT >= 0;
+  }
+
   /** 고른 필살기를 쓴다 (전체 공지 발송 말고). fwd = 보는 쪽 수평 단위 벡터 */
   cast(id: SkillId, fwd: THREE.Vector3): void {
     const g = this.g;

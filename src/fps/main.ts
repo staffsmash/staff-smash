@@ -21,6 +21,7 @@ import { Rescue } from './helpers';
 import { buildMidPeople, buildNewBossPeople, Hakgwa, MID_LINES, MID_TEXTS, Naenwa, StaffMid, type MidKind, type MidPerson } from './mids';
 import { Models, type FoodKind } from './models';
 import { badgeObj, ClingBubble, DodgeBubble, Fax, MobKit, NoteBadge } from './mobs';
+import { Charger, lateDoneText, lateMobTextures, lateMobWarm, SplitMob, splitInto } from './latemobs';
 import { PileMob, Trap, type TrapHost } from './trapped';
 import { SideJob, type SideHost } from './sidejob';
 import { Visit, VisitPerson, type VisitHost } from './visit';
@@ -70,6 +71,9 @@ import { FpsTutorial, type TutHost } from './tutorial';
 // 연차 쿠폰(학생: 공결 확인서 — 다음 한 번 막기)·셔틀버스 시간표(10초 빨리 걷기)·단톡방 공지 캡처(잡몹 2.5초 멈춤).
 // 2026-11-15: 인감 도장(학생: 출석 스티커 — 8초 동안 기본 공격에 맞은 잡몹이 넘어진다), 조력자 규칙(30% 이하 반드시, 한 방이면 먼저).
 // 2026-11-25: 교직원별 돌발 방문 이벤트와 보상 6종 (visit.ts — 한 판에 한 번, 2~5구역 민원 차례 중. 보상은 F 칸 맨 앞).
+// 2026-11-28 (결정 61): 뒤쪽 구역 새 잡몹 둘(latemobs.ts — 인문과학관 앞부터 #REF! 오류 셀, 대운동장부터 반송 택배 상자),
+// 구역이 갈수록 잡몹이 빨라지고 단단해진다(mobRise — 속도 ×(1 + 0.05a), 체력 ×(1 + 0.1a), 중간보스·보스는 그대로),
+// 경비 선생님(대출기) 아이템·인사 번갈아, 인사 15번 → 그 구역 동안 필살기 무한(keepSpFull), 도장 20번 → 화난 마귀(props.ts).
 
 const params = new URLSearchParams(location.search);
 const DEBUG = params.has('debug');
@@ -136,14 +140,17 @@ const LOOK_TOUCH = 0.006;
 /** 구역: 0 본관 앞 → 1 사회과학관 앞 → 2 인문과학관 앞 → 3 국제학사 앞 → 4 대운동장 → 5 해 질 녘 본관 앞(총장) */
 const AREA_NAMES = ['본관 앞', '사회과학관 앞', '인문과학관 앞', '국제학사 앞', '대운동장', '해 질 녘 본관 앞'];
 
-/** note = 메신저 쪽지 알림 떼, fax = 팩스기 (mobs.ts, 본관 앞부터) */
-type SpawnKind = 'mail' | 'bulk' | 'phone' | 'bubble' | 'bomb' | 'note' | 'fax';
+/** note = 메신저 쪽지 알림 떼, fax = 팩스기 (mobs.ts, 본관 앞부터).
+ *  ref = #REF! 오류 셀 (인문과학관 앞부터), parcel = 반송 택배 상자 (대운동장부터) — latemobs.ts */
+type SpawnKind = 'mail' | 'bulk' | 'phone' | 'bubble' | 'bomb' | 'note' | 'fax' | 'ref' | 'parcel';
 type Wave = Partial<Record<SpawnKind, number>>;
 
 /**
  * 구역에 들어서면 몰려오는 민원 차례 (본관 앞 셋, 나머지 구역은 하나씩 — 끝나면 중간보스).
  * 새 잡몹(메신저 쪽지 알림 떼·팩스기)은 본관 앞부터 섞인다 (사용자 2026-11-17 "더 시작부터").
  * 사회과학관 앞·대운동장의 짧은 첫 차례는 예산팀 직원이 나올 자리이기도 하다 (budget.ts는 민원 차례 중에만 온다).
+ * 결정 61 (2026-11-28): 기존 배치는 그대로 두고 뒤쪽에 새 잡몹을 더한다 — #REF! 오류 셀(ref)은 인문과학관 앞부터,
+ * 반송 택배 상자(parcel)는 대운동장부터 (본관 앞 7종은 그대로, 11-17 결정).
  */
 const AREA_WAVES: Record<number, Wave[]> = {
   0: [
@@ -152,10 +159,18 @@ const AREA_WAVES: Record<number, Wave[]> = {
     { mail: 6, bulk: 2, bubble: 2, bomb: 2, phone: 2, note: 1, fax: 1 },
   ],
   1: [{ mail: 3, bubble: 1, phone: 1, note: 1, fax: 1 }],
-  2: [{ mail: 3, bubble: 2, phone: 1, note: 1, fax: 1 }],
-  3: [{ mail: 3, bulk: 1, bomb: 2, phone: 1, note: 1, fax: 1 }],
-  4: [{ mail: 3, bubble: 1, bomb: 1, note: 1, fax: 1 }],
+  2: [{ mail: 3, bubble: 2, phone: 1, note: 1, fax: 1, ref: 2 }],
+  3: [{ mail: 3, bulk: 1, bomb: 2, phone: 1, note: 1, fax: 1, ref: 2 }],
+  4: [{ mail: 3, bubble: 1, bomb: 1, note: 1, fax: 1, ref: 1, parcel: 2 }],
 };
+
+/** 구역 오름 (결정 61 · 3절): 몹 구역 번호 a마다 잡몹 속도 +5%, 체력 +10% (반올림, 원래보다 작아지지 않게). 1인칭 난이도 배율과 곱한다 */
+const RISE_SPEED = 0.05;
+const RISE_HP = 0.1;
+/** 갈라져 나온 작은 #REF!(사본)가 처리되면 차는 필살기 (큰 것은 SP_GAIN.ref) */
+const SP_SMALL_REF = 4;
+/** 인사 15번 필살기 무한: 필살기를 쓰고 다시 채우기까지 적어도 (초 — 화면 번쩍임 뒤) */
+const SP_INF_GAP = 0.5;
 
 /** 구역마다 중간보스 (민원 학생) */
 const MID_OF: MidKind[] = ['wrongNumber', 'noticeBoss', 'deadline', 'minwon', 'presidentMail'];
@@ -172,7 +187,7 @@ const MID_SPOTS: [THREE.Vector3, THREE.Vector3, THREE.Vector3][] = [
 /** 해 질 무렵이 이 분(게임 시간)에 걸쳐 진다 (교직원 모드. 구역이 뒤로 갈수록 더 빨리 어두워진다) */
 const STAFF_DUSK_MIN = 12;
 
-const SP_GAIN: Record<Kind, number> = { mail: 9, bulk: 16, phone: 12, bubble: 12, bomb: 14, boss: 0, note: 4, fax: 16, qr: 12 };
+const SP_GAIN: Record<Kind, number> = { mail: 9, bulk: 16, phone: 12, bubble: 12, bomb: 14, boss: 0, note: 4, fax: 16, qr: 12, ref: 9, parcel: 16 };
 
 const KIND_LABEL: Record<Kind, [string, string]> = {
   mail: ['새벽 3시 메일', '통'],
@@ -183,6 +198,8 @@ const KIND_LABEL: Record<Kind, [string, string]> = {
   note: ['메신저 쪽지 알림', '개'],
   fax: ['팩스기', '대'],
   qr: ['출석 QR 코드', '개'],
+  ref: ['#REF! 오류 셀', '개'],
+  parcel: ['반송 택배 상자', '상자'],
   boss: ['보스 결재', ''],
 };
 
@@ -193,6 +210,8 @@ const HINTS: Partial<Record<Kind, string>> = {
   bomb: '서류 뭉치는 도장으로 미리 터뜨리면 주변 민원까지 처리!',
   note: '메신저 쪽지 알림 떼 — 한 대씩 맞히면 읽음 처리!',
   fax: '팩스기 — 날아오는 종이는 도장으로 맞혀 없애세요. 세 번 맞히면 처리',
+  ref: '#REF! 오류 셀은 처리하면 둘로 갈라져요 — 작은 것까지 처리!',
+  parcel: '반송 택배 상자가 부르르 떨면 옆으로 비키세요 — 돌진합니다!',
 };
 
 const HURT_NOTE: Partial<Record<HurtKind, string>> = {
@@ -212,6 +231,10 @@ const HURT_NOTE: Partial<Record<HurtKind, string>> = {
   cap: '표창장에 맞음… (느려짐)',
   note: '메신저 알림 확인 중… (느려짐)',
   fax: '팩스 용지에 맞음… (느려짐)',
+  ref: '#REF! 오류 셀에 부딪힘… (느려짐)',
+  parcel: '반송 택배 상자에 부딪힘… (느려짐)',
+  // 도장 20번 이스터 에그: 화난 경비 선생님 (props.ts)
+  devil: '화난 경비 선생님에게 맞음… (느려짐)',
   boss: '부딪혀 밀려남… (느려짐)',
   // 돌발 방문 상대의 공격 (visit.ts)
   punch: '로켓 펀치에 맞음… (느려짐)',
@@ -388,7 +411,7 @@ const _dq = new THREE.Quaternion();
 const _dv = new THREE.Vector3();
 const ZERO = new THREE.Vector3();
 
-const blankCounts = (): Record<Kind, number> => ({ mail: 0, bulk: 0, phone: 0, bubble: 0, bomb: 0, boss: 0, note: 0, fax: 0, qr: 0 });
+const blankCounts = (): Record<Kind, number> => ({ mail: 0, bulk: 0, phone: 0, bubble: 0, bomb: 0, boss: 0, note: 0, fax: 0, qr: 0, ref: 0, parcel: 0 });
 const isBoss = (e: Enemy) => e.kind === 'boss';
 
 /** 수평 방향(플레이어 기준 yaw)을 -π~π 로 */
@@ -568,6 +591,10 @@ class Game implements Ctx {
   private jumpBuf = 0;
   private lowering: { g: THREE.Group; t: number }[] = [];
   private spReadyShown = false;
+  /** 인사 15번 필살기 무한 (props.infinite): 필살기를 쓰고 다시 채우기까지 남은 시간 */
+  private spInfT = 0;
+  /** 구역 오름(체력)을 이미 받은 잡몹 */
+  private risen = new WeakSet<Enemy>();
   private offShown = false;
   /** 구역 넘어가기 연출 시간 */
   private seqT = 0;
@@ -754,6 +781,8 @@ class Game implements Ctx {
       m.sheet('packet'),
       m.stamp(),
       new THREE.Mesh(m.warnGeo, m.warnMat),
+      // 뒤쪽 구역 새 잡몹 (latemobs.ts)
+      ...lateMobWarm(),
     ];
     items.forEach((o, i) => {
       o.position.x = (i - 7) * 0.4;
@@ -793,6 +822,9 @@ class Game implements Ctx {
       ['결재판!', '#ffe066'],
       ['결재 완료!', '#7CFC9A'],
       ['회의 불참 성공!', '#7CFC9A'],
+      ['참조 오류 수정!', '#7CFC9A'],
+      ['수식 수정 완료!', '#7CFC9A'],
+      ['반송 접수 완료!', '#7CFC9A'],
       ...MID_TEXTS,
     ]) {
       this.fx.text(p, t, col);
@@ -825,7 +857,7 @@ class Game implements Ctx {
     for (const t of speechTextures()) this.renderer.initTexture(t);
     for (const t of this.hz.textures) this.renderer.initTexture(t);
     for (const t of this.stu.textures) this.renderer.initTexture(t);
-    for (const t of [...this.mobs.textures, ...stuMobTextures()]) this.renderer.initTexture(t);
+    for (const t of [...this.mobs.textures, ...stuMobTextures(), ...lateMobTextures()]) this.renderer.initTexture(t);
     for (const t of this.visit.warmTextures) this.renderer.initTexture(t);
     this.renderer.render(this.scene, this.camera);
     unwarm();
@@ -1197,6 +1229,11 @@ class Game implements Ctx {
       spawnPickup: (kind, x, z) => g.spawnPickup(kind, x, z),
       equip: (id) => g.equip(id),
       rescueHit: () => g.rescueHit(),
+      // 화난 마귀(도장 20번 이스터 에그, 결정 61): 난이도·장점·보스 근접 배율 없이 3칸. 무적·연차 쿠폰은 hurt가 평소대로 막는다.
+      // Boo에게 들려 가는 동안은 맞지 않는다
+      devilHurt: (from) => {
+        if (!g.boo.carrying) g.hurt(3, from, 'devil', false, true);
+      },
     };
   }
 
@@ -2134,6 +2171,12 @@ class Game implements Ctx {
       this.enemies.push(this.mobs.bubble(this, this.spawnPoint(_v, 1.8 + Math.random() * 0.6)));
     } else if (kind === 'note' || kind === 'fax') {
       this.enemies.push(...this.mobs.spawn(kind, this, this.spawnPoint(_v, kind === 'fax' ? 0 : 2.5 + Math.random() * 1.5), few));
+    } else if (kind === 'ref') {
+      // #REF! 오류 셀: 처리하면 작은 것 둘로 갈라진다 (latemobs.ts, onProcessed)
+      this.enemies.push(new SplitMob(this, 'staff', this.spawnPoint(_v, 1.6 + Math.random() * 0.6)));
+    } else if (kind === 'parcel') {
+      // 반송 택배 상자: 바닥을 걷다가 부르르 떨고 돌진한다
+      this.enemies.push(new Charger(this, 'staff', this.spawnPoint(_v, 0)));
     } else {
       this.enemies.push(new Bomb(this, this.spawnPoint(_v, 1.4)));
     }
@@ -2162,6 +2205,24 @@ class Game implements Ctx {
     let n = 0;
     for (const e of this.enemies) if (e.targetable && !isBoss(e)) n++;
     return n;
+  }
+
+  /** 몹 구역 번호 (결정 61 · 3절): 교직원 areaOf 0~4, 총장전 5 / 학생 ROUTE 0~4, 총장실 5 */
+  private mobArea(): number {
+    return Math.min(5, this.mode === 'student' ? this.stu.areaNo : areaOf(this.stage));
+  }
+
+  /** 구역 오름을 받는 잡몹: 중간보스·보스(사람)·구조 장면 업무 더미·수강편람 탑(보스 기믹)은 빼고 */
+  private risesWith(e: Enemy): boolean {
+    return !isBoss(e) && !(e instanceof PileMob) && !(e instanceof DocTower);
+  }
+
+  /** 처음 본 잡몹의 체력을 구역만큼 올린다 (반올림, 원래보다 작아지지 않게). 갈라져 나온 작은 것은 늘 한 대 */
+  private mobRise(e: Enemy, a: number): void {
+    this.risen.add(e);
+    if (e instanceof SplitMob && e.small) return;
+    if (e.hp !== e.maxHp || a <= 0) return;
+    e.hp = e.maxHp = Math.max(e.maxHp, Math.round(e.maxHp * (1 + RISE_HP * a)));
   }
 
   private removeEnemy(e: Enemy): void {
@@ -2238,11 +2299,15 @@ class Game implements Ctx {
     if (e instanceof VisitPerson) return;
     this.counts[e.kind]++;
     this.processed++;
-    this.addSp(SP_GAIN[e.kind]);
+    // 갈라져 나온 작은 #REF!(사본)는 메신저 쪽지 알림 하나만큼
+    this.addSp(e instanceof SplitMob && e.small ? SP_SMALL_REF : SP_GAIN[e.kind]);
     this.sound('process', e.center);
     // 사람 보스 몸에는 "처리" 자국을 띄우지 않는다
     if (!isBoss(e)) this.fx.mark(e.center, e.kind === 'bulk' ? 1.6 : 1.2);
+    // 큰 #REF! 오류 셀(최종_진짜최종.hwp)은 작은 것 둘로 갈라진다 (두 모드 같다)
+    if (e instanceof SplitMob && !e.small) this.enemies.push(...splitInto(this, e, this.pos));
     if (this.mode === 'student') this.stu.processed(e);
+    else if (e instanceof SplitMob || e instanceof Charger) this.fx.text(_v.copy(e.center).setY(e.center.y + 1.0), lateDoneText(e), '#7CFC9A', e instanceof SplitMob && e.small ? 0.45 : 0.6);
     else if (e.kind === 'bulk') this.note('단체 메일 처리!');
     else if (e.kind === 'phone') this.fx.text(_v.copy(e.center).setY(e.center.y + 1.1), '네, 행정실입니다~', '#ffffff');
     else if (e.kind === 'bubble') {
@@ -2275,7 +2340,7 @@ class Game implements Ctx {
     if (this.dropCd > 0) return;
     let chance = 0.15 + this.diff.drop;
     if (this.hp <= 4) chance += 0.15;
-    if (kind === 'bulk' || kind === 'bomb') chance += 0.1;
+    if (kind === 'bulk' || kind === 'bomb' || kind === 'parcel') chance += 0.1;
     // 음식은 이제 상자에서도 나오므로 민원이 떨어뜨리는 것은 절반쯤으로
     if (Math.random() > chance * 0.5) return;
     this.dropCd = 7;
@@ -2559,6 +2624,7 @@ class Game implements Ctx {
     if (s !== 'yard' && s !== 'yardBoss' && s !== 'plaza' && s !== 'hum' && s !== 'dorm' && s !== 'field' && s !== 'final') return;
     this.sp = 0;
     this.spReadyShown = false;
+    this.spInfT = SP_INF_GAP;
     this.specials++;
     // 배지 "일괄 처리": 이번 필살기에 처리한 잡몹 수를 새로 센다 (noticeT로 맞는 것 — step)
     this.spKills = 0;
@@ -2595,6 +2661,22 @@ class Game implements Ctx {
       s.obj.visible = false;
       this.fx.confetti(s.obj.position, 3, 3);
     }
+  }
+
+  /**
+   * 인사 15번 이스터 에그 (결정 61 · 5절, props.ts): 이 구역이 끝날 때까지 필살기 게이지가 늘 가득.
+   * 쓰면 연출(화면 번쩍임·업무 스킬·전체 공지가 닿는 중)이 끝나는 대로 다시 가득. Boo로 들려 가는 동안 못 쓰는 규칙은 그대로 (special)
+   */
+  private keepSpFull(dt: number): void {
+    if (!this.props.infinite || this.sp >= SP_MAX) return;
+    if (this.spInfT > 0) {
+      this.spInfT -= dt;
+      return;
+    }
+    if (this.skills.busy) return;
+    for (const e of this.enemies) if (e.noticeT >= 0) return;
+    this.sp = SP_MAX;
+    this.spReadyShown = true;
   }
 
   /** 필살기(전체 공지·업무 스킬)·아이템이 맞았다. 잡몹을 처리했으면 true */
@@ -2986,6 +3068,15 @@ class Game implements Ctx {
         if (s.life <= 0) break;
         // 경비원·대출기(막힌다)와 부수는 상자
         const ph = this.props.stampHit(p, a ? a.power : 1, s.seen);
+        if (ph === 'devil') {
+          // 화난 마귀(장난, 결정 61)를 맞힌 던지기는 명중률(근무평정)에서 뺀다: 던진 수에서 덜고 맞힌 수에는 넣지 않는다
+          if (!s.scored) {
+            s.scored = true;
+            this.thrown = Math.max(0, this.thrown - 1);
+          }
+          s.life = 0;
+          break;
+        }
         if (ph === 'stop' || (ph === 'hit' && !pass)) {
           s.life = 0;
           break;
@@ -3471,6 +3562,8 @@ class Game implements Ctx {
 
   /** 이어하기: 판 위의 것을 모두 거둔다. 이벤트를 먼저 (상대·짝이 적 목록에서 빠지기 전에 안 끝났는지 본다) */
   private clearArena(): void {
+    // 경비 선생님·대출기 이스터 에그 숫자·마귀도 그 구역 처음으로 (결정 61)
+    this.props.retry();
     this.trap.retry();
     this.side.retry();
     this.visit.retry();
@@ -3816,15 +3909,20 @@ class Game implements Ctx {
     // 적은 난이도만큼 빠르게(느리게) 움직인다. 쉿! 정숙 표지판(visit.ts)이 서 있으면 잡몹(사람 빼고)은 절반 빠르기
     const edt = dt * this.diff.speed;
     const mdt = edt * this.visit.mobRate;
+    // 구역 오름 (결정 61): 뒤쪽 구역일수록 잡몹이 빠르다 (처음 보는 잡몹은 체력도 — mobRise)
+    const rise = this.mobArea();
+    const rdt = mdt * (1 + RISE_SPEED * rise);
     for (let i = 0; i < this.enemies.length; i++) {
       const e = this.enemies[i];
+      const mob = this.risesWith(e);
+      if (mob && !this.risen.has(e)) this.mobRise(e, rise);
       if (e.noticeT >= 0) {
         e.noticeT -= dt;
         // 필살기로 처리한 잡몹 (배지 "일괄 처리" — 필살기 한 번에 10명 이상)
         if (e.noticeT < 0 && this.noticeHit(e)) noteSpecialKills(++this.spKills);
       }
       // 인감 도장으로 넘어진(구르는) 잡몹·단톡방 공지 캡처로 멈춘 잡몹은 움직이지도 공격하지도 않는다
-      if (!e.gone && !this.rolls.hold(e, dt) && !this.holdDown(e, dt) && !this.holdFrozen(e)) e.update(isBoss(e) ? edt : mdt, this);
+      if (!e.gone && !this.rolls.hold(e, dt) && !this.holdDown(e, dt) && !this.holdFrozen(e)) e.update(isBoss(e) ? edt : mob ? rdt : mdt, this);
     }
     // 학생 모드 총장실 옮기기처럼 판에서 바로 빠진 잡몹은 넘어진 목록에서도 뺀다
     if (this.downs.size) for (const e of this.downs.keys()) if (!e.obj.parent) this.downs.delete(e);
@@ -3845,6 +3943,7 @@ class Game implements Ctx {
     this.updatePickups(dt);
     this.updateFrost(dt);
     this.props.update(dt);
+    this.keepSpFull(dt);
     this.budget.update(dt);
     this.vend.update(dt);
     if (this.rescueDue) this.tryRescue();
@@ -3970,8 +4069,13 @@ class Game implements Ctx {
     this.setStyle('spbar', 'width', `${Math.round(this.sp)}%`);
     const ready = this.sp >= SP_MAX;
     const skillName = this.pick.skill.name;
-    this.setText('splabel', student ? this.stu.spLabel(ready) : ready ? (TOUCH ? `${skillName} — 노란 버튼` : `${skillName} — Q`) : skillName);
+    // 인사 15번 이스터 에그: 필살기 무한이면 게이지·터치 필살기 단추에 "∞"
+    const inf = !!this.props?.infinite && this.phase !== 'title';
+    const spText = student ? this.stu.spLabel(ready) : ready ? (TOUCH ? `${skillName} — 노란 버튼` : `${skillName} — Q`) : skillName;
+    this.setText('splabel', inf ? `∞ ${spText}` : spText);
+    this.setText('spBtn', inf ? '필살기 ∞' : '필살기');
     this.setClass('sp', 'ready', ready);
+    this.setClass('sp', 'inf', inf);
     this.setClass('spBtn', 'ready', ready);
     let wave: string;
     if (student) wave = this.stu.waveLine();
@@ -4093,6 +4197,6 @@ function clockText(min: number): string {
 const game = new Game();
 void game.init();
 if (DEBUG) Object.assign(window as object, { __fps: game, __fpsLib: { Mail, Phone, Bubble, Bomb, PersonBoss, Chonggwal, Bogo, Meeting, President, StaffMid, Hakgwa, Naenwa, THREE, FC } });
-if (DEBUG) Object.assign((window as unknown as { __fpsLib: object }).__fpsLib, { ClingBubble, DodgeBubble, NoteBadge, Fax, DueBadge, AttendQR });
+if (DEBUG) Object.assign((window as unknown as { __fpsLib: object }).__fpsLib, { ClingBubble, DodgeBubble, NoteBadge, Fax, DueBadge, AttendQR, SplitMob, Charger });
 // 시험용 지름길 (PRD 결정 60): __fps.cont() 이어하기, __fps.skipTut() 첫 판 안내 건너뛰기
 if (DEBUG) Object.assign(game, { cont: () => game.continueRun(), skipTut: () => game.tut.skip() });
